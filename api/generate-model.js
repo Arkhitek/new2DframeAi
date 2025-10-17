@@ -66,11 +66,26 @@ export default async function handler(req, res) {
             
             // 編集モードの場合、境界条件を強制的に保持
             if (mode === 'edit' && currentModel) {
+                console.log('=== 編集モード: 境界条件保持処理開始 ===');
+                console.log('ユーザープロンプト:', userPrompt);
+                
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+                console.log('境界条件変更意図検出結果:', boundaryChangeIntent);
+                
+                // 第1次修正
                 generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                
+                // 第2次修正: 緊急的な境界条件復元
+                generatedModel = emergencyBoundaryConditionFix(currentModel, generatedModel, boundaryChangeIntent);
                 
                 // 修正されたモデルでJSONを再生成
                 generatedText = JSON.stringify(generatedModel, null, 2);
+                
+                // 最終テスト: 境界条件保持の検証
+                const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                console.log('最終テスト結果:', finalTestResult);
+                
+                console.log('=== 編集モード: 境界条件保持処理完了 ===');
             }
             
             // 新規作成・編集両方で節点参照を検証
@@ -479,8 +494,14 @@ function detectBoundaryChangeIntent(userPrompt) {
     const hasChangeKeyword = changeKeywords.some(keyword => prompt.includes(keyword));
     const hasCoordinateChangeKeyword = coordinateChangeKeywords.some(keyword => prompt.includes(keyword));
     
+    console.log('境界条件変更意図検出:');
+    console.log('- 境界条件キーワード:', hasBoundaryKeyword);
+    console.log('- 変更キーワード:', hasChangeKeyword);
+    console.log('- 座標変更キーワード:', hasCoordinateChangeKeyword);
+    
     // 座標変更のキーワードがある場合は、境界条件変更ではないと判定
     if (hasCoordinateChangeKeyword && !hasBoundaryKeyword) {
+        console.log('座標変更のキーワードが検出されたため、境界条件変更ではないと判定');
         return {
             detected: false,
             target: '',
@@ -791,6 +812,124 @@ function finalBoundaryConditionRestore(originalModel, generatedModel, boundaryCh
     console.log('=== フォールバック境界条件復元処理完了 ===');
     
     return restoredModel;
+}
+
+// 緊急的な境界条件復元関数（確実に境界条件を保持する最終手段）
+function emergencyBoundaryConditionFix(originalModel, generatedModel, boundaryChangeIntent = null) {
+    if (!originalModel.nodes || !generatedModel.nodes) {
+        console.log('緊急修正: 節点データが不足しているため、処理をスキップします');
+        return generatedModel;
+    }
+    
+    const fixedModel = JSON.parse(JSON.stringify(generatedModel)); // ディープコピー
+    
+    console.log('=== 緊急境界条件復元処理開始 ===');
+    console.log('元のモデルの境界条件:', originalModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('現在のモデルの境界条件:', generatedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    
+    // 境界条件変更の意図がない場合は、全ての境界条件を強制的に復元
+    if (!boundaryChangeIntent || !boundaryChangeIntent.detected) {
+        console.log('緊急修正: 境界条件変更の意図がないため、全ての境界条件を強制的に復元します');
+        
+        const minLength = Math.min(originalModel.nodes.length, fixedModel.nodes.length);
+        let fixedCount = 0;
+        
+        for (let i = 0; i < minLength; i++) {
+            const originalNode = originalModel.nodes[i];
+            const currentNode = fixedModel.nodes[i];
+            
+            // 強制的に境界条件を復元（条件チェックなし）
+            if (originalNode.s !== currentNode.s) {
+                console.log(`緊急修正: 節点${i + 1}の境界条件を強制復元: ${currentNode.s} → ${originalNode.s}`);
+                fixedModel.nodes[i].s = originalNode.s;
+                fixedCount++;
+            } else {
+                console.log(`緊急修正: 節点${i + 1}の境界条件は正しい: ${currentNode.s}`);
+            }
+        }
+        
+        console.log(`緊急修正: ${fixedCount}個の節点の境界条件を復元しました`);
+        
+        // 最終確認: 全ての境界条件が正しいかチェック
+        let allCorrect = true;
+        for (let i = 0; i < minLength; i++) {
+            if (originalModel.nodes[i].s !== fixedModel.nodes[i].s) {
+                console.error(`緊急修正エラー: 節点${i + 1}の境界条件が復元されていません: ${fixedModel.nodes[i].s} (期待値: ${originalModel.nodes[i].s})`);
+                allCorrect = false;
+            }
+        }
+        
+        if (allCorrect) {
+            console.log('緊急修正: 全ての境界条件が正しく復元されました');
+        } else {
+            console.error('緊急修正: 境界条件の復元に失敗しました');
+        }
+    } else {
+        console.log('緊急修正: 境界条件変更の意図があるため、通常の処理を実行します');
+    }
+    
+    console.log('緊急修正後の境界条件:', fixedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('=== 緊急境界条件復元処理完了 ===');
+    
+    return fixedModel;
+}
+
+// 境界条件保持のテスト関数
+function testBoundaryConditionPreservation(originalModel, generatedModel, boundaryChangeIntent = null) {
+    if (!originalModel.nodes || !generatedModel.nodes) {
+        return {
+            success: false,
+            message: '節点データが不足しています',
+            details: {}
+        };
+    }
+    
+    console.log('=== 境界条件保持テスト開始 ===');
+    
+    const minLength = Math.min(originalModel.nodes.length, generatedModel.nodes.length);
+    let correctCount = 0;
+    let incorrectCount = 0;
+    const incorrectNodes = [];
+    
+    for (let i = 0; i < minLength; i++) {
+        const originalBoundary = originalModel.nodes[i].s;
+        const generatedBoundary = generatedModel.nodes[i].s;
+        
+        if (originalBoundary === generatedBoundary) {
+            correctCount++;
+            console.log(`✓ 節点${i + 1}: ${originalBoundary} (正しい)`);
+        } else {
+            incorrectCount++;
+            incorrectNodes.push({
+                nodeIndex: i + 1,
+                original: originalBoundary,
+                generated: generatedBoundary
+            });
+            console.log(`✗ 節点${i + 1}: ${originalBoundary} → ${generatedBoundary} (不正)`);
+        }
+    }
+    
+    const success = incorrectCount === 0;
+    const message = success 
+        ? `全ての境界条件が正しく保持されました (${correctCount}/${minLength})`
+        : `${incorrectCount}個の節点で境界条件が不正です (${correctCount}/${minLength})`;
+    
+    const result = {
+        success: success,
+        message: message,
+        details: {
+            totalNodes: minLength,
+            correctCount: correctCount,
+            incorrectCount: incorrectCount,
+            incorrectNodes: incorrectNodes,
+            boundaryChangeIntent: boundaryChangeIntent
+        }
+    };
+    
+    console.log('テスト結果:', result);
+    console.log('=== 境界条件保持テスト完了 ===');
+    
+    return result;
 }
 
 // 境界条件の保持を検証する関数

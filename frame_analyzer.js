@@ -13556,7 +13556,7 @@ function safeConfirm(message) {
 }
 
 // 内部関数：ポップアップ表示なしでAI生成を実行
-async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount = 0) {
+async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount = 0, currentModel = null) {
     const aiGenerateBtn = document.getElementById('generate-model-btn');
     const aiStatus = document.getElementById('gemini-status-indicator');
 
@@ -13714,7 +13714,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             }
             
             // リトライ実行（ポップアップは再表示しない）
-            return generateModelWithAIInternal(userPrompt, mode, retryCount + 1);
+            return generateModelWithAIInternal(userPrompt, mode, retryCount + 1, currentModel);
         }
         
         // リトライ不可能またはリトライ上限に達した場合のエラー処理
@@ -13736,7 +13736,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
                             if (!aiGenerationCancelled) {
                                 autoRetryCount++;
                                 console.log(`🔄 自動再試行を開始します (${autoRetryCount}/${MAX_AUTO_RETRY})`);
-                                generateModelWithAI(userPrompt, mode, 0); // リトライカウントをリセット
+                                generateModelWithAI(userPrompt, mode, 0, currentModel); // リトライカウントをリセット
                             }
                         }, 5000); // 5秒後に自動再試行
                     } else {
@@ -13782,7 +13782,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
 }
 
 // 公開関数：最初の呼び出し時にポップアップを表示
-async function generateModelWithAI(userPrompt, mode = 'new', retryCount = 0) {
+async function generateModelWithAI(userPrompt, mode = 'new', retryCount = 0, currentModel = null) {
     // キャンセルフラグをリセット
     aiGenerationCancelled = false;
     aiGenerationAbortController = new AbortController();
@@ -13799,7 +13799,7 @@ async function generateModelWithAI(userPrompt, mode = 'new', retryCount = 0) {
     }
     
     // 内部関数を呼び出し
-    return generateModelWithAIInternal(userPrompt, mode, retryCount);
+    return generateModelWithAIInternal(userPrompt, mode, retryCount, currentModel);
 }
 
 /**
@@ -14330,7 +14330,16 @@ function setupAIModelGenerationListeners() {
             
             if (userPrompt) {
                 console.log(`🔍 AI生成モード: ${selectedMode}, 指示: "${userPrompt}"`);
-                generateModelWithAI(userPrompt, selectedMode);
+                
+                // 編集モードの場合は現在のモデル情報を取得
+                let currentModel = null;
+                if (selectedMode === 'edit') {
+                    console.log('🔍 現在のモデル情報を完全取得中...');
+                    currentModel = getCurrentModelInfo();
+                    console.log('🔍 追加編集モード: 現在のモデル情報を取得しました', currentModel);
+                }
+                
+                generateModelWithAI(userPrompt, selectedMode, 0, currentModel);
             } else {
                 safeAlert('指示内容を入力してください。');
             }

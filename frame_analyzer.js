@@ -13664,7 +13664,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         aiStatus.style.color = '#28a745';
 
         // 取り出したモデルデータを、アプリケーションのテーブルに反映させます
-        applyGeneratedModel(modelData, userPrompt, mode);
+        applyGeneratedModel(modelData, userPrompt, mode, currentModel);
 
         // ポップアップを非表示にする
         hideAIGenerationPopup();
@@ -14807,7 +14807,7 @@ function validateModelData(modelData) {
     });
 }
 
-function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new') {
+function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new', currentModel = null) {
     // モデルデータの妥当性をチェック
     validateModelData(modelData);
 

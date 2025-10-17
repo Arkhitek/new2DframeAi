@@ -60,6 +60,31 @@ export default async function handler(req, res) {
         }
         const generatedText = data.choices[0].message.content;
 
+        // 生成されたモデルの検証
+        try {
+            const generatedModel = JSON.parse(generatedText);
+            
+            // 新規作成・編集両方で節点参照を検証
+            const nodeReferenceValidation = validateNodeReferences(generatedModel);
+            if (!nodeReferenceValidation.isValid) {
+                console.error('節点参照エラー:', nodeReferenceValidation.errors);
+                throw new Error(`節点参照エラー: ${nodeReferenceValidation.errors.join(', ')}`);
+            }
+            
+            // 編集モードの場合、境界条件の保持を検証
+            if (mode === 'edit' && currentModel) {
+                const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+                const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
+                if (!validationResult.isValid) {
+                    console.warn('境界条件保持の警告:', validationResult.warnings);
+                    // 警告は出しますが、レスポンスは返します
+                }
+            }
+        } catch (parseError) {
+            console.warn('生成されたモデルの解析エラー:', parseError);
+            // JSON解析エラーでもレスポンスは返します
+        }
+
         const responseForFrontend = {
             candidates: [{
                 content: {
@@ -126,6 +151,15 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
   ]
 }
 \`\`\`
+**上記例の解説:**
+- 節点1: (0,0) - 1層左柱脚（固定）
+- 節点2: (6,0) - 1層右柱脚（固定）
+- 節点3: (0,4) - 2層左柱頭（自由）
+- 節点4: (6,4) - 2層右柱頭（自由）
+- 部材1: 節点1→節点3（左柱）
+- 部材2: 節点2→節点4（右柱）
+- 部材3: 節点3→節点4（梁）
+- **重要**: 節点番号は配列の順序で決まり、部材は必ず存在する節点のみを参照
 
 **各キーの詳細説明:**
 - **nodes**: 節点の配列
@@ -155,17 +189,22 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 - 部材の断面性能値 (\`A\`, \`I\`, \`Z\`) が不明な場合は、一般的な鋼材断面（例：H-300x150x6.5x9）の値を仮定して設定してください (A=0.004678, I=0.0000721, Z=0.000481)。
 - 節点番号と部材番号は1から始まる連番です。
 - 存在しない節点番号や部材番号を参照しないでください。
-- **節点番号と部材参照の重要ルール:**
-  - 節点は配列の順序で番号が付けられます（1番目、2番目、3番目...）
-  - 部材の\`i\`と\`j\`は、実際に存在する節点番号を参照してください
-  - 例: 節点配列に3つの節点がある場合、部材は節点1、2、3のみを参照できます
-  - 複数層の構造では、下層から上層へ順序良く節点を配置してください
-  - ラーメン構造では、柱と梁の接続点が正確に一致するように節点番号を設定してください
+- **節点番号と部材参照の重要ルール（最重要）:**
+  - **節点番号は配列の順序で決まります**: nodes配列の1番目=節点1、2番目=節点2、3番目=節点3...
+  - **部材のiとjは必ず存在する節点番号を参照してください**
+  - **絶対に存在しない節点番号を参照しないでください**
+  - **例1**: nodes配列に4つの節点がある場合、部材は節点1、2、3、4のみを参照できます
+  - **例2**: 節点配列が[{"x":0,"y":0}, {"x":6,"y":0}, {"x":0,"y":4}, {"x":6,"y":4}]の場合
+    - 節点1: (0,0)、節点2: (6,0)、節点3: (0,4)、節点4: (6,4)
+    - 部材で節点5や節点0を参照することは絶対に禁止です
   - **複数層ラーメン構造の生成ルール:**
+    - 節点番号は下層から上層へ、左から右へ順序良く付けてください
     - 各層の柱は垂直に並べ、同じX座標に配置してください
     - 梁は各層の柱間を水平に接続してください
-    - 節点番号は下層から上層へ、左から右へ順序良く付けてください
-    - 例: 2層2スパンの場合、1層左柱=1、1層右柱=2、2層左柱=3、2層右柱=4
+    - **具体例: 2層2スパンラーメン構造**
+      - 節点配置: 1層左柱(0,0)→節点1、1層右柱(6,0)→節点2、2層左柱(0,4)→節点3、2層右柱(6,4)→節点4
+      - 部材配置: 柱1(1→3)、柱2(2→4)、梁1(3→4)
+      - **絶対に節点5や節点0を参照してはいけません**
 - **柱脚の境界条件に関する重要なルール:**
   - Y座標が0の節点（地面に接する節点）は柱脚として扱います。
   - ユーザーの指示で「柱脚は固定」「基礎は固定」「支点は固定」などの記述がある場合、Y座標=0の節点の境界条件を "x" (固定) に設定してください。
@@ -173,12 +212,17 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
   - 「柱脚はローラー」「基礎はローラー」「支点はローラー」などの記述がある場合、Y座標=0の節点の境界条件を "r" (ローラー) に設定してください。
   - 柱脚に関する明示的な指示がない場合でも、一般的な構造では柱脚は固定とするのが合理的です。特に「門型ラーメン」「フレーム」「ラーメン構造」などの記述がある場合は、Y座標=0の節点を "x" (固定) に設定してください。
 - ユーザーの指示に曖昧な点がある場合は、最も一般的で合理的な構造を仮定してモデルを作成してください。
-- **構造生成時の注意事項:**
-  - 節点番号は配列の順序（1から始まる）で決まります
-  - 部材の\`i\`と\`j\`は必ず存在する節点番号を参照してください
-  - ラーメン構造では、柱と梁の接続が正確になるよう節点配置を確認してください
-  - 複数層構造では、各層の高さを適切に設定してください（例: 1層=4m、2層=8m）
-  - スパン長は一般的な値を設定してください（例: 6m、8m、10m）
+- **構造生成時の注意事項（必須確認事項）:**
+  - **節点番号は配列の順序（1から始まる）で決まります**
+  - **部材の\`i\`と\`j\`は必ず存在する節点番号を参照してください**
+  - **生成前に必ず節点数と部材の節点参照を確認してください**
+  - **ラーメン構造では、柱と梁の接続が正確になるよう節点配置を確認してください**
+  - **複数層構造では、各層の高さを適切に設定してください（例: 1層=4m、2層=8m）**
+  - **スパン長は一般的な値を設定してください（例: 6m、8m、10m）**
+  - **生成後は必ず以下のチェックを行ってください:**
+    1. 節点配列の長さを確認
+    2. 各部材のiとjが節点配列の範囲内（1～節点数）であることを確認
+    3. 存在しない節点番号を参照していないことを確認
 `;
 
     if (mode === 'edit' && currentModel) {
@@ -193,6 +237,10 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 編集時は以下の点に注意してください:
 - 既存の節点番号と部材番号の連続性を保持してください
 - 既存の構造の基本形状は維持し、指示された変更のみを適用してください
+- **境界条件の扱い**: 
+  - ユーザーが境界条件の変更を明示的に指示した場合のみ、その指示に従って境界条件を変更してください
+  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を必ず保持してください
+  - 境界条件の変更指示の例：「柱脚を固定からピンに変更」「支点をローラーに変更」「節点○の境界条件を変更」など
 - 新しく追加する節点や部材は、既存の番号の続きから開始してください
 - 削除する場合は、後続の番号を詰める必要はありません
 - **節点の座標変更の場合**:
@@ -213,16 +261,26 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 }
 
 function createEditPrompt(userPrompt, currentModel) {
+    // 境界条件変更の意図を検出
+    const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+    
     let editPrompt = `編集指示: ${userPrompt}\n\n`;
+    
+    if (boundaryChangeIntent.detected) {
+        editPrompt += `**境界条件変更の指示が検出されました**:\n`;
+        editPrompt += `- 変更対象: ${boundaryChangeIntent.target}\n`;
+        editPrompt += `- 新しい境界条件: ${boundaryChangeIntent.newCondition}\n`;
+        editPrompt += `- 上記の指示に従って境界条件を変更してください\n\n`;
+    }
     
     if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
         editPrompt += `現在の節点情報:\n`;
         currentModel.nodes.forEach((node, index) => {
             const supportText = {
-                'free': '自由',
-                'pinned': 'ピン', 
-                'fixed': '固定',
-                'roller': 'ローラー'
+                'f': '自由',
+                'p': 'ピン', 
+                'x': '固定',
+                'r': 'ローラー'
             }[node.s] || node.s;
             editPrompt += `節点${index + 1}: (${node.x}, ${node.y}) - ${supportText}\n`;
         });
@@ -231,7 +289,10 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `節点修正時の注意事項:\n`;
         editPrompt += `- 既存の節点を修正する場合は、同じ配列位置（1番目、2番目など）で出力してください\n`;
         editPrompt += `- 座標（x, y）を変更することで節点の位置を修正できます\n`;
-        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標を持つデータを出力してください\n`;
+        editPrompt += `- **境界条件の扱い**: \n`;
+        editPrompt += `  - 境界条件の変更指示がある場合のみ、その指示に従って境界条件を変更してください\n`;
+        editPrompt += `  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
+        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と適切な境界条件を持つデータを出力してください\n`;
         editPrompt += `- 既存の節点を削除する場合は、その節点を出力しないでください\n`;
         editPrompt += `\n`;
     }
@@ -272,4 +333,212 @@ function createEditPrompt(userPrompt, currentModel) {
     editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。`;
     
     return editPrompt;
+}
+
+// 境界条件変更の意図を検出する関数
+function detectBoundaryChangeIntent(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    
+    // 境界条件変更のキーワードを検索
+    const boundaryKeywords = [
+        '境界条件', '支点', '柱脚', '基礎', '固定', 'ピン', 'ローラー', '自由',
+        'support', 'boundary', 'fixed', 'pinned', 'roller', 'free'
+    ];
+    
+    const changeKeywords = [
+        '変更', '修正', '変更する', '変更してください', 'に変更', 'から', 'に',
+        'change', 'modify', 'update'
+    ];
+    
+    // 境界条件の種類
+    const conditionMap = {
+        '固定': 'x', 'fixed': 'x',
+        'ピン': 'p', 'pinned': 'p', 'pin': 'p',
+        'ローラー': 'r', 'roller': 'r',
+        '自由': 'f', 'free': 'f'
+    };
+    
+    // 境界条件変更の意図を検出
+    let detected = false;
+    let target = '';
+    let newCondition = '';
+    
+    // キーワードの組み合わせをチェック
+    const hasBoundaryKeyword = boundaryKeywords.some(keyword => prompt.includes(keyword));
+    const hasChangeKeyword = changeKeywords.some(keyword => prompt.includes(keyword));
+    
+    if (hasBoundaryKeyword && hasChangeKeyword) {
+        detected = true;
+        
+        // 変更対象を特定
+        if (prompt.includes('柱脚') || prompt.includes('基礎')) {
+            target = '柱脚（Y座標=0の節点）';
+        } else if (prompt.includes('支点')) {
+            target = '支点';
+        } else {
+            target = '指定された節点';
+        }
+        
+        // 新しい境界条件を特定
+        for (const [keyword, code] of Object.entries(conditionMap)) {
+            if (prompt.includes(keyword)) {
+                newCondition = `${keyword}(${code})`;
+                break;
+            }
+        }
+        
+        if (!newCondition) {
+            newCondition = '指定された境界条件';
+        }
+    }
+    
+    return {
+        detected: detected,
+        target: target,
+        newCondition: newCondition
+    };
+}
+
+// 節点参照を検証する関数
+function validateNodeReferences(model) {
+    const errors = [];
+    
+    if (!model.nodes || !Array.isArray(model.nodes)) {
+        errors.push('節点配列が存在しません');
+        return { isValid: false, errors: errors };
+    }
+    
+    if (!model.members || !Array.isArray(model.members)) {
+        errors.push('部材配列が存在しません');
+        return { isValid: false, errors: errors };
+    }
+    
+    const nodeCount = model.nodes.length;
+    
+    // 各節点の基本的な構造をチェック
+    model.nodes.forEach((node, index) => {
+        if (!node.hasOwnProperty('x') || !node.hasOwnProperty('y') || !node.hasOwnProperty('s')) {
+            errors.push(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
+        }
+        if (typeof node.x !== 'number' || typeof node.y !== 'number') {
+            errors.push(`節点${index + 1}の座標が数値ではありません`);
+        }
+        if (!['f', 'p', 'r', 'x'].includes(node.s)) {
+            errors.push(`節点${index + 1}の境界条件（${node.s}）が無効です`);
+        }
+    });
+    
+    // 各部材の節点参照をチェック
+    model.members.forEach((member, index) => {
+        if (!member.hasOwnProperty('i') || !member.hasOwnProperty('j')) {
+            errors.push(`部材${index + 1}に必須プロパティ（i, j）が不足しています`);
+            return;
+        }
+        
+        const i = member.i;
+        const j = member.j;
+        
+        if (!Number.isInteger(i) || !Number.isInteger(j)) {
+            errors.push(`部材${index + 1}の節点番号（${i}, ${j}）が整数ではありません`);
+            return;
+        }
+        
+        if (i < 1 || i > nodeCount) {
+            errors.push(`部材${index + 1}の開始節点番号（${i}）が範囲外です（1-${nodeCount}）`);
+        }
+        
+        if (j < 1 || j > nodeCount) {
+            errors.push(`部材${index + 1}の終了節点番号（${j}）が範囲外です（1-${nodeCount}）`);
+        }
+        
+        if (i === j) {
+            errors.push(`部材${index + 1}の開始節点と終了節点が同じです（${i}）`);
+        }
+    });
+    
+    // 節点荷重の参照をチェック
+    if (model.nodeLoads || model.nl) {
+        const nodeLoads = model.nodeLoads || model.nl;
+        if (Array.isArray(nodeLoads)) {
+            nodeLoads.forEach((load, index) => {
+                const nodeNumber = load.n || load.node;
+                if (!nodeNumber) {
+                    errors.push(`節点荷重${index + 1}に節点番号が指定されていません`);
+                    return;
+                }
+                if (!Number.isInteger(nodeNumber) || nodeNumber < 1 || nodeNumber > nodeCount) {
+                    errors.push(`節点荷重${index + 1}の節点番号（${nodeNumber}）が範囲外です（1-${nodeCount}）`);
+                }
+            });
+        }
+    }
+    
+    // 部材荷重の参照をチェック
+    if (model.memberLoads || model.ml) {
+        const memberLoads = model.memberLoads || model.ml;
+        if (Array.isArray(memberLoads)) {
+            memberLoads.forEach((load, index) => {
+                const memberNumber = load.m || load.member;
+                if (!memberNumber) {
+                    errors.push(`部材荷重${index + 1}に部材番号が指定されていません`);
+                    return;
+                }
+                if (!Number.isInteger(memberNumber) || memberNumber < 1 || memberNumber > model.members.length) {
+                    errors.push(`部材荷重${index + 1}の部材番号（${memberNumber}）が範囲外です（1-${model.members.length}）`);
+                }
+            });
+        }
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+}
+
+// 境界条件の保持を検証する関数
+function validateBoundaryConditions(originalModel, generatedModel, boundaryChangeIntent = null) {
+    const warnings = [];
+    
+    if (!originalModel.nodes || !generatedModel.nodes) {
+        return { isValid: true, warnings: [] };
+    }
+    
+    // 既存の節点の境界条件が保持されているかチェック
+    const minLength = Math.min(originalModel.nodes.length, generatedModel.nodes.length);
+    
+    for (let i = 0; i < minLength; i++) {
+        const originalNode = originalModel.nodes[i];
+        const generatedNode = generatedModel.nodes[i];
+        
+        if (originalNode.s !== generatedNode.s) {
+            // 境界条件変更の意図があった場合は警告レベルを下げる
+            if (boundaryChangeIntent && boundaryChangeIntent.detected) {
+                console.log(`節点${i + 1}の境界条件が意図的に変更されました: ${originalNode.s} → ${generatedNode.s}`);
+            } else {
+                warnings.push(`節点${i + 1}の境界条件が意図せず変更されました: ${originalNode.s} → ${generatedNode.s}`);
+            }
+        }
+    }
+    
+    // 節点数が減少した場合の警告
+    if (generatedModel.nodes.length < originalModel.nodes.length) {
+        warnings.push(`節点数が減少しました: ${originalModel.nodes.length} → ${generatedModel.nodes.length}`);
+    }
+    
+    // 境界条件変更の意図があったが、実際に変更されていない場合の警告
+    if (boundaryChangeIntent && boundaryChangeIntent.detected) {
+        const hasBoundaryChange = originalModel.nodes.some((node, index) => {
+            return generatedModel.nodes[index] && node.s !== generatedModel.nodes[index].s;
+        });
+        
+        if (!hasBoundaryChange) {
+            warnings.push(`境界条件の変更指示がありましたが、実際には変更されませんでした`);
+        }
+    }
+    
+    return {
+        isValid: warnings.length === 0,
+        warnings: warnings
+    };
 }

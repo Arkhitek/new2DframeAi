@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音声入力機能テスト</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-input {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .test-button {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .test-button:hover {
+            background-color: #5a359a;
+        }
+        .test-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .voice-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .voice-button:hover {
+            background-color: #218838;
+        }
+        .voice-button.listening {
+            background-color: #dc3545;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .status {
+            font-size: 13px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .browser-support {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .supported {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .not-supported {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>音声入力機能テスト</h1>
+    
+    <div id="browser-support" class="browser-support"></div>
+    
+    <div class="test-section">
+        <h2>1. 音声認識テスト</h2>
+        <p>マイクの使用許可を求められた場合は「許可」をクリックしてください。</p>
+        <div style="position: relative;">
+            <textarea class="test-input" id="voiceTestInput" placeholder="音声認識結果がここに表示されます"></textarea>
+            <button id="voiceTestBtn" class="voice-button" title="音声入力">🎤</button>
+        </div>
+        <div id="voiceStatus" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. AIモデル生成テスト（音声入力付き）</h2>
+        <p>音声で構造モデルの指示を入力してAIで生成をテストします。</p>
+        <div style="position: relative;">
+            <textarea class="test-input" id="aiTestInput" placeholder="例: 高さ3m、スパン6mの門型ラーメン。柱脚は固定。"></textarea>
+            <button id="aiVoiceBtn" class="voice-button" title="音声入力">🎤</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <button class="test-button" onclick="testAIGeneration()">AIで生成テスト</button>
+        </div>
+        <div id="aiVoiceStatus" class="status" style="display: none;"></div>
+        <div id="aiResult" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 音声認識の詳細テスト</h2>
+        <p>音声認識の動作状況を詳細に確認します。</p>
+        <button class="test-button" onclick="testDetailedVoiceRecognition()">詳細テスト実行</button>
+        <div id="detailedResult" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        // ブラウザサポート確認
+        function checkBrowserSupport() {
+            const supportDiv = document.getElementById('browser-support');
+            const hasSupport = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+            
+            if (hasSupport) {
+                supportDiv.className = 'browser-support supported';
+                supportDiv.textContent = '✅ このブラウザは音声認識をサポートしています';
+            } else {
+                supportDiv.className = 'browser-support not-supported';
+                supportDiv.textContent = '❌ このブラウザは音声認識をサポートしていません';
+            }
+        }
+
+        // 音声認識機能の実装
+        function setupVoiceRecognition(inputElement, statusElement, buttonElement) {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                buttonElement.style.display = 'none';
+                return null;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'ja-JP';
+            
+            let isListening = false;
+            
+            buttonElement.addEventListener('click', () => {
+                if (isListening) {
+                    recognition.stop();
+                    isListening = false;
+                    buttonElement.textContent = '🎤';
+                    buttonElement.classList.remove('listening');
+                    statusElement.textContent = '';
+                    statusElement.style.display = 'none';
+                } else {
+                    try {
+                        recognition.start();
+                        isListening = true;
+                        buttonElement.textContent = '⏹️';
+                        buttonElement.classList.add('listening');
+                        statusElement.textContent = '🎤 音声を認識中...';
+                        statusElement.style.display = 'block';
+                    } catch (error) {
+                        console.error('音声認識の開始に失敗:', error);
+                        statusElement.textContent = '❌ 音声認識の開始に失敗しました';
+                        statusElement.style.display = 'block';
+                        setTimeout(() => {
+                            statusElement.style.display = 'none';
+                        }, 3000);
+                    }
+                }
+            });
+            
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log('音声認識結果:', transcript);
+                
+                const currentText = inputElement.value.trim();
+                if (currentText) {
+                    inputElement.value = currentText + '\n' + transcript;
+                } else {
+                    inputElement.value = transcript;
+                }
+                
+                isListening = false;
+                buttonElement.textContent = '🎤';
+                buttonElement.classList.remove('listening');
+                statusElement.textContent = '✅ 音声認識完了';
+                statusElement.style.display = 'block';
+                
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                }, 3000);
+                
+                inputElement.focus();
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('音声認識エラー:', event.error);
+                
+                isListening = false;
+                buttonElement.textContent = '🎤';
+                buttonElement.classList.remove('listening');
+                
+                let errorMessage = '音声認識でエラーが発生しました';
+                switch (event.error) {
+                    case 'no-speech':
+                        errorMessage = '音声が検出されませんでした';
+                        break;
+                    case 'audio-capture':
+                        errorMessage = 'マイクにアクセスできません';
+                        break;
+                    case 'not-allowed':
+                        errorMessage = 'マイクの使用が許可されていません';
+                        break;
+                    case 'network':
+                        errorMessage = 'ネットワークエラーが発生しました';
+                        break;
+                    default:
+                        errorMessage = `音声認識エラー: ${event.error}`;
+                }
+                
+                statusElement.textContent = '❌ ' + errorMessage;
+                statusElement.style.display = 'block';
+                
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                }, 5000);
+            };
+            
+            recognition.onend = () => {
+                isListening = false;
+                buttonElement.textContent = '🎤';
+                buttonElement.classList.remove('listening');
+                
+                if (statusElement.textContent === '🎤 音声を認識中...') {
+                    statusElement.textContent = '⏹️ 音声認識が終了しました';
+                    statusElement.style.display = 'block';
+                    setTimeout(() => {
+                        statusElement.style.display = 'none';
+                    }, 2000);
+                }
+            };
+            
+            return recognition;
+        }
+
+        // AI生成テスト
+        async function testAIGeneration() {
+            const input = document.getElementById('aiTestInput');
+            const prompt = input.value.trim();
+            
+            if (!prompt) {
+                showResult('aiResult', '構造モデルの指示を入力してください。', 'error');
+                return;
+            }
+
+            showResult('aiResult', '🧠 AIがモデルを生成中です...', 'loading');
+
+            try {
+                const response = await fetch('/api/generate-model', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('aiResult', `✅ AI生成テスト成功！\nレスポンス: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    const errorData = await response.json();
+                    showResult('aiResult', `❌ AI生成テスト失敗 (${response.status}):\n${errorData.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showResult('aiResult', `❌ AI生成テストでエラーが発生しました:\n${error.message}`, 'error');
+            }
+        }
+
+        // 詳細音声認識テスト
+        function testDetailedVoiceRecognition() {
+            const resultDiv = document.getElementById('detailedResult');
+            let result = '=== 音声認識詳細テスト結果 ===\n\n';
+            
+            // ブラウザサポート確認
+            const hasWebkitSupport = 'webkitSpeechRecognition' in window;
+            const hasStandardSupport = 'SpeechRecognition' in window;
+            
+            result += `1. ブラウザサポート確認:\n`;
+            result += `   - webkitSpeechRecognition: ${hasWebkitSupport ? '✅' : '❌'}\n`;
+            result += `   - SpeechRecognition: ${hasStandardSupport ? '✅' : '❌'}\n\n`;
+            
+            if (hasWebkitSupport || hasStandardSupport) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                const recognition = new SpeechRecognition();
+                
+                result += `2. SpeechRecognition オブジェクト作成: ✅\n`;
+                result += `3. 設定可能なプロパティ:\n`;
+                result += `   - continuous: ${typeof recognition.continuous}\n`;
+                result += `   - interimResults: ${typeof recognition.interimResults}\n`;
+                result += `   - lang: ${typeof recognition.lang}\n`;
+                result += `   - maxAlternatives: ${typeof recognition.maxAlternatives}\n\n`;
+                
+                result += `4. イベントハンドラー確認:\n`;
+                result += `   - onresult: ${typeof recognition.onresult}\n`;
+                result += `   - onerror: ${typeof recognition.onerror}\n`;
+                result += `   - onend: ${typeof recognition.onend}\n`;
+                result += `   - onstart: ${typeof recognition.onstart}\n\n`;
+                
+                result += `5. マイクアクセス権限:\n`;
+                if (navigator.permissions) {
+                    navigator.permissions.query({name: 'microphone'}).then(permission => {
+                        result += `   - マイク権限: ${permission.state}\n`;
+                        showResult('detailedResult', result, 'success');
+                    }).catch(() => {
+                        result += `   - マイク権限: 確認不可\n`;
+                        showResult('detailedResult', result, 'success');
+                    });
+                } else {
+                    result += `   - マイク権限: 確認不可（Permissions API未対応）\n`;
+                    showResult('detailedResult', result, 'success');
+                }
+            } else {
+                result += `2. SpeechRecognition オブジェクト作成: ❌\n`;
+                result += `   このブラウザは音声認識をサポートしていません。\n`;
+                showResult('detailedResult', result, 'error');
+            }
+        }
+
+        // 結果表示関数
+        function showResult(elementId, message, type = 'success') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `result ${type}`;
+            element.style.display = 'block';
+        }
+
+        // ページ読み込み時の初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            checkBrowserSupport();
+            
+            // 音声認識機能の設定
+            const voiceTestInput = document.getElementById('voiceTestInput');
+            const voiceTestBtn = document.getElementById('voiceTestBtn');
+            const voiceStatus = document.getElementById('voiceStatus');
+            
+            const aiTestInput = document.getElementById('aiTestInput');
+            const aiVoiceBtn = document.getElementById('aiVoiceBtn');
+            const aiVoiceStatus = document.getElementById('aiVoiceStatus');
+            
+            setupVoiceRecognition(voiceTestInput, voiceStatus, voiceTestBtn);
+            setupVoiceRecognition(aiTestInput, aiVoiceStatus, aiVoiceBtn);
+        });
+    </script>
+</body>
+</html>

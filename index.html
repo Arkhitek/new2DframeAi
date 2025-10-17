@@ -199,10 +199,14 @@
                         作成したい構造モデルを自然言語で入力してください。(例: 高さ5m、スパン10mの門型ラーメン。柱脚は固定。)
                     </p>
                     
-                    <textarea id="natural-language-input" rows="3" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+                    <div style="position: relative;">
+                        <textarea id="natural-language-input" rows="3" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+                        <button id="voice-input-btn" style="position: absolute; top: 8px; right: 8px; background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 14px;" title="音声入力">🎤</button>
+                    </div>
                     
-                    <div style="margin-top: 10px;">
+                    <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
                         <button id="generate-model-btn" style="padding: 8px 15px; background-color: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer;">AIで生成</button>
+                        <div id="voice-status" style="font-size: 13px; color: #666; display: none;"></div>
                     </div>
                     
                     <div id="gemini-status-indicator" style="margin-top: 10px; font-size: 13px; display: none;"></div>

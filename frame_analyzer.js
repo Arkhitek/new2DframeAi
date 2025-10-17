@@ -1626,6 +1626,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // AIモデル生成のイベントリスナー設定
     setupAIModelGenerationListeners();
+    
+    // 音声入力機能のイベントリスナー設定
+    setupVoiceInputListeners();
 
     // デバッグ: エクセル出力ボタンの存在確認
     console.log('エクセル出力ボタンの要素:', elements.exportExcelBtn);
@@ -14359,6 +14362,150 @@ function setupAIModelGenerationListeners() {
     updateModeDescription();
     
     console.log('✅ AIモデル生成のイベントリスナー設定完了');
+}
+
+/**
+ * 音声入力機能のイベントリスナーを設定する関数
+ */
+function setupVoiceInputListeners() {
+    console.log('🔍 音声入力機能のイベントリスナーを設定中...');
+    
+    const voiceInputBtn = document.getElementById('voice-input-btn');
+    const voiceStatus = document.getElementById('voice-status');
+    const promptInput = document.getElementById('natural-language-input');
+    
+    if (!voiceInputBtn || !voiceStatus || !promptInput) {
+        console.error('音声入力機能に必要な要素が見つかりません');
+        return;
+    }
+    
+    // Web Speech APIのサポート確認
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        console.warn('このブラウザは音声認識をサポートしていません');
+        voiceInputBtn.style.display = 'none';
+        return;
+    }
+    
+    // SpeechRecognition オブジェクトの作成
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    // 音声認識の設定
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'ja-JP';
+    
+    let isListening = false;
+    
+    // 音声入力ボタンのクリックイベント
+    voiceInputBtn.addEventListener('click', () => {
+        if (isListening) {
+            // 音声認識を停止
+            recognition.stop();
+            isListening = false;
+            voiceInputBtn.textContent = '🎤';
+            voiceInputBtn.style.backgroundColor = '#28a745';
+            voiceStatus.textContent = '';
+            voiceStatus.style.display = 'none';
+        } else {
+            // 音声認識を開始
+            try {
+                recognition.start();
+                isListening = true;
+                voiceInputBtn.textContent = '⏹️';
+                voiceInputBtn.style.backgroundColor = '#dc3545';
+                voiceStatus.textContent = '🎤 音声を認識中...';
+                voiceStatus.style.display = 'block';
+            } catch (error) {
+                console.error('音声認識の開始に失敗しました:', error);
+                voiceStatus.textContent = '❌ 音声認識の開始に失敗しました';
+                voiceStatus.style.display = 'block';
+                setTimeout(() => {
+                    voiceStatus.style.display = 'none';
+                }, 3000);
+            }
+        }
+    });
+    
+    // 音声認識結果の処理
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log('音声認識結果:', transcript);
+        
+        // 既存のテキストに追加（改行で区切る）
+        const currentText = promptInput.value.trim();
+        if (currentText) {
+            promptInput.value = currentText + '\n' + transcript;
+        } else {
+            promptInput.value = transcript;
+        }
+        
+        // 状態をリセット
+        isListening = false;
+        voiceInputBtn.textContent = '🎤';
+        voiceInputBtn.style.backgroundColor = '#28a745';
+        voiceStatus.textContent = '✅ 音声認識完了';
+        voiceStatus.style.display = 'block';
+        
+        // 3秒後にステータスを非表示
+        setTimeout(() => {
+            voiceStatus.style.display = 'none';
+        }, 3000);
+        
+        // テキストエリアにフォーカスを戻す
+        promptInput.focus();
+    };
+    
+    // 音声認識エラーの処理
+    recognition.onerror = (event) => {
+        console.error('音声認識エラー:', event.error);
+        
+        isListening = false;
+        voiceInputBtn.textContent = '🎤';
+        voiceInputBtn.style.backgroundColor = '#28a745';
+        
+        let errorMessage = '音声認識でエラーが発生しました';
+        switch (event.error) {
+            case 'no-speech':
+                errorMessage = '音声が検出されませんでした';
+                break;
+            case 'audio-capture':
+                errorMessage = 'マイクにアクセスできません';
+                break;
+            case 'not-allowed':
+                errorMessage = 'マイクの使用が許可されていません';
+                break;
+            case 'network':
+                errorMessage = 'ネットワークエラーが発生しました';
+                break;
+            default:
+                errorMessage = `音声認識エラー: ${event.error}`;
+        }
+        
+        voiceStatus.textContent = '❌ ' + errorMessage;
+        voiceStatus.style.display = 'block';
+        
+        setTimeout(() => {
+            voiceStatus.style.display = 'none';
+        }, 5000);
+    };
+    
+    // 音声認識終了の処理
+    recognition.onend = () => {
+        isListening = false;
+        voiceInputBtn.textContent = '🎤';
+        voiceInputBtn.style.backgroundColor = '#28a745';
+        
+        if (voiceStatus.textContent === '🎤 音声を認識中...') {
+            voiceStatus.textContent = '⏹️ 音声認識が終了しました';
+            voiceStatus.style.display = 'block';
+            setTimeout(() => {
+                voiceStatus.style.display = 'none';
+            }, 2000);
+        }
+    };
+    
+    console.log('✅ 音声入力機能のイベントリスナー設定完了');
 }
 
 /**

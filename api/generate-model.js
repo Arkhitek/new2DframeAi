@@ -3,8 +3,11 @@ const fetch = require('node-fetch');
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {
-    console.log('=== AIモデル生成API開始 ===');
-    console.log('リクエストメソッド:', req.method);
+    // 強制的にログを出力（Vercelのログ問題を回避）
+    console.error('=== AIモデル生成API開始 ===');
+    console.error('リクエストメソッド:', req.method);
+    console.error('リクエストヘッダー:', JSON.stringify(req.headers));
+    console.error('リクエストボディサイズ:', req.body ? JSON.stringify(req.body).length : 0);
     
     if (req.method !== 'POST') {
         console.log('メソッドエラー: POST以外のリクエスト');
@@ -14,10 +17,11 @@ export default async function handler(req, res) {
 
     try {
         const { prompt: userPrompt, mode = 'new', currentModel } = req.body;
-        console.log('リクエストボディ解析:');
-        console.log('- ユーザープロンプト:', userPrompt);
-        console.log('- モード:', mode);
-        console.log('- 現在のモデル:', currentModel ? '存在' : 'なし');
+        console.error('リクエストボディ解析:');
+        console.error('- ユーザープロンプト:', userPrompt);
+        console.error('- モード:', mode);
+        console.error('- 現在のモデル:', currentModel ? '存在' : 'なし');
+        console.error('- 現在のモデル詳細:', currentModel ? JSON.stringify(currentModel, null, 2) : 'なし');
         
         if (!userPrompt) {
             console.log('エラー: 指示内容が空');
@@ -59,7 +63,9 @@ export default async function handler(req, res) {
         });
 
         const data = await mistralResponse.json();
-        console.log('Mistral AIレスポンス受信');
+        console.error('Mistral AIレスポンス受信');
+        console.error('レスポンスステータス:', mistralResponse.status);
+        console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
 
         if (!mistralResponse.ok) {
             console.error('Mistral AI Error:', data);
@@ -71,21 +77,22 @@ export default async function handler(req, res) {
              throw new Error("Mistral AIから予期しない形式のレスポンスがありました。");
         }
         const generatedText = data.choices[0].message.content;
-        console.log('AI生成テキスト受信:', generatedText.substring(0, 200) + '...');
+        console.error('AI生成テキスト受信:', generatedText.substring(0, 200) + '...');
+        console.error('AI生成テキスト全体:', generatedText);
 
         // 生成されたモデルの検証と修正
         try {
             let generatedModel = JSON.parse(generatedText);
             
-            // 編集モードの場合、境界条件を強制的に保持
-            if (mode === 'edit' && currentModel) {
-                console.log('=== 編集モード: 境界条件保持処理開始 ===');
-                console.log('ユーザープロンプト:', userPrompt);
-                console.log('現在のモデル情報:', JSON.stringify(currentModel, null, 2));
-                console.log('AI生成モデル:', JSON.stringify(generatedModel, null, 2));
+                    // 編集モードの場合、境界条件を強制的に保持
+                    if (mode === 'edit' && currentModel) {
+                        console.error('=== 編集モード: 境界条件保持処理開始 ===');
+                        console.error('ユーザープロンプト:', userPrompt);
+                        console.error('現在のモデル情報:', JSON.stringify(currentModel, null, 2));
+                        console.error('AI生成モデル:', JSON.stringify(generatedModel, null, 2));
                 
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
-                console.log('境界条件変更意図検出結果:', boundaryChangeIntent);
+                console.error('境界条件変更意図検出結果:', boundaryChangeIntent);
                 
                 // 第1次修正
                 generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
@@ -99,9 +106,9 @@ export default async function handler(req, res) {
                 // 修正されたモデルでJSONを再生成
                 generatedText = JSON.stringify(generatedModel, null, 2);
                 
-                // 最終テスト: 境界条件保持の検証
-                const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
-                console.log('最終テスト結果:', finalTestResult);
+                        // 最終テスト: 境界条件保持の検証
+                        const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                        console.error('最終テスト結果:', finalTestResult);
                 
                 if (!finalTestResult.success) {
                     console.error('境界条件保持に失敗しました。最終的な強制復元を実行します。');
@@ -110,7 +117,7 @@ export default async function handler(req, res) {
                     console.log('最終的な強制復元完了');
                 }
                 
-                console.log('=== 編集モード: 境界条件保持処理完了 ===');
+                        console.error('=== 編集モード: 境界条件保持処理完了 ===');
             }
             
             // 新規作成・編集両方で節点参照を検証
@@ -149,11 +156,30 @@ export default async function handler(req, res) {
             }]
         };
 
+        console.error('フロントエンドへのレスポンス送信:');
+        console.error('レスポンスサイズ:', JSON.stringify(responseForFrontend).length);
+        console.error('生成されたテキストサイズ:', generatedText.length);
+        console.error('生成されたテキスト（最初の500文字）:', generatedText.substring(0, 500));
+
         res.status(200).json(responseForFrontend);
 
     } catch (error) {
-        console.error('サーバーレス関数エラー:', error);
-        res.status(500).json({ error: error.message });
+        console.error('=== サーバーレス関数エラー ===');
+        console.error('エラータイプ:', error.constructor.name);
+        console.error('エラーメッセージ:', error.message);
+        console.error('エラースタック:', error.stack);
+        console.error('リクエスト情報:', {
+            method: req.method,
+            url: req.url,
+            headers: req.headers,
+            bodySize: req.body ? JSON.stringify(req.body).length : 0
+        });
+        
+        res.status(500).json({ 
+            error: error.message,
+            timestamp: new Date().toISOString(),
+            requestId: req.headers['x-request-id'] || 'unknown'
+        });
     }
 }
 
@@ -519,14 +545,14 @@ function detectBoundaryChangeIntent(userPrompt) {
     const hasChangeKeyword = changeKeywords.some(keyword => prompt.includes(keyword));
     const hasCoordinateChangeKeyword = coordinateChangeKeywords.some(keyword => prompt.includes(keyword));
     
-    console.log('境界条件変更意図検出:');
-    console.log('- 境界条件キーワード:', hasBoundaryKeyword);
-    console.log('- 変更キーワード:', hasChangeKeyword);
-    console.log('- 座標変更キーワード:', hasCoordinateChangeKeyword);
+    console.error('境界条件変更意図検出:');
+    console.error('- 境界条件キーワード:', hasBoundaryKeyword);
+    console.error('- 変更キーワード:', hasChangeKeyword);
+    console.error('- 座標変更キーワード:', hasCoordinateChangeKeyword);
     
     // 座標変更のキーワードがある場合は、境界条件変更ではないと判定
     if (hasCoordinateChangeKeyword && !hasBoundaryKeyword) {
-        console.log('座標変更のキーワードが検出されたため、境界条件変更ではないと判定');
+        console.error('座標変更のキーワードが検出されたため、境界条件変更ではないと判定');
         return {
             detected: false,
             target: '',
@@ -536,7 +562,7 @@ function detectBoundaryChangeIntent(userPrompt) {
     
     // スパン変更の場合は、境界条件変更ではない
     if (prompt.includes('スパン') && !hasBoundaryKeyword) {
-        console.log('スパン変更が検出されたため、境界条件変更ではないと判定');
+        console.error('スパン変更が検出されたため、境界条件変更ではないと判定');
         return {
             detected: false,
             target: '',
@@ -734,21 +760,21 @@ function validateSpanCount(model) {
 // 境界条件を強制的に保持する関数
 function forceBoundaryConditionPreservation(originalModel, generatedModel, boundaryChangeIntent = null) {
     if (!originalModel.nodes || !generatedModel.nodes) {
-        console.log('節点データが不足しているため、境界条件保持をスキップします');
+        console.error('節点データが不足しているため、境界条件保持をスキップします');
         return generatedModel;
     }
-    
+
     const preservedModel = JSON.parse(JSON.stringify(generatedModel)); // ディープコピー
     let boundaryChangesDetected = false;
     let boundaryChangesApplied = 0;
-    
-    console.log('=== 境界条件保持処理開始 ===');
-    console.log('元のモデルの境界条件:', originalModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
-    console.log('生成されたモデルの境界条件:', generatedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+
+    console.error('=== 境界条件保持処理開始 ===');
+    console.error('元のモデルの境界条件:', originalModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.error('生成されたモデルの境界条件:', generatedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
     
     // 境界条件変更の意図がない場合は、既存の境界条件を強制的に保持
     if (!boundaryChangeIntent || !boundaryChangeIntent.detected) {
-        console.log('境界条件変更の意図は検出されませんでした。強制的に境界条件を保持します。');
+        console.error('境界条件変更の意図は検出されませんでした。強制的に境界条件を保持します。');
         
         const minLength = Math.min(originalModel.nodes.length, preservedModel.nodes.length);
         
@@ -758,7 +784,7 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
             
             // 境界条件が変更されている場合は、元の境界条件を復元
             if (originalNode.s !== generatedNode.s) {
-                console.log(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalNode.s}`);
+                console.error(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalNode.s}`);
                 preservedModel.nodes[i].s = originalNode.s;
                 boundaryChangesDetected = true;
                 boundaryChangesApplied++;
@@ -766,18 +792,18 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
         }
         
         if (boundaryChangesApplied > 0) {
-            console.log(`境界条件の強制保持を適用しました: ${boundaryChangesApplied}個の節点を修正`);
+            console.error(`境界条件の強制保持を適用しました: ${boundaryChangesApplied}個の節点を修正`);
         } else {
-            console.log('境界条件の変更は検出されませんでした');
+            console.error('境界条件の変更は検出されませんでした');
         }
     } else {
         // 境界条件変更の意図がある場合の処理
-        console.log('境界条件変更の意図が検出されました:', boundaryChangeIntent);
+        console.error('境界条件変更の意図が検出されました:', boundaryChangeIntent);
         
         // 柱脚の境界条件変更の場合
         if (boundaryChangeIntent.target.includes('柱脚')) {
             const groundNodes = preservedModel.nodes.filter(node => node.y === 0);
-            console.log(`柱脚節点を検出: ${groundNodes.length}個`);
+            console.error(`柱脚節点を検出: ${groundNodes.length}個`);
             
             groundNodes.forEach(node => {
                 const nodeIndex = preservedModel.nodes.indexOf(node);
@@ -793,14 +819,14 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
                     preservedModel.nodes[nodeIndex].s = 'f';
                 }
                 
-                console.log(`柱脚節点の境界条件を変更: (${node.x},${node.y}) ${originalBoundary} → ${preservedModel.nodes[nodeIndex].s}`);
+                console.error(`柱脚節点の境界条件を変更: (${node.x},${node.y}) ${originalBoundary} → ${preservedModel.nodes[nodeIndex].s}`);
                 boundaryChangesApplied++;
             });
         }
     }
     
-    console.log('修正後のモデルの境界条件:', preservedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
-    console.log('=== 境界条件保持処理完了 ===');
+    console.error('修正後のモデルの境界条件:', preservedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.error('=== 境界条件保持処理完了 ===');
     
     return preservedModel;
 }

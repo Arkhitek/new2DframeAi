@@ -86,7 +86,12 @@ export default async function handler(req, res) {
                 const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
                 if (!validationResult.isValid) {
                     console.warn('境界条件保持の警告:', validationResult.warnings);
-                    // 警告は出しますが、レスポンスは返します
+                    
+                    // フォールバック: 境界条件保持が失敗した場合の最終的な安全網
+                    console.log('フォールバック機構を実行: 境界条件を最終的に復元します');
+                    generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
+                    generatedText = JSON.stringify(generatedModel, null, 2);
+                    console.log('フォールバック処理完了');
                 }
             }
         } catch (parseError) {
@@ -114,12 +119,17 @@ export default async function handler(req, res) {
 
 function createSystemPromptForBackend(mode = 'new', currentModel = null) {
     let prompt = `
-あなたは2Dフレーム構造解析モデルを生成する専門のアシスタントです。`;
+あなたは2Dフレーム構造解析モデルを生成する専門のアシスタントです。
+
+**重要**: 編集モードの場合、既存の節点の境界条件（s）を絶対に変更しないでください。`;
 
     if (mode === 'edit') {
         prompt += `
 現在のモデル情報を基に、ユーザーの編集指示に従ってモデルを更新してください。
-既存の構造を保持しつつ、指示された変更のみを適用してください。`;
+既存の構造を保持しつつ、指示された変更のみを適用してください。
+
+**絶対に守ってください**: 既存の節点の境界条件（s）は絶対に変更しないでください。
+座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です。`;
     } else {
         prompt += `
 ユーザーからの自然言語による指示に基づいて、新しい構造モデルを作成してください。`;
@@ -668,13 +678,22 @@ function validateSpanCount(model) {
 // 境界条件を強制的に保持する関数
 function forceBoundaryConditionPreservation(originalModel, generatedModel, boundaryChangeIntent = null) {
     if (!originalModel.nodes || !generatedModel.nodes) {
+        console.log('節点データが不足しているため、境界条件保持をスキップします');
         return generatedModel;
     }
     
     const preservedModel = JSON.parse(JSON.stringify(generatedModel)); // ディープコピー
+    let boundaryChangesDetected = false;
+    let boundaryChangesApplied = 0;
+    
+    console.log('=== 境界条件保持処理開始 ===');
+    console.log('元のモデルの境界条件:', originalModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('生成されたモデルの境界条件:', generatedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
     
     // 境界条件変更の意図がない場合は、既存の境界条件を強制的に保持
     if (!boundaryChangeIntent || !boundaryChangeIntent.detected) {
+        console.log('境界条件変更の意図は検出されませんでした。強制的に境界条件を保持します。');
+        
         const minLength = Math.min(originalModel.nodes.length, preservedModel.nodes.length);
         
         for (let i = 0; i < minLength; i++) {
@@ -685,10 +704,16 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
             if (originalNode.s !== generatedNode.s) {
                 console.log(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalNode.s}`);
                 preservedModel.nodes[i].s = originalNode.s;
+                boundaryChangesDetected = true;
+                boundaryChangesApplied++;
             }
         }
         
-        console.log('境界条件の強制保持を適用しました');
+        if (boundaryChangesApplied > 0) {
+            console.log(`境界条件の強制保持を適用しました: ${boundaryChangesApplied}個の節点を修正`);
+        } else {
+            console.log('境界条件の変更は検出されませんでした');
+        }
     } else {
         // 境界条件変更の意図がある場合の処理
         console.log('境界条件変更の意図が検出されました:', boundaryChangeIntent);
@@ -696,8 +721,12 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
         // 柱脚の境界条件変更の場合
         if (boundaryChangeIntent.target.includes('柱脚')) {
             const groundNodes = preservedModel.nodes.filter(node => node.y === 0);
+            console.log(`柱脚節点を検出: ${groundNodes.length}個`);
+            
             groundNodes.forEach(node => {
                 const nodeIndex = preservedModel.nodes.indexOf(node);
+                const originalBoundary = preservedModel.nodes[nodeIndex].s;
+                
                 if (boundaryChangeIntent.newCondition.includes('ピン')) {
                     preservedModel.nodes[nodeIndex].s = 'p';
                 } else if (boundaryChangeIntent.newCondition.includes('ローラー')) {
@@ -707,12 +736,61 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
                 } else if (boundaryChangeIntent.newCondition.includes('自由')) {
                     preservedModel.nodes[nodeIndex].s = 'f';
                 }
-                console.log(`柱脚節点の境界条件を変更: ${node.x},${node.y} → ${preservedModel.nodes[nodeIndex].s}`);
+                
+                console.log(`柱脚節点の境界条件を変更: (${node.x},${node.y}) ${originalBoundary} → ${preservedModel.nodes[nodeIndex].s}`);
+                boundaryChangesApplied++;
             });
         }
     }
     
+    console.log('修正後のモデルの境界条件:', preservedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('=== 境界条件保持処理完了 ===');
+    
     return preservedModel;
+}
+
+// フォールバック: 最終的な境界条件復元関数
+function finalBoundaryConditionRestore(originalModel, generatedModel, boundaryChangeIntent = null) {
+    if (!originalModel.nodes || !generatedModel.nodes) {
+        console.log('フォールバック: 節点データが不足しているため、処理をスキップします');
+        return generatedModel;
+    }
+    
+    const restoredModel = JSON.parse(JSON.stringify(generatedModel)); // ディープコピー
+    
+    console.log('=== フォールバック境界条件復元処理開始 ===');
+    console.log('元のモデルの境界条件:', originalModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('現在のモデルの境界条件:', generatedModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    
+    // 境界条件変更の意図がない場合は、全ての境界条件を強制的に復元
+    if (!boundaryChangeIntent || !boundaryChangeIntent.detected) {
+        console.log('フォールバック: 境界条件変更の意図がないため、全ての境界条件を強制的に復元します');
+        
+        const minLength = Math.min(originalModel.nodes.length, restoredModel.nodes.length);
+        let restoredCount = 0;
+        
+        for (let i = 0; i < minLength; i++) {
+            const originalNode = originalModel.nodes[i];
+            const currentNode = restoredModel.nodes[i];
+            
+            if (originalNode.s !== currentNode.s) {
+                console.log(`フォールバック: 節点${i + 1}の境界条件を復元: ${currentNode.s} → ${originalNode.s}`);
+                restoredModel.nodes[i].s = originalNode.s;
+                restoredCount++;
+            }
+        }
+        
+        console.log(`フォールバック: ${restoredCount}個の節点の境界条件を復元しました`);
+    } else {
+        console.log('フォールバック: 境界条件変更の意図があるため、適切な処理を実行します');
+        // 境界条件変更の意図がある場合は、forceBoundaryConditionPreservationと同じ処理
+        return forceBoundaryConditionPreservation(originalModel, generatedModel, boundaryChangeIntent);
+    }
+    
+    console.log('フォールバック復元後の境界条件:', restoredModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', '));
+    console.log('=== フォールバック境界条件復元処理完了 ===');
+    
+    return restoredModel;
 }
 
 // 境界条件の保持を検証する関数

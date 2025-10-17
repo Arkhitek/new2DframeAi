@@ -399,6 +399,18 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
   - **変更許可**: ユーザーが境界条件の変更を明示的に指示した場合のみ、その指示に従って境界条件を変更してください
   - **境界条件の変更指示の例**: 「柱脚を固定からピンに変更」「支点をローラーに変更」「節点○の境界条件を変更」「境界条件を○○に変更」など
   - **座標変更時の注意**: 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、座標のみを変更し、境界条件は絶対に変更しないでください
+- **強制変位・回転の扱い（絶対に守ってください）**:
+  - **最重要**: 強制変位・回転の変更指示がない場合は、既存の節点の強制変位（dx_forced, dy_forced, r_forced）を絶対に変更しないでください
+  - **絶対に禁止**: 座標変更や境界条件変更の指示だけで強制変位・回転を変更することは禁止です
+  - **変更許可**: ユーザーが強制変位・回転の変更を明示的に指示した場合のみ、その指示に従って変更してください
+  - **強制変位・回転の変更指示の例**: 「節点○の強制変位を○○mmに変更」「節点○の強制回転を○○radに変更」「強制変位を○○に変更」など
+  - **座標変更時の注意**: 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、座標のみを変更し、強制変位・回転は絶対に変更しないでください
+- **部材の物性値と接合条件の扱い（絶対に守ってください）**:
+  - **最重要**: 部材の物性値（E, F, I, A, Z）と接合条件（i_conn, j_conn）の変更指示がない場合は、既存の値を絶対に変更しないでください
+  - **絶対に禁止**: 座標変更や構造変更の指示だけで部材の物性値や接合条件を変更することは禁止です
+  - **変更許可**: ユーザーが物性値や接合条件の変更を明示的に指示した場合のみ、その指示に従って変更してください
+  - **物性値変更指示の例**: 「部材の断面を○○に変更」「弾性係数を○○に変更」「接合条件を○○に変更」など
+  - **座標変更時の注意**: 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、節点参照（i, j）のみを変更し、物性値と接合条件は絶対に変更しないでください
 - 新しく追加する節点や部材は、既存の番号の続きから開始してください
 - 削除する場合は、後続の番号を詰める必要はありません
 - **節点の座標変更の場合**:
@@ -437,7 +449,7 @@ function createEditPrompt(userPrompt, currentModel) {
     }
     
     if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
-        editPrompt += `現在の節点情報（境界条件を必ず保持してください）:\n`;
+        editPrompt += `現在の節点情報（境界条件と強制変位を必ず保持してください）:\n`;
         currentModel.nodes.forEach((node, index) => {
             const supportText = {
                 'f': '自由',
@@ -445,7 +457,9 @@ function createEditPrompt(userPrompt, currentModel) {
                 'x': '固定',
                 'r': 'ローラー'
             }[node.s] || node.s;
-            editPrompt += `節点${index + 1}: (${node.x}, ${node.y}) - ${supportText}(${node.s})\n`;
+            const forcedDisplacements = node.dx_forced || node.dy_forced || node.r_forced ? 
+                ` (強制変位: dx=${node.dx_forced || 0}, dy=${node.dy_forced || 0}, r=${node.r_forced || 0})` : '';
+            editPrompt += `節点${index + 1}: (${node.x}, ${node.y}) - ${supportText}(${node.s})${forcedDisplacements}\n`;
         });
         editPrompt += `\n`;
         
@@ -458,7 +472,11 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を絶対に変更しないでください\n`;
         editPrompt += `  - 座標変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
         editPrompt += `  - 境界条件の変更指示がある場合のみ、その指示に従って境界条件を変更してください\n`;
-        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と元の境界条件を持つデータを出力してください\n`;
+        editPrompt += `- **強制変位・回転の扱い（絶対に守ってください）**: \n`;
+        editPrompt += `  - 強制変位・回転の変更指示がない場合は、既存の節点の強制変位（dx_forced, dy_forced, r_forced）を絶対に変更しないでください\n`;
+        editPrompt += `  - 座標変更や境界条件変更の指示だけで強制変位・回転を変更することは絶対に禁止です\n`;
+        editPrompt += `  - 強制変位・回転の変更指示がある場合のみ、その指示に従って変更してください\n`;
+        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と元の境界条件・強制変位を持つデータを出力してください\n`;
         editPrompt += `- 既存の節点を削除する場合は、その節点を出力しないでください\n`;
         editPrompt += `\n`;
     }
@@ -468,14 +486,18 @@ function createEditPrompt(userPrompt, currentModel) {
         currentModel.members.forEach((member, index) => {
             const length = member.length ? ` (長さ: ${member.length.toFixed(2)}m)` : '';
             const section = member.sectionName ? ` (断面: ${member.sectionName})` : '';
-            editPrompt += `部材${index + 1}: 節点${member.i} → 節点${member.j}${length}${section}\n`;
+            const properties = member.E ? ` (E=${member.E}, F=${member.F}, I=${member.I}, A=${member.A}, Z=${member.Z})` : '';
+            const connections = member.i_conn ? ` (接合: i=${member.i_conn}, j=${member.j_conn})` : '';
+            editPrompt += `部材${index + 1}: 節点${member.i} → 節点${member.j}${length}${section}${properties}${connections}\n`;
         });
         editPrompt += `\n`;
         
         editPrompt += `部材修正時の注意事項:\n`;
         editPrompt += `- 既存の部材を修正する場合は、同じ配列位置（1番目、2番目など）で出力してください\n`;
         editPrompt += `- 節点番号（i, j）を変更することで部材の長さや位置を修正できます\n`;
-        editPrompt += `- 例: 1番目の部材の長さを変更する場合、members配列の1番目として新しい節点番号を持つデータを出力してください\n`;
+        editPrompt += `- **重要**: 既存の部材の物性値（E, F, I, A, Z）と接合条件（i_conn, j_conn）は必ず保持してください\n`;
+        editPrompt += `- 物性値や接合条件を変更する指示がない限り、既存の値をそのまま使用してください\n`;
+        editPrompt += `- 例: 1番目の部材の長さを変更する場合、members配列の1番目として新しい節点番号を持つデータを出力し、物性値は既存のものを保持してください\n`;
         editPrompt += `- 既存の部材を削除する場合は、その部材を出力しないでください\n`;
         editPrompt += `\n`;
     }
@@ -500,9 +522,12 @@ function createEditPrompt(userPrompt, currentModel) {
     editPrompt += `**最終確認事項（絶対に守ってください）**:\n`;
     editPrompt += `- 境界条件変更の指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
     editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
-    editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
+    editPrompt += `- 強制変位・回転変更の指示がない場合は、既存の節点の強制変位（dx_forced, dy_forced, r_forced）を必ず保持してください\n`;
+    editPrompt += `- 座標変更や境界条件変更の指示だけで強制変位・回転を変更することは絶対に禁止です\n`;
+    editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）と強制変位を元の値のまま出力してください\n`;
     editPrompt += `- 各節点の境界条件は以下の通りです: ${currentModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', ')}\n`;
-    editPrompt += `- これらの境界条件値を絶対に変更しないでください\n`;
+    editPrompt += `- 各節点の強制変位は以下の通りです: ${currentModel.nodes.map((n, i) => `節点${i+1}=(${n.dx_forced || 0},${n.dy_forced || 0},${n.r_forced || 0})`).join(', ')}\n`;
+    editPrompt += `- これらの境界条件値と強制変位値を絶対に変更しないでください\n`;
     
     return editPrompt;
 }

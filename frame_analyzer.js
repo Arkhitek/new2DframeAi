@@ -14481,9 +14481,32 @@ function integrateEditData(newState) {
         console.log(`🔍 部材${i + 1}処理中: 既存=`, existingMember, '新規=', newMember);
         
         if (newMember) {
-            // 新規部材がある場合は新規部材を使用（修正された部材または新規部材）
-            console.log(`🔍 部材${i + 1}使用: 新規部材`, newMember);
-            integratedMembers.push(newMember);
+            // 新規部材がある場合は、既存の物性値を保持して統合
+            let integratedMember = { ...newMember }; // 新規部材の基本情報をコピー
+            
+            // 既存部材がある場合は、物性値と接合条件を保持
+            if (existingMember) {
+                // 物性値を既存のものから保持
+                if (existingMember.E !== undefined) integratedMember.E = existingMember.E;
+                if (existingMember.F !== undefined) integratedMember.F = existingMember.F;
+                if (existingMember.I !== undefined) integratedMember.I = existingMember.I;
+                if (existingMember.A !== undefined) integratedMember.A = existingMember.A;
+                if (existingMember.Z !== undefined) integratedMember.Z = existingMember.Z;
+                
+                // 接合条件を既存のものから保持
+                if (existingMember.i_conn !== undefined) integratedMember.i_conn = existingMember.i_conn;
+                if (existingMember.j_conn !== undefined) integratedMember.j_conn = existingMember.j_conn;
+                
+                // 断面情報も既存のものから保持
+                if (existingMember.sectionName !== undefined) integratedMember.sectionName = existingMember.sectionName;
+                if (existingMember.sectionAxis !== undefined) integratedMember.sectionAxis = existingMember.sectionAxis;
+                
+                console.log(`🔍 部材${i + 1}統合: 新規部材に既存の物性値を適用`, integratedMember);
+            } else {
+                console.log(`🔍 部材${i + 1}使用: 新規部材（既存部材なし）`, integratedMember);
+            }
+            
+            integratedMembers.push(integratedMember);
         } else if (existingMember) {
             // 新規部材がなく既存部材がある場合は既存部材を保持
             console.log(`🔍 部材${i + 1}保持: 既存部材`, existingMember);
@@ -14875,13 +14898,20 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new')
                     console.log(`🔍 非柱脚節点 ${index + 1}: 既存の境界条件を保持: ${support}`);
                 }
                 
+                // 既存の節点データから強制変位・回転情報を取得
+                const existingNode = currentModel && currentModel.nodes && currentModel.nodes[index];
+                const dx_forced = existingNode ? (existingNode.dx_forced || 0) : 0;
+                const dy_forced = existingNode ? (existingNode.dy_forced || 0) : 0;
+                const r_forced = existingNode ? (existingNode.r_forced || 0) : 0;
+                
                 console.log(`🔍 節点 ${index + 1} 境界条件決定:`, {
                     y: n.y,
                     isFoundationNode: isFoundationNode,
                     originalSupport: originalSupport,
                     foundationCondition: foundationCondition,
                     finalSupport: support,
-                    changedFromOriginal: originalSupport !== support
+                    changedFromOriginal: originalSupport !== support,
+                    forcedDisplacements: { dx_forced, dy_forced, r_forced }
                 });
                 
                 // 柱脚節点の詳細ログ
@@ -14892,7 +14922,8 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new')
                         newSupport: support,
                         y: n.y,
                         foundationCondition: foundationCondition,
-                        isFoundationNode: isFoundationNode
+                        isFoundationNode: isFoundationNode,
+                        forcedDisplacements: { dx_forced, dy_forced, r_forced }
                     });
                 } else {
                     console.log(`🔍 非柱脚節点 ${index + 1}:`, {
@@ -14900,7 +14931,8 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new')
                         convertedSupport: originalSupport,
                         newSupport: support,
                         y: n.y,
-                        isFoundationNode: isFoundationNode
+                        isFoundationNode: isFoundationNode,
+                        forcedDisplacements: { dx_forced, dy_forced, r_forced }
                     });
                 }
                 
@@ -14908,9 +14940,9 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new')
                     x: n.x, 
                     y: n.y, 
                     support: support, 
-                    dx_forced: 0, 
-                    dy_forced: 0, 
-                    r_forced: 0 
+                    dx_forced: dx_forced, 
+                    dy_forced: dy_forced, 
+                    r_forced: r_forced 
                 };
             }),
             members: modelData.members.map(m => ({

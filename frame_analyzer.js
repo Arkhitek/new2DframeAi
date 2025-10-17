@@ -14335,7 +14335,7 @@ function setupAIModelGenerationListeners() {
                 let currentModel = null;
                 if (selectedMode === 'edit') {
                     console.log('🔍 現在のモデル情報を完全取得中...');
-                    currentModel = getCurrentModelInfo();
+                    currentModel = getCurrentModelData();
                     console.log('🔍 追加編集モード: 現在のモデル情報を取得しました', currentModel);
                 }
                 

@@ -60,9 +60,18 @@ export default async function handler(req, res) {
         }
         const generatedText = data.choices[0].message.content;
 
-        // 生成されたモデルの検証
+        // 生成されたモデルの検証と修正
         try {
-            const generatedModel = JSON.parse(generatedText);
+            let generatedModel = JSON.parse(generatedText);
+            
+            // 編集モードの場合、境界条件を強制的に保持
+            if (mode === 'edit' && currentModel) {
+                const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+                generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                
+                // 修正されたモデルでJSONを再生成
+                generatedText = JSON.stringify(generatedModel, null, 2);
+            }
             
             // 新規作成・編集両方で節点参照を検証
             const nodeReferenceValidation = validateNodeReferences(generatedModel);
@@ -352,7 +361,7 @@ function createEditPrompt(userPrompt, currentModel) {
     }
     
     if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
-        editPrompt += `現在の節点情報:\n`;
+        editPrompt += `現在の節点情報（境界条件を必ず保持してください）:\n`;
         currentModel.nodes.forEach((node, index) => {
             const supportText = {
                 'f': '自由',
@@ -360,9 +369,11 @@ function createEditPrompt(userPrompt, currentModel) {
                 'x': '固定',
                 'r': 'ローラー'
             }[node.s] || node.s;
-            editPrompt += `節点${index + 1}: (${node.x}, ${node.y}) - ${supportText}\n`;
+            editPrompt += `節点${index + 1}: (${node.x}, ${node.y}) - ${supportText}(${node.s})\n`;
         });
         editPrompt += `\n`;
+        
+        editPrompt += `**重要**: 上記の境界条件(${currentModel.nodes.map(n => n.s).join(', ')})を必ず保持してください\n\n`;
         
         editPrompt += `節点修正時の注意事項:\n`;
         editPrompt += `- 既存の節点を修正する場合は、同じ配列位置（1番目、2番目など）で出力してください\n`;
@@ -410,10 +421,12 @@ function createEditPrompt(userPrompt, currentModel) {
     }
     
     editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。\n\n`;
-    editPrompt += `**最終確認事項**:\n`;
+    editPrompt += `**最終確認事項（絶対に守ってください）**:\n`;
     editPrompt += `- 境界条件変更の指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
     editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
     editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
+    editPrompt += `- 各節点の境界条件は以下の通りです: ${currentModel.nodes.map((n, i) => `節点${i+1}=${n.s}`).join(', ')}\n`;
+    editPrompt += `- これらの境界条件値を絶対に変更しないでください\n`;
     
     return editPrompt;
 }
@@ -650,6 +663,56 @@ function validateSpanCount(model) {
         isValid: errors.length === 0,
         errors: errors
     };
+}
+
+// 境界条件を強制的に保持する関数
+function forceBoundaryConditionPreservation(originalModel, generatedModel, boundaryChangeIntent = null) {
+    if (!originalModel.nodes || !generatedModel.nodes) {
+        return generatedModel;
+    }
+    
+    const preservedModel = JSON.parse(JSON.stringify(generatedModel)); // ディープコピー
+    
+    // 境界条件変更の意図がない場合は、既存の境界条件を強制的に保持
+    if (!boundaryChangeIntent || !boundaryChangeIntent.detected) {
+        const minLength = Math.min(originalModel.nodes.length, preservedModel.nodes.length);
+        
+        for (let i = 0; i < minLength; i++) {
+            const originalNode = originalModel.nodes[i];
+            const generatedNode = preservedModel.nodes[i];
+            
+            // 境界条件が変更されている場合は、元の境界条件を復元
+            if (originalNode.s !== generatedNode.s) {
+                console.log(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalNode.s}`);
+                preservedModel.nodes[i].s = originalNode.s;
+            }
+        }
+        
+        console.log('境界条件の強制保持を適用しました');
+    } else {
+        // 境界条件変更の意図がある場合の処理
+        console.log('境界条件変更の意図が検出されました:', boundaryChangeIntent);
+        
+        // 柱脚の境界条件変更の場合
+        if (boundaryChangeIntent.target.includes('柱脚')) {
+            const groundNodes = preservedModel.nodes.filter(node => node.y === 0);
+            groundNodes.forEach(node => {
+                const nodeIndex = preservedModel.nodes.indexOf(node);
+                if (boundaryChangeIntent.newCondition.includes('ピン')) {
+                    preservedModel.nodes[nodeIndex].s = 'p';
+                } else if (boundaryChangeIntent.newCondition.includes('ローラー')) {
+                    preservedModel.nodes[nodeIndex].s = 'r';
+                } else if (boundaryChangeIntent.newCondition.includes('固定')) {
+                    preservedModel.nodes[nodeIndex].s = 'x';
+                } else if (boundaryChangeIntent.newCondition.includes('自由')) {
+                    preservedModel.nodes[nodeIndex].s = 'f';
+                }
+                console.log(`柱脚節点の境界条件を変更: ${node.x},${node.y} → ${preservedModel.nodes[nodeIndex].s}`);
+            });
+        }
+    }
+    
+    return preservedModel;
 }
 
 // 境界条件の保持を検証する関数

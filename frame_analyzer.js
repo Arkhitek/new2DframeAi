@@ -13618,6 +13618,10 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         }
 
         // APIリクエストを送信（AbortControllerを追加）
+        console.error('🔍 サーバーサイドAPI呼び出し開始:');
+        console.error('🔍 API_URL:', API_URL);
+        console.error('🔍 リクエストボディ:', JSON.stringify(requestBody, null, 2));
+        
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
@@ -13627,8 +13631,14 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             signal: aiGenerationAbortController.signal
         });
 
+        console.error('🔍 サーバーレスポンス受信:');
+        console.error('🔍 レスポンスステータス:', response.status);
+        console.error('🔍 レスポンスOK:', response.ok);
+        console.error('🔍 レスポンスヘッダー:', response.headers);
+
         // 仲介役からの返答を受け取ります
         const data = await response.json();
+        console.error('🔍 レスポンスデータ:', JSON.stringify(data, null, 2));
 
         // 返答に問題があった場合のエラー処理
         if (!response.ok) {
@@ -14674,10 +14684,14 @@ function parseFoundationCondition(naturalLanguageInput, mode = 'new') {
     });
     
     if (!hasFoundationMention) {
-        // 新規作成モードではデフォルトで固定、編集モードでは自由
-        const defaultValue = mode === 'new' ? 'fixed' : 'free';
-        console.log(`🔍 柱脚関連キーワードが見つからないため ${defaultValue} を返す (モード: ${mode})`);
-        return defaultValue;
+        // 編集モードでは境界条件の変更指示がない場合は既存の境界条件を保持するため、nullを返す
+        if (mode === 'edit') {
+            console.log(`🔍 編集モード: 境界条件の変更指示がないため、既存の境界条件を保持します`);
+            return null; // 既存の境界条件を保持することを示す
+        }
+        // 新規作成モードではデフォルトで固定
+        console.log(`🔍 新規作成モード: 柱脚関連キーワードが見つからないため fixed を返す`);
+        return 'fixed';
     }
     
     // 境界条件のキーワードを検索
@@ -14844,14 +14858,30 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new')
                 // Y座標が0の節点（地面に接する節点）の境界条件を自然言語の指示に従って設定
                 const isFoundationNode = Math.abs(n.y) < 0.01; // Y座標が0に近い節点
                 const originalSupport = convertSupportCondition(n.s);
-                const support = isFoundationNode ? foundationCondition : (originalSupport || 'free');
+                
+                // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
+                let support;
+                if (isFoundationNode && foundationCondition === null) {
+                    // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
+                    support = originalSupport || 'free';
+                    console.log(`🔍 柱脚節点 ${index + 1}: 境界条件変更指示がないため既存の境界条件を保持: ${support}`);
+                } else if (isFoundationNode) {
+                    // 境界条件の変更指示がある場合はその指示に従う
+                    support = foundationCondition;
+                    console.log(`🔍 柱脚節点 ${index + 1}: 境界条件変更指示に従って変更: ${originalSupport} → ${support}`);
+                } else {
+                    // 非柱脚節点は既存の境界条件を保持
+                    support = originalSupport || 'free';
+                    console.log(`🔍 非柱脚節点 ${index + 1}: 既存の境界条件を保持: ${support}`);
+                }
                 
                 console.log(`🔍 節点 ${index + 1} 境界条件決定:`, {
                     y: n.y,
                     isFoundationNode: isFoundationNode,
                     originalSupport: originalSupport,
                     foundationCondition: foundationCondition,
-                    finalSupport: support
+                    finalSupport: support,
+                    changedFromOriginal: originalSupport !== support
                 });
                 
                 // 柱脚節点の詳細ログ

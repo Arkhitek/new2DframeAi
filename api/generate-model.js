@@ -308,17 +308,20 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 編集時は以下の点に注意してください:
 - 既存の節点番号と部材番号の連続性を保持してください
 - 既存の構造の基本形状は維持し、指示された変更のみを適用してください
-- **境界条件の扱い**: 
-  - ユーザーが境界条件の変更を明示的に指示した場合のみ、その指示に従って境界条件を変更してください
-  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を必ず保持してください
-  - 境界条件の変更指示の例：「柱脚を固定からピンに変更」「支点をローラーに変更」「節点○の境界条件を変更」など
+- **境界条件の扱い（絶対に守ってください）**: 
+  - **最重要**: 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を絶対に変更しないでください
+  - **絶対に禁止**: 座標変更や部材変更の指示だけで境界条件を変更することは禁止です
+  - **変更許可**: ユーザーが境界条件の変更を明示的に指示した場合のみ、その指示に従って境界条件を変更してください
+  - **境界条件の変更指示の例**: 「柱脚を固定からピンに変更」「支点をローラーに変更」「節点○の境界条件を変更」「境界条件を○○に変更」など
+  - **座標変更時の注意**: 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、座標のみを変更し、境界条件は絶対に変更しないでください
 - 新しく追加する節点や部材は、既存の番号の続きから開始してください
 - 削除する場合は、後続の番号を詰める必要はありません
 - **節点の座標変更の場合**:
   - 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、既存の節点の座標を変更してください
   - 既存の節点の座標（x, y）を新しい座標に変更することで、構造の形状を修正できます
+  - **絶対に守ってください**: 座標を変更する際も、境界条件（s）は必ず元の値を保持してください
   - 既存の節点を修正する場合は、同じ配列位置で節点データを出力してください
-  - 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標を持つデータを出力してください
+  - 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と元の境界条件を持つデータを出力してください
 - **部材の長さ変更や位置変更の場合**:
   - 「スパンを○mに変更」「梁の長さを○mに変更」などの指示では、既存の部材の節点番号を変更して長さを調整してください
   - 既存の部材の節点番号（i, j）を新しい座標の節点に変更することで、部材の長さや位置を修正できます
@@ -342,6 +345,10 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `- 変更対象: ${boundaryChangeIntent.target}\n`;
         editPrompt += `- 新しい境界条件: ${boundaryChangeIntent.newCondition}\n`;
         editPrompt += `- 上記の指示に従って境界条件を変更してください\n\n`;
+    } else {
+        editPrompt += `**重要: 境界条件変更の指示は検出されませんでした**\n`;
+        editPrompt += `- 既存の節点の境界条件（s）を必ず保持してください\n`;
+        editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n\n`;
     }
     
     if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
@@ -360,10 +367,11 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `節点修正時の注意事項:\n`;
         editPrompt += `- 既存の節点を修正する場合は、同じ配列位置（1番目、2番目など）で出力してください\n`;
         editPrompt += `- 座標（x, y）を変更することで節点の位置を修正できます\n`;
-        editPrompt += `- **境界条件の扱い**: \n`;
+        editPrompt += `- **境界条件の扱い（絶対に守ってください）**: \n`;
+        editPrompt += `  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を絶対に変更しないでください\n`;
+        editPrompt += `  - 座標変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
         editPrompt += `  - 境界条件の変更指示がある場合のみ、その指示に従って境界条件を変更してください\n`;
-        editPrompt += `  - 境界条件の変更指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
-        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と適切な境界条件を持つデータを出力してください\n`;
+        editPrompt += `- 例: 1番目の節点の座標を変更する場合、nodes配列の1番目として新しい座標と元の境界条件を持つデータを出力してください\n`;
         editPrompt += `- 既存の節点を削除する場合は、その節点を出力しないでください\n`;
         editPrompt += `\n`;
     }
@@ -401,7 +409,11 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `\n`;
     }
     
-    editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。`;
+    editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。\n\n`;
+    editPrompt += `**最終確認事項**:\n`;
+    editPrompt += `- 境界条件変更の指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
+    editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
+    editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
     
     return editPrompt;
 }
@@ -421,6 +433,11 @@ function detectBoundaryChangeIntent(userPrompt) {
         'change', 'modify', 'update'
     ];
     
+    // 座標変更のキーワード（境界条件変更ではない）
+    const coordinateChangeKeywords = [
+        'スパン', '長さ', '高さ', '座標', '位置', '移動', 'span', 'length', 'height', 'coordinate', 'position'
+    ];
+    
     // 境界条件の種類
     const conditionMap = {
         '固定': 'x', 'fixed': 'x',
@@ -437,6 +454,16 @@ function detectBoundaryChangeIntent(userPrompt) {
     // キーワードの組み合わせをチェック
     const hasBoundaryKeyword = boundaryKeywords.some(keyword => prompt.includes(keyword));
     const hasChangeKeyword = changeKeywords.some(keyword => prompt.includes(keyword));
+    const hasCoordinateChangeKeyword = coordinateChangeKeywords.some(keyword => prompt.includes(keyword));
+    
+    // 座標変更のキーワードがある場合は、境界条件変更ではないと判定
+    if (hasCoordinateChangeKeyword && !hasBoundaryKeyword) {
+        return {
+            detected: false,
+            target: '',
+            newCondition: ''
+        };
+    }
     
     if (hasBoundaryKeyword && hasChangeKeyword) {
         detected = true;
@@ -446,6 +473,8 @@ function detectBoundaryChangeIntent(userPrompt) {
             target = '柱脚（Y座標=0の節点）';
         } else if (prompt.includes('支点')) {
             target = '支点';
+        } else if (prompt.includes('節点')) {
+            target = '指定された節点';
         } else {
             target = '指定された節点';
         }

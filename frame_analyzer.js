@@ -4616,7 +4616,15 @@ document.addEventListener('DOMContentLoaded', () => {
             let sectionAxis = null;
             if (row.dataset.sectionInfo) {
                 try {
-                    sectionInfo = JSON.parse(decodeURIComponent(row.dataset.sectionInfo));
+                    // encodeされている場合とされていない場合の両方に対応
+                    const sectionInfoStr = row.dataset.sectionInfo;
+                    if (sectionInfoStr.startsWith('%7B') || sectionInfoStr.startsWith('%')) {
+                        // URLエンコードされている場合
+                        sectionInfo = JSON.parse(decodeURIComponent(sectionInfoStr));
+                    } else {
+                        // エンコードされていない場合
+                        sectionInfo = JSON.parse(sectionInfoStr);
+                    }
                 } catch (error) {
                     console.warn(`部材 ${index + 1}: 断面情報のパースに失敗`, error);
                 }

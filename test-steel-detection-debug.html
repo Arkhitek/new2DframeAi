@@ -129,6 +129,8 @@
             
             <div class="test-examples">
                 <button class="example-button" onclick="setTestInput('H-100×100×6×8の梁で門型ラーメンを作成')">H-100×100×6×8の梁で門型ラーメンを作成</button>
+                <button class="example-button" onclick="setTestInput('柱部材をH-200×100に変更')">柱部材をH-200×100に変更</button>
+                <button class="example-button" onclick="setTestInput('梁の断面をH-300×150に変更')">梁の断面をH-300×150に変更</button>
                 <button class="example-button" onclick="setTestInput('柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください')">柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください</button>
                 <button class="example-button" onclick="setTestInput('□100×100×6の角パイプを使用')">□100×100×6の角パイプを使用</button>
                 <button class="example-button" onclick="setTestInput('φ150×6の円パイプで構造を作成')">φ150×6の円パイプで構造を作成</button>
@@ -293,7 +295,31 @@
                     
                     let output = `入力: ${input}\n\n`;
                     output += `検出結果:\n`;
-                    output += JSON.stringify(result, null, 2);
+                    
+                    if (result.steelData && result.steelData.length > 0) {
+                        output += `鋼材断面データ (${result.steelData.length}個):\n`;
+                        result.steelData.forEach((steel, index) => {
+                            output += `  ${index + 1}. ${steel.sectionName} (${steel.sectionSpec})\n`;
+                            if (steel.memberType) {
+                                output += `     部材タイプ: ${steel.memberType} (${steel.memberTypeMatch})\n`;
+                            }
+                            output += `     断面タイプ: ${steel.sectionType}\n`;
+                            output += `     軸方向: ${steel.axisDirection}\n`;
+                        });
+                    } else {
+                        output += `鋼材断面データ: 検出されませんでした\n`;
+                    }
+                    
+                    if (result.memberTypes && result.memberTypes.length > 0) {
+                        output += `\n部材タイプ (${result.memberTypes.length}個):\n`;
+                        result.memberTypes.forEach((memberType, index) => {
+                            output += `  ${index + 1}. ${memberType.type} (${memberType.match})\n`;
+                        });
+                    } else {
+                        output += `\n部材タイプ: 検出されませんでした\n`;
+                    }
+                    
+                    output += `\n拡張されたプロンプト:\n${result.prompt}`;
                     
                     resultDiv.textContent = output;
                     resultDiv.style.display = 'block';

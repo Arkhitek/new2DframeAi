@@ -14485,21 +14485,55 @@ async function detectAndFetchSteelProperties(prompt) {
     
     console.log('🔍 検出された部材タイプ:', detectedMemberTypes);
     
-    // 各パターンで検索
+    // 鋼材断面と部材タイプの関連付け
+    const steelMemberAssociations = [];
+    
+    // 各鋼材断面について、最も近い部材タイプを見つける
     steelPatterns.forEach((pattern, index) => {
         const matches = [...prompt.matchAll(pattern)];
         matches.forEach(match => {
             const steelSpec = match[0];
             const dimensions = match.slice(1).map(d => parseFloat(d));
+            const steelPosition = match.index;
             
-            console.log(`🔍 鋼材断面を検出: ${steelSpec}`, dimensions);
+            console.log(`🔍 鋼材断面を検出: ${steelSpec}`, dimensions, `位置: ${steelPosition}`);
             
-            detectedSteels.push({
-                spec: steelSpec,
+            // この鋼材断面に最も近い部材タイプを見つける
+            let closestMemberType = null;
+            let minDistance = Infinity;
+            
+            detectedMemberTypes.forEach(memberType => {
+                const distance = Math.abs(steelPosition - memberType.position);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestMemberType = memberType;
+                }
+            });
+            
+            // 関連付けを作成
+            steelMemberAssociations.push({
+                steelSpec: steelSpec,
                 dimensions: dimensions,
                 type: getSteelTypeFromPattern(index),
-                originalMatch: match
+                originalMatch: match,
+                memberType: closestMemberType,
+                distance: minDistance
             });
+            
+            console.log(`🔍 鋼材断面「${steelSpec}」と部材タイプ「${closestMemberType?.type || 'none'}」を関連付け (距離: ${minDistance})`);
+        });
+    });
+    
+    console.log('🔍 鋼材断面と部材タイプの関連付け:', steelMemberAssociations);
+    
+    // 関連付けされた鋼材断面をdetectedSteelsに追加
+    steelMemberAssociations.forEach(association => {
+        detectedSteels.push({
+            spec: association.steelSpec,
+            dimensions: association.dimensions,
+            type: association.type,
+            originalMatch: association.originalMatch,
+            memberType: association.memberType
         });
     });
     
@@ -14562,6 +14596,14 @@ async function fetchSteelProperties(steelInfo) {
     try {
         // steel_selector.jsの関数を呼び出して断面性能を取得
         const properties = await findSteelPropertiesFromLibrary(steelInfo);
+        
+        // 部材タイプ情報を追加
+        if (properties && steelInfo.memberType) {
+            properties.memberType = steelInfo.memberType.type;
+            properties.memberTypeMatch = steelInfo.memberType.match;
+            console.log(`🔍 部材タイプ情報を追加: ${properties.memberType} (${properties.memberTypeMatch})`);
+        }
+        
         return properties;
     } catch (error) {
         console.error('断面性能取得エラー:', error);
@@ -15119,21 +15161,42 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             }
         });
     } else {
-        // 従来の処理：検出された鋼材断面情報をすべての部材に適用
-        console.log('🔍 従来の処理：すべての部材に断面情報を適用');
-        const steelDataToApply = steelDataArray[0]; // 最初の鋼材断面を使用
+        // 鋼材データに部材タイプ情報が含まれている場合の処理
+        const steelDataWithMemberType = steelDataArray.filter(steel => steel.memberType);
         
-        if (steelDataToApply && steelDataToApply.sectionName) {
-            console.log(`🔍 鋼材断面「${steelDataToApply.sectionName}」をすべての部材に適用`);
+        if (steelDataWithMemberType.length > 0) {
+            console.log('🔍 鋼材データに含まれる部材タイプ情報を使用');
             
-            // すべての部材に同じ断面情報を適用
-            for (let i = 0; i < rows.length; i++) {
-                setMemberSectionInfoFromAI(i, steelDataToApply);
-            }
-            
-            console.log(`✅ ${rows.length}個の部材に断面情報を設定完了`);
+            steelDataWithMemberType.forEach(steelData => {
+                const targetType = steelData.memberType;
+                console.log(`🔍 ${targetType}部材に断面情報を設定:`, steelData);
+                
+                // 該当する部材タイプの部材を検索して設定
+                for (let i = 0; i < rows.length; i++) {
+                    const actualMemberType = getMemberType(i);
+                    if (actualMemberType === targetType) {
+                        console.log(`🔍 部材${i}は${targetType}部材です。断面情報を設定します。`);
+                        setMemberSectionInfoFromAI(i, steelData);
+                    }
+                }
+            });
         } else {
-            console.warn('適用可能な鋼材断面情報がありません');
+            // 従来の処理：検出された鋼材断面情報をすべての部材に適用
+            console.log('🔍 従来の処理：すべての部材に断面情報を適用');
+            const steelDataToApply = steelDataArray[0]; // 最初の鋼材断面を使用
+            
+            if (steelDataToApply && steelDataToApply.sectionName) {
+                console.log(`🔍 鋼材断面「${steelDataToApply.sectionName}」をすべての部材に適用`);
+                
+                // すべての部材に同じ断面情報を適用
+                for (let i = 0; i < rows.length; i++) {
+                    setMemberSectionInfoFromAI(i, steelDataToApply);
+                }
+                
+                console.log(`✅ ${rows.length}個の部材に断面情報を設定完了`);
+            } else {
+                console.warn('適用可能な鋼材断面情報がありません');
+            }
         }
     }
 }

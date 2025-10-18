@@ -15734,6 +15734,12 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                 console.log(`⚠️ [バックアップ] 部材${index + 1}のdataset.sectionInfoが存在しません`);
             }
             
+            // datasetから取得できない場合は、currentModelから取得したデータを使用
+            if (!parsedSectionInfo && currentModel.members[index] && currentModel.members[index].sectionInfo) {
+                parsedSectionInfo = currentModel.members[index].sectionInfo;
+                console.log(`🔄 [バックアップ] 部材${index + 1}の断面情報をcurrentModelからバックアップ:`, parsedSectionInfo);
+            }
+            
             existingSectionInfo[index] = {
                 sectionName: sectionNameCell ? sectionNameCell.textContent : '',
                 sectionAxis: sectionAxisCell ? sectionAxisCell.textContent : '',

@@ -1089,11 +1089,44 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         const dimensionSummary = validDims.map(d => `${d.label}=${d.value}`).join(', ');
         const svgMarkup = serializeSectionSvg(typeKey, dims);
 
+        // 板厚情報まで含む完全な断面名称を生成
+        let fullLabel = typeLabel;
+        if (designation) {
+            // designationが既に板厚情報まで含んでいる場合はそのまま使用
+            fullLabel = `${typeLabel} ${designation}`.trim();
+        } else if (dims) {
+            // designationがない場合は寸法情報から生成
+            if (typeKey === 'hkatakou_hiro' || typeKey === 'hkatakou_naka' || 
+                typeKey === 'hkatakou_hoso' || typeKey === 'ikatakou' ||
+                typeKey === 'keiryouhkatakou' || typeKey === 'keiryourippuhkatakou') {
+                // H形鋼、I形鋼の場合: H×B×t1×t2
+                if (dims.H && dims.B && dims.t1 && dims.t2) {
+                    fullLabel = `${typeLabel} ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+                } else if (dims.H && dims.B) {
+                    fullLabel = `${typeLabel} ${dims.H}×${dims.B}`;
+                }
+            } else if (typeKey === 'seihoukei' || typeKey === 'tyouhoukei') {
+                // 角形鋼管の場合: A×B×t
+                if (dims.A && dims.B && dims.t) {
+                    fullLabel = `${typeLabel} ${dims.A}×${dims.B}×${dims.t}`;
+                } else if (dims.A && dims.B) {
+                    fullLabel = `${typeLabel} ${dims.A}×${dims.B}`;
+                }
+            } else if (typeKey === 'koukan') {
+                // 丸形鋼管の場合: φD×t
+                if (dims.D && dims.t) {
+                    fullLabel = `${typeLabel} φ${dims.D}×${dims.t}`;
+                } else if (dims.D) {
+                    fullLabel = `${typeLabel} φ${dims.D}`;
+                }
+            }
+        }
+
         return {
             typeKey,
             typeLabel,
             designation,
-            label: designation ? `${typeLabel} ${designation}`.trim() : typeLabel,
+            label: fullLabel,
             dimensions: validDims,
             dimensionSummary,
             svgMarkup,

@@ -14762,6 +14762,10 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
     const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
     
+    // 板厚情報も取得
+    const t1Value = getProp('t1', 't1', 't1');
+    const t2Value = getProp('t2', 't2', 't2');
+    
     const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
     
     // 鋼材タイプからラベルを生成
@@ -14792,13 +14796,20 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     const isStrongAxisX = (ixValue && iyValue) ? ixValue > iyValue : true;
     const axisDirection = isStrongAxisX ? 'X軸' : 'Y軸';
     
+    // 板厚情報を含む完全な寸法情報を作成
+    const fullDimensions = {
+        ...bestMatch.dimensions,
+        t1: t1Value,
+        t2: t2Value
+    };
+    
     return {
         sectionName: sectionName,
         sectionSpec: steelInfo.spec,
         sectionType: actualSteelType,
         typeLabel: typeLabel,
         designation: designation,
-        dimensions: bestMatch.dimensions,
+        dimensions: fullDimensions,
         axisDirection: axisDirection,
         isStrongAxisX: isStrongAxisX,
         properties: {
@@ -15120,12 +15131,41 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         return;
     }
     
-    // 断面名称を正しい形式で生成
+    // 断面名称を板厚情報まで含む完全な形式で生成
     let sectionName = '';
-    if (steelData.sectionName) {
+    if (steelData.typeLabel && steelData.dimensions) {
+        // 板厚情報まで含む完全な形式で生成
+        const dims = steelData.dimensions;
+        if (steelData.sectionType === 'hkatakou_hiro' || steelData.sectionType === 'hkatakou_naka' || 
+            steelData.sectionType === 'hkatakou_hoso' || steelData.sectionType === 'ikatakou' ||
+            steelData.sectionType === 'keiryouhkatakou' || steelData.sectionType === 'keiryourippuhkatakou') {
+            // H形鋼、I形鋼の場合: H×B×t1×t2
+            if (dims.H && dims.B && dims.t1 && dims.t2) {
+                sectionName = `${steelData.typeLabel} ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else if (dims.H && dims.B) {
+                sectionName = `${steelData.typeLabel} ${dims.H}×${dims.B}`;
+            }
+        } else if (steelData.sectionType === 'seihoukei' || steelData.sectionType === 'tyouhoukei') {
+            // 角形鋼管の場合: A×B×t
+            if (dims.A && dims.B && dims.t) {
+                sectionName = `${steelData.typeLabel} ${dims.A}×${dims.B}×${dims.t}`;
+            } else if (dims.A && dims.B) {
+                sectionName = `${steelData.typeLabel} ${dims.A}×${dims.B}`;
+            }
+        } else if (steelData.sectionType === 'koukan') {
+            // 丸形鋼管の場合: φD×t
+            if (dims.D && dims.t) {
+                sectionName = `${steelData.typeLabel} φ${dims.D}×${dims.t}`;
+            } else if (dims.D) {
+                sectionName = `${steelData.typeLabel} φ${dims.D}`;
+            }
+        } else {
+            // その他の場合は既存の形式
+            sectionName = steelData.sectionName || `${steelData.typeLabel} ${steelData.designation}`.trim();
+        }
+    } else if (steelData.sectionName) {
         sectionName = steelData.sectionName;
     } else if (steelData.typeLabel && steelData.designation) {
-        // steel_selector.jsと同じ形式で生成
         sectionName = `${steelData.typeLabel} ${steelData.designation}`.trim();
     } else if (steelData.typeLabel) {
         sectionName = steelData.typeLabel;
@@ -15211,7 +15251,40 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     
     const typeLabel = getTypeLabel(steelData.sectionType);
     const designation = steelData.sectionName || '';
-    const fullLabel = designation ? `${typeLabel} ${designation}`.trim() : typeLabel;
+    
+    // 板厚情報まで含む完全な断面名称を生成
+    let fullLabel = typeLabel;
+    if (designation) {
+        // designationが既に板厚情報まで含んでいる場合はそのまま使用
+        fullLabel = `${typeLabel} ${designation}`.trim();
+    } else if (steelData.dimensions) {
+        // designationがない場合は寸法情報から生成
+        const dims = steelData.dimensions;
+        if (steelData.sectionType === 'hkatakou_hiro' || steelData.sectionType === 'hkatakou_naka' || 
+            steelData.sectionType === 'hkatakou_hoso' || steelData.sectionType === 'ikatakou' ||
+            steelData.sectionType === 'keiryouhkatakou' || steelData.sectionType === 'keiryourippuhkatakou') {
+            // H形鋼、I形鋼の場合: H×B×t1×t2
+            if (dims.H && dims.B && dims.t1 && dims.t2) {
+                fullLabel = `${typeLabel} ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else if (dims.H && dims.B) {
+                fullLabel = `${typeLabel} ${dims.H}×${dims.B}`;
+            }
+        } else if (steelData.sectionType === 'seihoukei' || steelData.sectionType === 'tyouhoukei') {
+            // 角形鋼管の場合: A×B×t
+            if (dims.A && dims.B && dims.t) {
+                fullLabel = `${typeLabel} ${dims.A}×${dims.B}×${dims.t}`;
+            } else if (dims.A && dims.B) {
+                fullLabel = `${typeLabel} ${dims.A}×${dims.B}`;
+            }
+        } else if (steelData.sectionType === 'koukan') {
+            // 丸形鋼管の場合: φD×t
+            if (dims.D && dims.t) {
+                fullLabel = `${typeLabel} φ${dims.D}×${dims.t}`;
+            } else if (dims.D) {
+                fullLabel = `${typeLabel} φ${dims.D}`;
+            }
+        }
+    }
     
     // 既存の部材断面選択機能と同じ形式でsectionInfoオブジェクトを作成
     // 3Dビューアに必要なrawDimsとtypeKeyを含める

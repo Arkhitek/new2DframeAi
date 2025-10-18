@@ -531,46 +531,102 @@ function getSectionName(member) {
     let sectionName;
     switch (typeKey) {
         case 'hkatakou_hiro':
-            sectionName = `H形鋼（広幅） ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `H形鋼（広幅） ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `H形鋼（広幅） ${dims.H}×${dims.B}`;
+            }
             break;
         case 'hkatakou_naka':
-            sectionName = `H形鋼（中幅） ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `H形鋼（中幅） ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `H形鋼（中幅） ${dims.H}×${dims.B}`;
+            }
             break;
         case 'hkatakou_hoso':
-            sectionName = `H形鋼（細幅） ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `H形鋼（細幅） ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `H形鋼（細幅） ${dims.H}×${dims.B}`;
+            }
             break;
         case 'ikatakou':
-            sectionName = `I形鋼 ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `I形鋼 ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `I形鋼 ${dims.H}×${dims.B}`;
+            }
             break;
         case 'keiryouhkatakou':
-            sectionName = `軽量H形鋼 ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `軽量H形鋼 ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `軽量H形鋼 ${dims.H}×${dims.B}`;
+            }
             break;
         case 'keiryourippuhkatakou':
-            sectionName = `軽量リップH形鋼 ${dims.H}×${dims.B}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `軽量リップH形鋼 ${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `軽量リップH形鋼 ${dims.H}×${dims.B}`;
+            }
             break;
         case 'seihoukei':
-            sectionName = `角形鋼管（正方形） ${dims.A}×${dims.A}`;
+            if (dims.t) {
+                sectionName = `角形鋼管（正方形） ${dims.A}×${dims.A}×${dims.t}`;
+            } else {
+                sectionName = `角形鋼管（正方形） ${dims.A}×${dims.A}`;
+            }
             break;
         case 'tyouhoukei':
-            sectionName = `角形鋼管（長方形） ${dims.A}×${dims.B}`;
+            if (dims.t) {
+                sectionName = `角形鋼管（長方形） ${dims.A}×${dims.B}×${dims.t}`;
+            } else {
+                sectionName = `角形鋼管（長方形） ${dims.A}×${dims.B}`;
+            }
             break;
         case 'koukan':
-            sectionName = `丸形鋼管 φ${dims.D}`;
+            if (dims.t) {
+                sectionName = `丸形鋼管 φ${dims.D}×${dims.t}`;
+            } else {
+                sectionName = `丸形鋼管 φ${dims.D}`;
+            }
             break;
         case 'mizogatakou':
-            sectionName = `みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `みぞ形鋼 ${dims.H}×${dims.B || dims.A}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
+            }
             break;
         case 'keimizogatakou':
-            sectionName = `軽みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
+            if (dims.t1 && dims.t2) {
+                sectionName = `軽みぞ形鋼 ${dims.H}×${dims.B || dims.A}×${dims.t1}×${dims.t2}`;
+            } else {
+                sectionName = `軽みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
+            }
             break;
         case 'rippumizokatakou':
-            sectionName = `リップみぞ形鋼 ${dims.H}×${dims.A}`;
+            if (dims.t) {
+                sectionName = `リップみぞ形鋼 ${dims.H}×${dims.A}×${dims.t}`;
+            } else {
+                sectionName = `リップみぞ形鋼 ${dims.H}×${dims.A}`;
+            }
             break;
         case 'touhenyamakatakou':
-            sectionName = `等辺山形鋼 ${dims.A}×${dims.A}`;
+            if (dims.t) {
+                sectionName = `等辺山形鋼 ${dims.A}×${dims.A}×${dims.t}`;
+            } else {
+                sectionName = `等辺山形鋼 ${dims.A}×${dims.A}`;
+            }
             break;
         case 'futouhenyamagata':
-            sectionName = `不等辺山形鋼 ${dims.A}×${dims.B}`;
+            if (dims.t) {
+                sectionName = `不等辺山形鋼 ${dims.A}×${dims.B}×${dims.t}`;
+            } else {
+                sectionName = `不等辺山形鋼 ${dims.A}×${dims.B}`;
+            }
             break;
         case '矩形':
         case 'rectangular':

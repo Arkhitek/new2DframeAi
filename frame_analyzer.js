@@ -14448,9 +14448,12 @@ async function detectAndFetchSteelProperties(prompt) {
     
     // 鋼材断面のパターンを検出
     const steelPatterns = [
-        // H形鋼のパターン
+        // H形鋼のパターン（4つの寸法: H×B×t1×t2）
         /H-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
         /H(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        // H形鋼のパターン（2つの寸法: H×B）
+        /H-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        /H(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
         // 角パイプのパターン
         /□(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
         // 円パイプのパターン
@@ -14577,8 +14580,10 @@ async function detectAndFetchSteelProperties(prompt) {
  */
 function getSteelTypeFromPattern(patternIndex) {
     const types = [
-        'hkatakou_hiro',  // H-xxx×xxx×xxx×xxx
-        'hkatakou_hiro',  // Hxxx×xxx×xxx×xxx
+        'hkatakou_hiro',  // H-xxx×xxx×xxx×xxx (4つの寸法)
+        'hkatakou_hiro',  // Hxxx×xxx×xxx×xxx (4つの寸法)
+        'hkatakou_hiro',  // H-xxx×xxx (2つの寸法)
+        'hkatakou_hiro',  // Hxxx×xxx (2つの寸法)
         'seihoukei',      // □xxx×xxx×xxx
         'koukan',         // φxxx×xxx
         'mizogatakou',    // C-xxx×xxx×xxx×xxx
@@ -15098,11 +15103,12 @@ function getMemberType(memberIndex) {
         const deltaX = Math.abs(jX - iX);
         const deltaY = Math.abs(jY - iY);
         
-        // Y方向の変化がX方向の変化より大きい場合は柱（垂直）
-        // X方向の変化がY方向の変化より大きい場合は梁（水平）
-        if (deltaY > deltaX) {
+        // ユーザー定義に従った判定:
+        // 柱部材: 始点#iと終点#jのX座標が同じ値
+        // 梁部材: 始点#iと終点#jのY座標が同じ値
+        if (deltaX < 0.001) { // X座標が同じ（許容誤差0.001m）
             return 'column'; // 柱（垂直）
-        } else if (deltaX > deltaY) {
+        } else if (deltaY < 0.001) { // Y座標が同じ（許容誤差0.001m）
             return 'beam';   // 梁（水平）
         } else {
             return 'unknown'; // 斜材など

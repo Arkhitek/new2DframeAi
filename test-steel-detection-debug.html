@@ -141,9 +141,17 @@
         
         <!-- 断面性能取得テスト -->
         <div class="test-section">
-            <h2>📊 断面性能取得テスト</h2>
+            <h2>📊 断面性能取得テスト（断面名称・軸方向含む）</h2>
             <button class="test-button" onclick="testSteelProperties()">断面性能取得テスト</button>
             <div id="properties-result" class="result-area" style="display: none;"></div>
+        </div>
+        
+        <!-- AIプロンプト拡張テスト -->
+        <div class="test-section">
+            <h2>🤖 AIプロンプト拡張テスト</h2>
+            <input type="text" id="prompt-test-input" class="test-input" placeholder="鋼材断面を指定してください（例：H-100×100×6×8）">
+            <button class="test-button" onclick="testPromptEnhancement()">プロンプト拡張テスト</button>
+            <div id="prompt-result" class="result-area" style="display: none;"></div>
         </div>
         
         <!-- コンソールログ表示 -->
@@ -295,6 +303,7 @@
                 // テスト用の鋼材情報
                 const testSteelInfo = {
                     type: 'hkatakou_hiro',
+                    spec: 'H-100×100×6×8',
                     dimensions: {
                         H: 100,
                         B: 100,
@@ -310,6 +319,14 @@
                     output += `取得結果:\n`;
                     output += JSON.stringify(result, null, 2);
                     
+                    if (result) {
+                        output += `\n\n=== 詳細情報 ===\n`;
+                        output += `断面名称: ${result.sectionName}\n`;
+                        output += `断面タイプ: ${result.sectionType}\n`;
+                        output += `強軸方向: ${result.axisDirection}\n`;
+                        output += `マッチング精度: ${result.matchDistance < Infinity ? (100 - result.matchDistance).toFixed(1) + '%' : 'N/A'}\n`;
+                    }
+                    
                     resultDiv.textContent = output;
                     resultDiv.style.display = 'block';
                 } else {
@@ -318,6 +335,50 @@
                 }
             } catch (error) {
                 console.error('断面性能取得テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // AIプロンプト拡張テスト
+        async function testPromptEnhancement() {
+            const input = document.getElementById('prompt-test-input').value.trim();
+            const resultDiv = document.getElementById('prompt-result');
+            
+            if (!input) {
+                resultDiv.textContent = 'テストするテキストを入力してください。';
+                resultDiv.style.display = 'block';
+                return;
+            }
+            
+            console.log('🔍 AIプロンプト拡張テスト開始:', input);
+            
+            try {
+                if (typeof detectAndFetchSteelProperties === 'function') {
+                    const result = await detectAndFetchSteelProperties(input);
+                    
+                    let output = `元のプロンプト:\n${input}\n\n`;
+                    output += `拡張されたプロンプト:\n${result.prompt}\n\n`;
+                    
+                    if (result.steelData && result.steelData.length > 0) {
+                        output += `検出された鋼材情報:\n`;
+                        result.steelData.forEach((steel, index) => {
+                            output += `\n【鋼材${index + 1}】\n`;
+                            output += `- 断面名称: ${steel.sectionName}\n`;
+                            output += `- 断面タイプ: ${steel.sectionType}\n`;
+                            output += `- 強軸方向: ${steel.axisDirection}\n`;
+                            output += `- マッチング精度: ${steel.matchDistance < Infinity ? (100 - steel.matchDistance).toFixed(1) + '%' : 'N/A'}\n`;
+                        });
+                    }
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'detectAndFetchSteelProperties関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('AIプロンプト拡張テストエラー:', error);
                 resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
                 resultDiv.style.display = 'block';
             }

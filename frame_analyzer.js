@@ -14573,11 +14573,17 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     
     const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
     
+    // 軸方向の判定（Ix > Iy の場合は強軸がX軸、そうでなければY軸）
+    const isStrongAxisX = (ixValue && iyValue) ? ixValue > iyValue : true;
+    const axisDirection = isStrongAxisX ? 'X軸' : 'Y軸';
+    
     return {
         sectionName: sectionName,
         sectionSpec: steelInfo.spec,
         sectionType: steelType,
         dimensions: bestMatch.dimensions,
+        axisDirection: axisDirection,
+        isStrongAxisX: isStrongAxisX,
         properties: {
             A: areaValue,
             Ix: ixValue,
@@ -14785,6 +14791,8 @@ function enhancePromptWithSteelData(originalPrompt, steelProperties) {
     steelProperties.forEach((steel, index) => {
         enhancedPrompt += `\n【鋼材${index + 1}】: ${steel.sectionName}\n`;
         enhancedPrompt += `- 指定断面: ${steel.sectionSpec}\n`;
+        enhancedPrompt += `- 断面タイプ: ${steel.sectionType}\n`;
+        enhancedPrompt += `- 強軸方向: ${steel.axisDirection}\n`;
         enhancedPrompt += `- 断面積 A: ${steel.properties.A || 'N/A'} cm²\n`;
         enhancedPrompt += `- 断面二次モーメント Ix: ${steel.properties.Ix || 'N/A'} cm⁴\n`;
         enhancedPrompt += `- 断面二次モーメント Iy: ${steel.properties.Iy || 'N/A'} cm⁴\n`;

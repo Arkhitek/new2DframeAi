@@ -14319,7 +14319,7 @@ function setupAIModelGenerationListeners() {
     // AIモデル生成ボタンのイベントリスナー
     const aiGenerateBtn = document.getElementById('generate-model-btn');
     if (aiGenerateBtn) {
-        aiGenerateBtn.addEventListener('click', () => {
+        aiGenerateBtn.addEventListener('click', async () => {
             const promptInput = document.getElementById('natural-language-input');
             if (!promptInput) {
                 console.error('Error: Could not find element with id "natural-language-input"');
@@ -14334,15 +14334,43 @@ function setupAIModelGenerationListeners() {
             if (userPrompt) {
                 console.log(`🔍 AI生成モード: ${selectedMode}, 指示: "${userPrompt}"`);
                 
-                // 編集モードの場合は現在のモデル情報を取得
-                let currentModel = null;
-                if (selectedMode === 'edit') {
-                    console.log('🔍 現在のモデル情報を完全取得中...');
-                    currentModel = getCurrentModelData();
-                    console.log('🔍 追加編集モード: 現在のモデル情報を取得しました', currentModel);
+                // 鋼材断面指定を検出して断面性能を取得
+                try {
+                    const steelDetectionResult = await detectAndFetchSteelProperties(userPrompt);
+                    const enhancedPrompt = steelDetectionResult.prompt;
+                    const steelData = steelDetectionResult.steelData;
+                    
+                    if (steelData && steelData.length > 0) {
+                        console.log('✅ 鋼材断面性能を取得しました:', steelData);
+                        // ステータス表示を更新
+                        const aiStatus = document.getElementById('gemini-status-indicator');
+                        if (aiStatus) {
+                            aiStatus.textContent = `🔍 ${steelData.length}個の鋼材断面を検出し、断面性能を取得しました`;
+                            aiStatus.style.display = 'block';
+                            setTimeout(() => {
+                                aiStatus.style.display = 'none';
+                            }, 5000);
+                        }
+                    }
+                    
+                    // 編集モードの場合は現在のモデル情報を取得
+                    let currentModel = null;
+                    if (selectedMode === 'edit') {
+                        console.log('🔍 現在のモデル情報を完全取得中...');
+                        currentModel = getCurrentModelData();
+                        console.log('🔍 追加編集モード: 現在のモデル情報を取得しました', currentModel);
+                    }
+                    
+                    generateModelWithAI(enhancedPrompt, selectedMode, 0, currentModel);
+                } catch (error) {
+                    console.error('❌ 鋼材断面検出エラー:', error);
+                    // エラーが発生した場合は元のプロンプトで続行
+                    let currentModel = null;
+                    if (selectedMode === 'edit') {
+                        currentModel = getCurrentModelData();
+                    }
+                    generateModelWithAI(userPrompt, selectedMode, 0, currentModel);
                 }
-                
-                generateModelWithAI(userPrompt, selectedMode, 0, currentModel);
             } else {
                 safeAlert('指示内容を入力してください。');
             }
@@ -14362,6 +14390,412 @@ function setupAIModelGenerationListeners() {
     updateModeDescription();
     
     console.log('✅ AIモデル生成のイベントリスナー設定完了');
+}
+
+/**
+ * 鋼材断面指定を検出し、断面性能を取得する関数
+ * @param {string} prompt - ユーザーの指示文
+ * @returns {Object} 断面情報を含む拡張されたプロンプトと断面データ
+ */
+async function detectAndFetchSteelProperties(prompt) {
+    console.log('🔍 鋼材断面指定の検出を開始:', prompt);
+    
+    // 鋼材断面のパターンを検出
+    const steelPatterns = [
+        // H形鋼のパターン
+        /H-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        /H(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        // 角パイプのパターン
+        /□(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        // 円パイプのパターン
+        /φ(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        // チャンネルのパターン
+        /C-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+        // 角鋼のパターン
+        /L-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi
+    ];
+    
+    let detectedSteels = [];
+    let enhancedPrompt = prompt;
+    
+    // 各パターンで検索
+    steelPatterns.forEach((pattern, index) => {
+        const matches = [...prompt.matchAll(pattern)];
+        matches.forEach(match => {
+            const steelSpec = match[0];
+            const dimensions = match.slice(1).map(d => parseFloat(d));
+            
+            console.log(`🔍 鋼材断面を検出: ${steelSpec}`, dimensions);
+            
+            detectedSteels.push({
+                spec: steelSpec,
+                dimensions: dimensions,
+                type: getSteelTypeFromPattern(index),
+                originalMatch: match
+            });
+        });
+    });
+    
+    if (detectedSteels.length === 0) {
+        console.log('🔍 鋼材断面指定は検出されませんでした');
+        return { prompt: enhancedPrompt, steelData: null };
+    }
+    
+    console.log(`🔍 ${detectedSteels.length}個の鋼材断面を検出しました`);
+    
+    // 各検出された鋼材について断面性能を取得
+    const steelProperties = [];
+    
+    for (const steel of detectedSteels) {
+        try {
+            const properties = await fetchSteelProperties(steel);
+            if (properties) {
+                steelProperties.push(properties);
+                console.log('✅ 断面性能を取得:', properties.sectionName);
+            } else {
+                console.warn('⚠️ 断面性能の取得に失敗:', steel.spec);
+            }
+        } catch (error) {
+            console.error('❌ 断面性能取得エラー:', error);
+        }
+    }
+    
+    // プロンプトを拡張
+    if (steelProperties.length > 0) {
+        enhancedPrompt = enhancePromptWithSteelData(enhancedPrompt, steelProperties);
+    }
+    
+    return {
+        prompt: enhancedPrompt,
+        steelData: steelProperties.length > 0 ? steelProperties : null
+    };
+}
+
+/**
+ * パターンインデックスから鋼材タイプを判定
+ */
+function getSteelTypeFromPattern(patternIndex) {
+    const types = [
+        'hkatakou_hiro',  // H-xxx×xxx×xxx×xxx
+        'hkatakou_hiro',  // Hxxx×xxx×xxx×xxx
+        'seihoukei',      // □xxx×xxx×xxx
+        'koukan',         // φxxx×xxx
+        'mizogatakou',    // C-xxx×xxx×xxx×xxx
+        'touhenyamakatakou' // L-xxx×xxx×xxx
+    ];
+    return types[patternIndex] || 'hkatakou_hiro';
+}
+
+/**
+ * steel_selector.jsから断面性能を取得する関数
+ */
+async function fetchSteelProperties(steelInfo) {
+    console.log('🔍 断面性能を取得中:', steelInfo);
+    
+    try {
+        // steel_selector.jsの関数を呼び出して断面性能を取得
+        const properties = await findSteelPropertiesFromLibrary(steelInfo);
+        return properties;
+    } catch (error) {
+        console.error('断面性能取得エラー:', error);
+        return null;
+    }
+}
+
+/**
+ * steel_selector.jsのライブラリから断面性能を検索する関数
+ */
+async function findSteelPropertiesFromLibrary(steelInfo) {
+    console.log('🔍 ライブラリから断面性能を検索:', steelInfo);
+    
+    // steel_selector.jsのsteelDataにアクセス
+    if (typeof steelData === 'undefined') {
+        console.warn('steelDataが利用できません');
+        return null;
+    }
+    
+    const steelType = steelInfo.type;
+    const dimensions = steelInfo.dimensions;
+    
+    if (!steelData[steelType]) {
+        console.warn(`鋼材タイプ ${steelType} のデータが見つかりません`);
+        return null;
+    }
+    
+    const steel = steelData[steelType];
+    const headers = steel.headers;
+    const data = steel.data;
+    
+    // 寸法に基づいて最適な断面を検索
+    let bestMatch = null;
+    let minDistance = Infinity;
+    
+    for (let i = 0; i < data.length; i++) {
+        const rowData = data[i];
+        const rowDims = getDimensionsFromRow(steelType, rowData, headers);
+        
+        const distance = calculateDimensionDistance(dimensions, rowDims, steelType);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = {
+                index: i,
+                rowData: rowData,
+                dimensions: rowDims,
+                distance: distance
+            };
+        }
+    }
+    
+    if (!bestMatch) {
+        console.warn('適合する断面が見つかりませんでした');
+        return null;
+    }
+    
+    console.log('✅ 最適な断面を発見:', bestMatch);
+    
+    // 断面性能を取得
+    const normalizedHeaders = headers.map(normalizeHeaderKey);
+    const getProp = (...keys) => findRowValueByKeys(headers, normalizedHeaders, bestMatch.rowData, ...keys);
+    
+    const areaValue = getProp('断面積', '面積', 'A');
+    const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
+    const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
+    const zxValue = getProp('Zx', '強軸断面係数', 'Z');
+    const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
+    const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
+    const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+    
+    const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
+    
+    return {
+        sectionName: sectionName,
+        sectionSpec: steelInfo.spec,
+        sectionType: steelType,
+        dimensions: bestMatch.dimensions,
+        properties: {
+            A: areaValue,
+            Ix: ixValue,
+            Iy: iyValue,
+            Zx: zxValue,
+            Zy: zyValue,
+            ix: radiusXValue,
+            iy: radiusYValue
+        },
+        matchDistance: bestMatch.distance
+    };
+}
+
+/**
+ * 寸法間の距離を計算する関数
+ */
+function calculateDimensionDistance(targetDims, actualDims, steelType) {
+    let distance = 0;
+    
+    switch (steelType) {
+        case 'hkatakou_hiro':
+        case 'hkatakou_naka':
+        case 'hkatakou_hoso':
+        case 'ikatakou':
+        case 'keiryouhkatakou':
+            // H形鋼: H, B, t1, t2
+            if (targetDims.length >= 4 && actualDims.H && actualDims.B && actualDims.t1 && actualDims.t2) {
+                // 主要寸法（H, B）に重みを付ける
+                distance += Math.pow(targetDims[0] - actualDims.H, 2) * 2;  // H
+                distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;  // B
+                distance += Math.pow(targetDims[2] - actualDims.t1, 2);     // t1
+                distance += Math.pow(targetDims[3] - actualDims.t2, 2);     // t2
+            } else {
+                distance = Infinity;
+            }
+            break;
+        case 'seihoukei':
+        case 'tyouhoukei':
+            // 角パイプ: A, B, t
+            if (targetDims.length >= 3 && actualDims.A && actualDims.B && actualDims.t) {
+                distance += Math.pow(targetDims[0] - actualDims.A, 2) * 2;  // A
+                distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;  // B
+                distance += Math.pow(targetDims[2] - actualDims.t, 2);      // t
+            } else {
+                distance = Infinity;
+            }
+            break;
+        case 'koukan':
+            // 円パイプ: D, t
+            if (targetDims.length >= 2 && actualDims.D && actualDims.t) {
+                distance += Math.pow(targetDims[0] - actualDims.D, 2) * 3;  // D
+                distance += Math.pow(targetDims[1] - actualDims.t, 2);      // t
+            } else {
+                distance = Infinity;
+            }
+            break;
+        case 'mizogatakou':
+        case 'keimizogatakou':
+        case 'rippumizokatakou':
+            // チャンネル: H, B, t1, t2
+            if (targetDims.length >= 4 && actualDims.H && actualDims.B && actualDims.t1 && actualDims.t2) {
+                distance += Math.pow(targetDims[0] - actualDims.H, 2) * 2;  // H
+                distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;  // B
+                distance += Math.pow(targetDims[2] - actualDims.t1, 2);     // t1
+                distance += Math.pow(targetDims[3] - actualDims.t2, 2);     // t2
+            } else {
+                distance = Infinity;
+            }
+            break;
+        case 'touhenyamakatakou':
+        case 'futouhenyamagata':
+            // 角鋼: A, B, t
+            if (targetDims.length >= 3 && actualDims.A && actualDims.B && actualDims.t) {
+                distance += Math.pow(targetDims[0] - actualDims.A, 2) * 2;  // A
+                distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;  // B
+                distance += Math.pow(targetDims[2] - actualDims.t, 2);      // t
+            } else {
+                distance = Infinity;
+            }
+            break;
+        default:
+            distance = Infinity;
+    }
+    
+    return Math.sqrt(distance);
+}
+
+/**
+ * steel_selector.jsの関数を呼び出すためのヘルパー関数
+ */
+function getDimensionsFromRow(type, rowData, headers) {
+    const dims = {};
+    
+    const findValue = (namePart) => {
+        const name = namePart.toLowerCase();
+        const index = headers.findIndex(h => h.toLowerCase().startsWith(name));
+        const value = index !== -1 ? parseFloat(rowData[index]) : NaN;
+        return isNaN(value) ? 0 : value;
+    };
+    
+    try {
+        switch (type) {
+            case 'hkatakou_hiro':
+            case 'hkatakou_naka':
+            case 'hkatakou_hoso':
+            case 'ikatakou':
+            case 'keiryouhkatakou':
+                const hSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
+                [dims.H, dims.B] = hSizes.length >= 2 ? hSizes : [0, 0];
+                dims.t1 = findValue('t1');
+                dims.t2 = findValue('t2');
+                break;
+            case 'seihoukei':
+            case 'tyouhoukei':
+                const kakuSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
+                [dims.A, dims.B] = kakuSizes.length >= 2 ? kakuSizes : [0, 0];
+                dims.t = findValue('t');
+                break;
+            case 'koukan':
+                dims.D = parseFloat(rowData[0]) || 0;
+                dims.t = findValue('板厚');
+                break;
+        }
+    } catch (error) {
+        console.error('Error parsing dimensions:', error);
+    }
+    
+    return dims;
+}
+
+/**
+ * steel_selector.jsの関数を呼び出すためのヘルパー関数
+ */
+function normalizeHeaderKey(header) {
+    if (header === undefined || header === null) return '';
+    return header
+        .toString()
+        .trim()
+        .normalize('NFKC')
+        .replace(/[（(].*?[)）]/g, '')
+        .replace(/[\s＿‐－–—]/g, '')
+        .replace(/[＊*×✕✖]/g, 'x')
+        .toLowerCase();
+}
+
+/**
+ * steel_selector.jsの関数を呼び出すためのヘルパー関数
+ */
+function findRowValueByKeys(headers, normalizedHeaders, rowData, ...keys) {
+    if (!Array.isArray(headers) || !Array.isArray(rowData)) return undefined;
+
+    const normalizedTokens = keys
+        .flatMap(key => {
+            if (key === undefined || key === null) return [];
+            const str = key.toString();
+            return [normalizeHeaderKey(str), normalizeKey(str)];
+        })
+        .filter(Boolean);
+
+    if (normalizedTokens.length === 0) return undefined;
+
+    const longTokens = normalizedTokens.filter(token => token.length > 1);
+    const shortTokens = normalizedTokens.filter(token => token.length <= 1);
+
+    const ensureNormalizedHeader = (index) => normalizedHeaders?.[index] ?? normalizeHeaderKey(headers[index]);
+
+    if (longTokens.length > 0) {
+        for (let index = 0; index < headers.length; index++) {
+            const normalizedHeader = ensureNormalizedHeader(index);
+            if (!normalizedHeader) continue;
+            if (longTokens.some(token => normalizedHeader.includes(token))) {
+                return rowData[index];
+            }
+        }
+    }
+
+    if (shortTokens.length > 0) {
+        for (let index = 0; index < headers.length; index++) {
+            const normalizedHeader = ensureNormalizedHeader(index);
+            if (!normalizedHeader) continue;
+            if (shortTokens.some(token => normalizedHeader === token)) {
+                return rowData[index];
+            }
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * steel_selector.jsの関数を呼び出すためのヘルパー関数
+ */
+function normalizeKey(key) {
+    return (key ?? '').toString().trim().toLowerCase();
+}
+
+/**
+ * プロンプトに鋼材データを追加する関数
+ */
+function enhancePromptWithSteelData(originalPrompt, steelProperties) {
+    let enhancedPrompt = originalPrompt;
+    
+    enhancedPrompt += '\n\n=== 指定された鋼材断面の詳細情報 ===\n';
+    
+    steelProperties.forEach((steel, index) => {
+        enhancedPrompt += `\n【鋼材${index + 1}】: ${steel.sectionName}\n`;
+        enhancedPrompt += `- 指定断面: ${steel.sectionSpec}\n`;
+        enhancedPrompt += `- 断面積 A: ${steel.properties.A || 'N/A'} cm²\n`;
+        enhancedPrompt += `- 断面二次モーメント Ix: ${steel.properties.Ix || 'N/A'} cm⁴\n`;
+        enhancedPrompt += `- 断面二次モーメント Iy: ${steel.properties.Iy || 'N/A'} cm⁴\n`;
+        enhancedPrompt += `- 断面係数 Zx: ${steel.properties.Zx || 'N/A'} cm³\n`;
+        enhancedPrompt += `- 断面係数 Zy: ${steel.properties.Zy || 'N/A'} cm³\n`;
+        enhancedPrompt += `- 断面二次半径 ix: ${steel.properties.ix || 'N/A'} cm\n`;
+        enhancedPrompt += `- 断面二次半径 iy: ${steel.properties.iy || 'N/A'} cm\n`;
+        
+        if (steel.matchDistance < Infinity) {
+            enhancedPrompt += `- マッチング精度: ${(100 - steel.matchDistance).toFixed(1)}%\n`;
+        }
+    });
+    
+    enhancedPrompt += '\n上記の断面性能値を用いて構造モデルを生成してください。\n';
+    
+    return enhancedPrompt;
 }
 
 /**

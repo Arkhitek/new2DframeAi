@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鋼材断面検出機能テスト</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-input {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .test-button {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .test-button:hover {
+            background-color: #5a359a;
+        }
+        .test-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .steel-info {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .steel-property {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .example-prompts {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .example-prompt {
+            background-color: white;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+        }
+        .example-prompt:hover {
+            background-color: #f0f8ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>鋼材断面検出機能テスト</h1>
+    
+    <div class="example-prompts">
+        <h3>📝 テスト用プロンプト例（クリックで入力）</h3>
+        <div class="example-prompt" onclick="fillPrompt('1層の梁をH-100×100×6×8に変更してください')">
+            「1層の梁をH-100×100×6×8に変更してください」
+        </div>
+        <div class="example-prompt" onclick="fillPrompt('柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください')">
+            「柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください」
+        </div>
+        <div class="example-prompt" onclick="fillPrompt('角パイプ□100×100×6を使用した門型ラーメンを作成')">
+            「角パイプ□100×100×6を使用した門型ラーメンを作成」
+        </div>
+        <div class="example-prompt" onclick="fillPrompt('円パイプφ150×6の柱で2層構造を作成')">
+            「円パイプφ150×6の柱で2層構造を作成」
+        </div>
+        <div class="example-prompt" onclick="fillPrompt('チャンネルC-200×75×6×9を梁に使用')">
+            「チャンネルC-200×75×6×9を梁に使用」
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>1. 鋼材断面検出テスト</h2>
+        <p>鋼材断面指定を含むプロンプトを入力して、断面性能の取得をテストします。</p>
+        <textarea class="test-input" id="steelTestInput" placeholder="例: 1層の梁をH-100×100×6×8に変更してください"></textarea>
+        <button class="test-button" onclick="testSteelDetection()">鋼材断面検出テスト</button>
+        <div id="steelResult" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. AI生成テスト（鋼材断面付き）</h2>
+        <p>鋼材断面指定を含むプロンプトでAIモデル生成をテストします。</p>
+        <textarea class="test-input" id="aiSteelTestInput" placeholder="例: H-100×100×6×8の梁で門型ラーメンを作成"></textarea>
+        <button class="test-button" onclick="testAISteelGeneration()">AI生成テスト（鋼材断面付き）</button>
+        <div id="aiSteelResult" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 鋼材ライブラリアクセステスト</h2>
+        <p>steel_selector.jsのライブラリにアクセスできるかテストします。</p>
+        <button class="test-button" onclick="testSteelLibraryAccess()">ライブラリアクセステスト</button>
+        <div id="libraryResult" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        // steel_selector.jsを読み込み
+        const script = document.createElement('script');
+        script.src = 'steel_selector.js';
+        document.head.appendChild(script);
+
+        // プロンプト例を入力フィールドに設定
+        function fillPrompt(text) {
+            document.getElementById('steelTestInput').value = text;
+            document.getElementById('aiSteelTestInput').value = text;
+        }
+
+        // 鋼材断面検出テスト
+        async function testSteelDetection() {
+            const input = document.getElementById('steelTestInput');
+            const prompt = input.value.trim();
+            
+            if (!prompt) {
+                showResult('steelResult', 'プロンプトを入力してください。', 'error');
+                return;
+            }
+
+            showResult('steelResult', '🔍 鋼材断面を検出中...', 'loading');
+
+            try {
+                // steel_selector.jsが読み込まれるまで待機
+                if (typeof steelData === 'undefined') {
+                    showResult('steelResult', '❌ steel_selector.jsが読み込まれていません。', 'error');
+                    return;
+                }
+
+                const result = await detectAndFetchSteelProperties(prompt);
+                
+                if (result.steelData && result.steelData.length > 0) {
+                    let resultText = `✅ ${result.steelData.length}個の鋼材断面を検出しました\n\n`;
+                    
+                    result.steelData.forEach((steel, index) => {
+                        resultText += `【鋼材${index + 1}】: ${steel.sectionName}\n`;
+                        resultText += `- 指定断面: ${steel.sectionSpec}\n`;
+                        resultText += `- 断面積 A: ${steel.properties.A || 'N/A'} cm²\n`;
+                        resultText += `- 断面二次モーメント Ix: ${steel.properties.Ix || 'N/A'} cm⁴\n`;
+                        resultText += `- 断面二次モーメント Iy: ${steel.properties.Iy || 'N/A'} cm⁴\n`;
+                        resultText += `- 断面係数 Zx: ${steel.properties.Zx || 'N/A'} cm³\n`;
+                        resultText += `- 断面係数 Zy: ${steel.properties.Zy || 'N/A'} cm³\n`;
+                        resultText += `- マッチング精度: ${(100 - steel.matchDistance).toFixed(1)}%\n\n`;
+                    });
+                    
+                    showResult('steelResult', resultText, 'success');
+                } else {
+                    showResult('steelResult', '⚠️ 鋼材断面指定は検出されませんでした。', 'error');
+                }
+            } catch (error) {
+                showResult('steelResult', `❌ 鋼材断面検出でエラーが発生しました:\n${error.message}`, 'error');
+            }
+        }
+
+        // AI生成テスト（鋼材断面付き）
+        async function testAISteelGeneration() {
+            const input = document.getElementById('aiSteelTestInput');
+            const prompt = input.value.trim();
+            
+            if (!prompt) {
+                showResult('aiSteelResult', 'プロンプトを入力してください。', 'error');
+                return;
+            }
+
+            showResult('aiSteelResult', '🧠 AIがモデルを生成中です...', 'loading');
+
+            try {
+                // 鋼材断面検出
+                const steelResult = await detectAndFetchSteelProperties(prompt);
+                
+                if (steelResult.steelData && steelResult.steelData.length > 0) {
+                    showResult('aiSteelResult', `✅ ${steelResult.steelData.length}個の鋼材断面を検出し、AI生成を開始します...`, 'loading');
+                }
+
+                // AI生成テスト
+                const response = await fetch('/api/generate-model', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: steelResult.prompt
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('aiSteelResult', `✅ AI生成テスト成功！\n鋼材断面情報を含むプロンプトでモデルが生成されました。`, 'success');
+                } else {
+                    const errorData = await response.json();
+                    showResult('aiSteelResult', `❌ AI生成テスト失敗 (${response.status}):\n${errorData.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showResult('aiSteelResult', `❌ AI生成テストでエラーが発生しました:\n${error.message}`, 'error');
+            }
+        }
+
+        // 鋼材ライブラリアクセステスト
+        function testSteelLibraryAccess() {
+            showResult('libraryResult', '🔍 steel_selector.jsライブラリにアクセス中...', 'loading');
+
+            try {
+                let resultText = '=== steel_selector.jsライブラリアクセステスト ===\n\n';
+
+                // steelDataの存在確認
+                if (typeof steelData === 'undefined') {
+                    resultText += '❌ steelDataが定義されていません\n';
+                    showResult('libraryResult', resultText, 'error');
+                    return;
+                }
+
+                resultText += '✅ steelDataが利用可能です\n\n';
+
+                // 利用可能な鋼材タイプを確認
+                const availableTypes = Object.keys(steelData);
+                resultText += `📋 利用可能な鋼材タイプ (${availableTypes.length}種類):\n`;
+                availableTypes.forEach(type => {
+                    const steel = steelData[type];
+                    if (steel && steel.data) {
+                        resultText += `- ${type}: ${steel.data.length}個の断面データ\n`;
+                    }
+                });
+
+                resultText += '\n📊 サンプルデータ確認:\n';
+                if (availableTypes.length > 0) {
+                    const firstType = availableTypes[0];
+                    const firstSteel = steelData[firstType];
+                    if (firstSteel && firstSteel.headers && firstSteel.data && firstSteel.data.length > 0) {
+                        resultText += `- タイプ: ${firstType}\n`;
+                        resultText += `- ヘッダー数: ${firstSteel.headers.length}\n`;
+                        resultText += `- データ行数: ${firstSteel.data.length}\n`;
+                        resultText += `- 最初の断面: ${firstSteel.data[0][0]}\n`;
+                    }
+                }
+
+                showResult('libraryResult', resultText, 'success');
+            } catch (error) {
+                showResult('libraryResult', `❌ ライブラリアクセステストでエラーが発生しました:\n${error.message}`, 'error');
+            }
+        }
+
+        // 結果表示関数
+        function showResult(elementId, message, type = 'success') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `result ${type}`;
+            element.style.display = 'block';
+        }
+
+        // steel_selector.jsの関数をコピー（frame_analyzer.jsから）
+        function normalizeHeaderKey(header) {
+            if (header === undefined || header === null) return '';
+            return header
+                .toString()
+                .trim()
+                .normalize('NFKC')
+                .replace(/[（(].*?[)）]/g, '')
+                .replace(/[\s＿‐－–—]/g, '')
+                .replace(/[＊*×✕✖]/g, 'x')
+                .toLowerCase();
+        }
+
+        function normalizeKey(key) {
+            return (key ?? '').toString().trim().toLowerCase();
+        }
+
+        function findRowValueByKeys(headers, normalizedHeaders, rowData, ...keys) {
+            if (!Array.isArray(headers) || !Array.isArray(rowData)) return undefined;
+
+            const normalizedTokens = keys
+                .flatMap(key => {
+                    if (key === undefined || key === null) return [];
+                    const str = key.toString();
+                    return [normalizeHeaderKey(str), normalizeKey(str)];
+                })
+                .filter(Boolean);
+
+            if (normalizedTokens.length === 0) return undefined;
+
+            const longTokens = normalizedTokens.filter(token => token.length > 1);
+            const shortTokens = normalizedTokens.filter(token => token.length <= 1);
+
+            const ensureNormalizedHeader = (index) => normalizedHeaders?.[index] ?? normalizeHeaderKey(headers[index]);
+
+            if (longTokens.length > 0) {
+                for (let index = 0; index < headers.length; index++) {
+                    const normalizedHeader = ensureNormalizedHeader(index);
+                    if (!normalizedHeader) continue;
+                    if (longTokens.some(token => normalizedHeader.includes(token))) {
+                        return rowData[index];
+                    }
+                }
+            }
+
+            if (shortTokens.length > 0) {
+                for (let index = 0; index < headers.length; index++) {
+                    const normalizedHeader = ensureNormalizedHeader(index);
+                    if (!normalizedHeader) continue;
+                    if (shortTokens.some(token => normalizedHeader === token)) {
+                        return rowData[index];
+                    }
+                }
+            }
+
+            return undefined;
+        }
+
+        function getDimensionsFromRow(type, rowData, headers) {
+            const dims = {};
+            
+            const findValue = (namePart) => {
+                const name = namePart.toLowerCase();
+                const index = headers.findIndex(h => h.toLowerCase().startsWith(name));
+                const value = index !== -1 ? parseFloat(rowData[index]) : NaN;
+                return isNaN(value) ? 0 : value;
+            };
+            
+            try {
+                switch (type) {
+                    case 'hkatakou_hiro':
+                    case 'hkatakou_naka':
+                    case 'hkatakou_hoso':
+                    case 'ikatakou':
+                    case 'keiryouhkatakou':
+                        const hSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
+                        [dims.H, dims.B] = hSizes.length >= 2 ? hSizes : [0, 0];
+                        dims.t1 = findValue('t1');
+                        dims.t2 = findValue('t2');
+                        break;
+                    case 'seihoukei':
+                    case 'tyouhoukei':
+                        const kakuSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
+                        [dims.A, dims.B] = kakuSizes.length >= 2 ? kakuSizes : [0, 0];
+                        dims.t = findValue('t');
+                        break;
+                    case 'koukan':
+                        dims.D = parseFloat(rowData[0]) || 0;
+                        dims.t = findValue('板厚');
+                        break;
+                }
+            } catch (error) {
+                console.error('Error parsing dimensions:', error);
+            }
+            
+            return dims;
+        }
+
+        function calculateDimensionDistance(targetDims, actualDims, steelType) {
+            let distance = 0;
+            
+            switch (steelType) {
+                case 'hkatakou_hiro':
+                case 'hkatakou_naka':
+                case 'hkatakou_hoso':
+                case 'ikatakou':
+                case 'keiryouhkatakou':
+                    if (targetDims.length >= 4 && actualDims.H && actualDims.B && actualDims.t1 && actualDims.t2) {
+                        distance += Math.pow(targetDims[0] - actualDims.H, 2) * 2;
+                        distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;
+                        distance += Math.pow(targetDims[2] - actualDims.t1, 2);
+                        distance += Math.pow(targetDims[3] - actualDims.t2, 2);
+                    } else {
+                        distance = Infinity;
+                    }
+                    break;
+                case 'seihoukei':
+                case 'tyouhoukei':
+                    if (targetDims.length >= 3 && actualDims.A && actualDims.B && actualDims.t) {
+                        distance += Math.pow(targetDims[0] - actualDims.A, 2) * 2;
+                        distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;
+                        distance += Math.pow(targetDims[2] - actualDims.t, 2);
+                    } else {
+                        distance = Infinity;
+                    }
+                    break;
+                case 'koukan':
+                    if (targetDims.length >= 2 && actualDims.D && actualDims.t) {
+                        distance += Math.pow(targetDims[0] - actualDims.D, 2) * 3;
+                        distance += Math.pow(targetDims[1] - actualDims.t, 2);
+                    } else {
+                        distance = Infinity;
+                    }
+                    break;
+                default:
+                    distance = Infinity;
+            }
+            
+            return Math.sqrt(distance);
+        }
+
+        function getSteelTypeFromPattern(patternIndex) {
+            const types = [
+                'hkatakou_hiro',
+                'hkatakou_hiro',
+                'seihoukei',
+                'koukan',
+                'mizogatakou',
+                'touhenyamakatakou'
+            ];
+            return types[patternIndex] || 'hkatakou_hiro';
+        }
+
+        async function detectAndFetchSteelProperties(prompt) {
+            console.log('🔍 鋼材断面指定の検出を開始:', prompt);
+            
+            const steelPatterns = [
+                /H-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+                /H(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+                /□(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+                /φ(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+                /C-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi,
+                /L-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi
+            ];
+            
+            let detectedSteels = [];
+            let enhancedPrompt = prompt;
+            
+            steelPatterns.forEach((pattern, index) => {
+                const matches = [...prompt.matchAll(pattern)];
+                matches.forEach(match => {
+                    const steelSpec = match[0];
+                    const dimensions = match.slice(1).map(d => parseFloat(d));
+                    
+                    detectedSteels.push({
+                        spec: steelSpec,
+                        dimensions: dimensions,
+                        type: getSteelTypeFromPattern(index),
+                        originalMatch: match
+                    });
+                });
+            });
+            
+            if (detectedSteels.length === 0) {
+                return { prompt: enhancedPrompt, steelData: null };
+            }
+            
+            const steelProperties = [];
+            
+            for (const steel of detectedSteels) {
+                try {
+                    const properties = await findSteelPropertiesFromLibrary(steel);
+                    if (properties) {
+                        steelProperties.push(properties);
+                    }
+                } catch (error) {
+                    console.error('断面性能取得エラー:', error);
+                }
+            }
+            
+            if (steelProperties.length > 0) {
+                enhancedPrompt = enhancePromptWithSteelData(enhancedPrompt, steelProperties);
+            }
+            
+            return {
+                prompt: enhancedPrompt,
+                steelData: steelProperties.length > 0 ? steelProperties : null
+            };
+        }
+
+        async function findSteelPropertiesFromLibrary(steelInfo) {
+            if (typeof steelData === 'undefined') {
+                return null;
+            }
+            
+            const steelType = steelInfo.type;
+            const dimensions = steelInfo.dimensions;
+            
+            if (!steelData[steelType]) {
+                return null;
+            }
+            
+            const steel = steelData[steelType];
+            const headers = steel.headers;
+            const data = steel.data;
+            
+            let bestMatch = null;
+            let minDistance = Infinity;
+            
+            for (let i = 0; i < data.length; i++) {
+                const rowData = data[i];
+                const rowDims = getDimensionsFromRow(steelType, rowData, headers);
+                
+                const distance = calculateDimensionDistance(dimensions, rowDims, steelType);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestMatch = {
+                        index: i,
+                        rowData: rowData,
+                        dimensions: rowDims,
+                        distance: distance
+                    };
+                }
+            }
+            
+            if (!bestMatch) {
+                return null;
+            }
+            
+            const normalizedHeaders = headers.map(normalizeHeaderKey);
+            const getProp = (...keys) => findRowValueByKeys(headers, normalizedHeaders, bestMatch.rowData, ...keys);
+            
+            const areaValue = getProp('断面積', '面積', 'A');
+            const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
+            const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
+            const zxValue = getProp('Zx', '強軸断面係数', 'Z');
+            const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
+            const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
+            const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+            
+            const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
+            
+            return {
+                sectionName: sectionName,
+                sectionSpec: steelInfo.spec,
+                sectionType: steelType,
+                dimensions: bestMatch.dimensions,
+                properties: {
+                    A: areaValue,
+                    Ix: ixValue,
+                    Iy: iyValue,
+                    Zx: zxValue,
+                    Zy: zyValue,
+                    ix: radiusXValue,
+                    iy: radiusYValue
+                },
+                matchDistance: bestMatch.distance
+            };
+        }
+
+        function enhancePromptWithSteelData(originalPrompt, steelProperties) {
+            let enhancedPrompt = originalPrompt;
+            
+            enhancedPrompt += '\n\n=== 指定された鋼材断面の詳細情報 ===\n';
+            
+            steelProperties.forEach((steel, index) => {
+                enhancedPrompt += `\n【鋼材${index + 1}】: ${steel.sectionName}\n`;
+                enhancedPrompt += `- 指定断面: ${steel.sectionSpec}\n`;
+                enhancedPrompt += `- 断面積 A: ${steel.properties.A || 'N/A'} cm²\n`;
+                enhancedPrompt += `- 断面二次モーメント Ix: ${steel.properties.Ix || 'N/A'} cm⁴\n`;
+                enhancedPrompt += `- 断面二次モーメント Iy: ${steel.properties.Iy || 'N/A'} cm⁴\n`;
+                enhancedPrompt += `- 断面係数 Zx: ${steel.properties.Zx || 'N/A'} cm³\n`;
+                enhancedPrompt += `- 断面係数 Zy: ${steel.properties.Zy || 'N/A'} cm³\n`;
+                enhancedPrompt += `- 断面二次半径 ix: ${steel.properties.ix || 'N/A'} cm\n`;
+                enhancedPrompt += `- 断面二次半径 iy: ${steel.properties.iy || 'N/A'} cm\n`;
+                
+                if (steel.matchDistance < Infinity) {
+                    enhancedPrompt += `- マッチング精度: ${(100 - steel.matchDistance).toFixed(1)}%\n`;
+                }
+            });
+            
+            enhancedPrompt += '\n上記の断面性能値を用いて構造モデルを生成してください。\n';
+            
+            return enhancedPrompt;
+        }
+    </script>
+</body>
+</html>

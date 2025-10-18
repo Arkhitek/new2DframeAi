@@ -14493,7 +14493,10 @@ async function detectAndFetchSteelProperties(prompt) {
     
     // 各鋼材断面について、最も近い部材タイプを見つける
     steelPatterns.forEach((pattern, index) => {
+        console.log(`🔍 パターン${index}をテスト中:`, pattern);
         const matches = [...prompt.matchAll(pattern)];
+        console.log(`🔍 パターン${index}のマッチ数:`, matches.length);
+        
         matches.forEach(match => {
             const steelSpec = match[0];
             const dimensions = match.slice(1).map(d => parseFloat(d));
@@ -15103,14 +15106,20 @@ function getMemberType(memberIndex) {
         const deltaX = Math.abs(jX - iX);
         const deltaY = Math.abs(jY - iY);
         
+        console.log(`🔍 部材${memberIndex}: 節点${iNodeIndex + 1}(${iX}, ${iY}) → 節点${jNodeIndex + 1}(${jX}, ${jY})`);
+        console.log(`🔍 部材${memberIndex}: deltaX=${deltaX}, deltaY=${deltaY}`);
+        
         // ユーザー定義に従った判定:
         // 柱部材: 始点#iと終点#jのX座標が同じ値
         // 梁部材: 始点#iと終点#jのY座標が同じ値
         if (deltaX < 0.001) { // X座標が同じ（許容誤差0.001m）
+            console.log(`🔍 部材${memberIndex}: 柱部材と判定 (deltaX=${deltaX} < 0.001)`);
             return 'column'; // 柱（垂直）
         } else if (deltaY < 0.001) { // Y座標が同じ（許容誤差0.001m）
+            console.log(`🔍 部材${memberIndex}: 梁部材と判定 (deltaY=${deltaY} < 0.001)`);
             return 'beam';   // 梁（水平）
         } else {
+            console.log(`🔍 部材${memberIndex}: 斜材と判定 (deltaX=${deltaX}, deltaY=${deltaY})`);
             return 'unknown'; // 斜材など
         }
     } catch (error) {
@@ -15180,6 +15189,7 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                 // 該当する部材タイプの部材を検索して設定
                 for (let i = 0; i < rows.length; i++) {
                     const actualMemberType = getMemberType(i);
+                    console.log(`🔍 部材${i}のタイプ: ${actualMemberType}`);
                     if (actualMemberType === targetType) {
                         console.log(`🔍 部材${i}は${targetType}部材です。断面情報を設定します。`);
                         setMemberSectionInfoFromAI(i, steelData);

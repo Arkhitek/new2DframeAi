@@ -164,12 +164,13 @@
             <div id="member-setting-result" class="result-area" style="display: none;"></div>
         </div>
         
-        <!-- 部材タイプ別断面情報設定テスト -->
+        <!-- リアルタイムテスト -->
         <div class="test-section">
-            <h2>🏗️ 部材タイプ別断面情報設定テスト</h2>
-            <p>柱部材と梁部材を個別に指定して断面情報を設定する機能をテストします。</p>
-            <button class="test-button" onclick="testMemberTypeSpecificSetting()">部材タイプ別設定テスト</button>
-            <div id="member-type-result" class="result-area" style="display: none;"></div>
+            <h2>🚀 リアルタイムテスト</h2>
+            <p>実際のプロンプトで鋼材断面検出と部材タイプ判定をテストします。</p>
+            <input type="text" id="realtime-test-input" class="test-input" placeholder="テストするプロンプトを入力（例：柱部材をH-200×100に変更）">
+            <button class="test-button" onclick="testRealtimeDetection()">リアルタイムテスト実行</button>
+            <div id="realtime-result" class="result-area" style="display: none;"></div>
         </div>
         
         <!-- コンソールログ表示 -->
@@ -573,6 +574,64 @@
                 }
             } catch (error) {
                 console.error('部材タイプ別設定テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // リアルタイムテスト
+        async function testRealtimeDetection() {
+            const input = document.getElementById('realtime-test-input').value.trim();
+            const resultDiv = document.getElementById('realtime-result');
+            
+            if (!input) {
+                resultDiv.textContent = 'テストするプロンプトを入力してください。';
+                resultDiv.style.display = 'block';
+                return;
+            }
+            
+            console.log('🚀 リアルタイムテスト開始:', input);
+            
+            try {
+                if (typeof detectAndFetchSteelProperties === 'function') {
+                    const result = await detectAndFetchSteelProperties(input);
+                    
+                    let output = `プロンプト: ${input}\n\n`;
+                    output += `=== 検出結果 ===\n`;
+                    
+                    if (result.steelData && result.steelData.length > 0) {
+                        output += `✅ 鋼材断面データ (${result.steelData.length}個):\n`;
+                        result.steelData.forEach((steel, index) => {
+                            output += `  ${index + 1}. ${steel.sectionName} (${steel.sectionSpec})\n`;
+                            if (steel.memberType) {
+                                output += `     → 部材タイプ: ${steel.memberType} (${steel.memberTypeMatch})\n`;
+                            }
+                            output += `     → 断面タイプ: ${steel.sectionType}\n`;
+                            output += `     → 軸方向: ${steel.axisDirection}\n`;
+                        });
+                    } else {
+                        output += `❌ 鋼材断面データ: 検出されませんでした\n`;
+                    }
+                    
+                    if (result.memberTypes && result.memberTypes.length > 0) {
+                        output += `\n✅ 部材タイプ (${result.memberTypes.length}個):\n`;
+                        result.memberTypes.forEach((memberType, index) => {
+                            output += `  ${index + 1}. ${memberType.type} (${memberType.match}) - 位置: ${memberType.position}\n`;
+                        });
+                    } else {
+                        output += `\n❌ 部材タイプ: 検出されませんでした\n`;
+                    }
+                    
+                    output += `\n=== 拡張されたプロンプト ===\n${result.prompt}`;
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'detectAndFetchSteelProperties関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('リアルタイムテストエラー:', error);
                 resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
                 resultDiv.style.display = 'block';
             }

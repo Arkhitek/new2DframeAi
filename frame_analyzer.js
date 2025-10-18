@@ -10860,12 +10860,47 @@ const loadPreset = (index) => {
                             
                             if (presetProfile && presetProfile.sectionInfo) {
                                 console.log(`🔧 部材${memberIndex + 1}の断面情報を設定:`, presetProfile.sectionInfo.label);
+                                
+                                // 断面名称セルと軸方向セルを直接更新
+                                const sectionNameCell = cells[8]; // 断面名称列
+                                const sectionAxisCell = cells[9]; // 軸方向列
+                                
+                                if (sectionNameCell) {
+                                    const nameSpan = sectionNameCell.querySelector('.section-name-cell');
+                                    if (nameSpan) {
+                                        nameSpan.textContent = presetProfile.sectionInfo.label || '-';
+                                    } else {
+                                        sectionNameCell.textContent = presetProfile.sectionInfo.label || '-';
+                                    }
+                                }
+                                
+                                if (sectionAxisCell) {
+                                    const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
+                                    if (axisSpan) {
+                                        axisSpan.textContent = presetProfile.sectionInfo.axis?.label || '-';
+                                    } else {
+                                        sectionAxisCell.textContent = presetProfile.sectionInfo.axis?.label || '-';
+                                    }
+                                }
+                                
+                                // setRowSectionInfoも呼び出してデータセット属性を設定
                                 window.setRowSectionInfo(row, presetProfile.sectionInfo);
+                                
+                                // 3Dビューアとツールチップ用に部材データを更新
+                                console.log(`🔧 部材${memberIndex + 1}の断面情報をデータセット属性に設定完了`);
                             }
                         }
                     }
                 });
                 console.log('✅ デフォルト表示時の断面情報再設定完了');
+                
+                // 3Dビューアを更新（開いている場合）
+                if (viewerWindow && !viewerWindow.closed) {
+                    setTimeout(() => {
+                        sendModelToViewer();
+                        console.log('🔧 3Dビューアを更新しました');
+                    }, 200);
+                }
             }, 100);
         }
         

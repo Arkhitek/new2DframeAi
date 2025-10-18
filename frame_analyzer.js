@@ -15714,14 +15714,20 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             const sectionAxisCell = row.querySelector('.section-axis-cell');
             const sectionInfo = row.dataset.sectionInfo;
             
-            // 安全にJSONパースを実行
+            // 安全にJSONパースを実行（URLデコードが必要）
             let parsedSectionInfo = null;
             if (sectionInfo) {
                 try {
-                    parsedSectionInfo = JSON.parse(sectionInfo);
+                    // URLデコードしてからJSONパース
+                    const decoded = decodeURIComponent(sectionInfo);
+                    parsedSectionInfo = JSON.parse(decoded);
+                    console.log(`🔧 部材${index + 1}の断面情報をバックアップ:`, parsedSectionInfo);
                 } catch (error) {
                     console.warn(`部材${index + 1}の断面情報のパースに失敗:`, error);
+                    console.log(`🔧 部材${index + 1}の生のsectionInfo:`, sectionInfo);
                 }
+            } else {
+                console.log(`⚠️ 部材${index + 1}のdataset.sectionInfoが存在しません`);
             }
             
             existingSectionInfo[index] = {
@@ -15785,6 +15791,12 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                     }
 
                     // 断面情報のdataset属性を復元（setRowSectionInfo関数を使用）
+                    console.log(`🔧 部材${index + 1}の復元条件チェック:`, {
+                        hasBackupSectionInfo: !!backup.sectionInfo,
+                        backupSectionInfo: backup.sectionInfo,
+                        hasSetRowSectionInfo: typeof window.setRowSectionInfo === 'function'
+                    });
+                    
                     if (backup.sectionInfo && typeof window.setRowSectionInfo === 'function') {
                         console.log(`🔧 部材${index + 1}のsectionInfoをsetRowSectionInfoで復元:`, backup.sectionInfo);
                         window.setRowSectionInfo(row, backup.sectionInfo);
@@ -15809,6 +15821,8 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                         // フォールバック復元直後にdataset.sectionInfoの状態を確認
                         const restoredSectionInfo = row.dataset.sectionInfo;
                         console.log(`🔧 部材${index + 1}のフォールバック復元直後のdataset.sectionInfo:`, restoredSectionInfo ? '存在' : '不存在');
+                    } else {
+                        console.log(`⚠️ 部材${index + 1}のbackup.sectionInfoが存在しないため、復元をスキップ`);
                     }
                     // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
 

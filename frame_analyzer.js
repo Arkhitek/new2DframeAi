@@ -10894,7 +10894,10 @@ window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
             row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
         } catch (error) {
             console.error('Failed to encode sectionInfo:', error, enrichedInfo);
-            row.dataset.sectionInfo = '';
+            // エンコードに失敗した場合は既存の断面情報を保持
+            if (!row.dataset.sectionInfo) {
+                row.dataset.sectionInfo = JSON.stringify(enrichedInfo);
+            }
         }
         row.dataset.sectionLabel = enrichedInfo.label || '';
         row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
@@ -10919,30 +10922,13 @@ window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
             }
         }
     } else {
-        delete row.dataset.sectionInfo;
-        delete row.dataset.sectionLabel;
-        delete row.dataset.sectionSummary;
-        delete row.dataset.sectionSource;
-        window.applySectionAxisDataset(row, null);
-
-        // 断面名称セルをクリア
-        const sectionNameCell = row.cells[sectionNameCellIndex];
-        if (sectionNameCell) {
-            const nameSpan = sectionNameCell.querySelector('.section-name-cell');
-            if (nameSpan) {
-                nameSpan.textContent = '-';
-            }
-        }
-
-        // 軸方向セルをクリア
-        const sectionAxisCell = row.cells[sectionAxisCellIndex];
-        if (sectionAxisCell) {
-            const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-            if (axisSpan) {
-                axisSpan.textContent = '-';
-            }
-        }
+        // sectionInfoがnull/undefinedの場合は既存の断面情報を保持
+        console.log('setRowSectionInfo: sectionInfoがnull/undefinedのため、既存の断面情報を保持します');
+        // 既存の断面情報を削除しない
     }
+
+    // 断面名称セルと軸方向セルは既存の情報を保持
+    console.log('setRowSectionInfo: セルの内容は既存の情報を保持します');
 };
 
 const loadPreset = (index) => {
@@ -15867,12 +15853,29 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                 }
             });
 
+            // 復元処理の検証
+            console.log('🔧 断面情報復元処理の検証');
+            rows.forEach((row, index) => {
+                const sectionInfo = row.dataset.sectionInfo;
+                if (sectionInfo) {
+                    console.log(`✅ 部材${index + 1}: 断面情報が存在します`);
+                } else {
+                    console.log(`❌ 部材${index + 1}: 断面情報が存在しません`);
+                }
+            });
+
             // 復元完了後に3Dビューアを更新
             if (typeof sendModelToViewer === 'function') {
                 console.log('🔧 断面情報復元後に3Dビューアを更新');
                 sendModelToViewer();
             }
-        }, 100);
+
+            // UIの強制更新
+            console.log('🔧 UIの強制更新を実行');
+            if (typeof updateMemberTableDisplay === 'function') {
+                updateMemberTableDisplay();
+            }
+        }, 500);
     } else {
         // 鋼材データに部材タイプ情報が含まれている場合の処理
         const steelDataWithMemberType = steelDataArray.filter(steel => steel.memberType);

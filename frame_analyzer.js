@@ -14803,18 +14803,17 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                 
                 // rowDimsがオブジェクトかどうかチェック
                 if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
-                    // H×Bのみで比較
-                    const hosoDims = [rowDims.H, rowDims.B];
-                    const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
+                    // H×Bのみで比較（オブジェクト形式で渡す）
+                    const distance = calculateDimensionDistance(dimensions, rowDims, 'hkatakou_hoso');
                     
-                    console.log(`🔍 細幅H形鋼 ${i}: 寸法比較 ${dimensions} vs ${hosoDims}, 距離: ${distance}`);
+                    console.log(`🔍 細幅H形鋼 ${i}: 寸法比較 ${dimensions} vs H=${rowDims.H}, B=${rowDims.B}, 距離: ${distance}`);
                     
                     if (distance < minDistance) {
                         minDistance = distance;
                         bestMatch = {
                             index: i,
                             rowData: rowData,
-                            dimensions: hosoDims,
+                            dimensions: rowDims,
                             distance: distance,
                             steelType: 'hkatakou_hoso'
                         };
@@ -14837,16 +14836,17 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                 
                 // rowDimsがオブジェクトかどうかチェック
                 if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
-                    // H×Bのみで比較
-                    const hiroDims = [rowDims.H, rowDims.B];
-                    const distance = calculateDimensionDistance(dimensions, hiroDims, 'hkatakou_hiro');
+                    // H×Bのみで比較（オブジェクト形式で渡す）
+                    const distance = calculateDimensionDistance(dimensions, rowDims, 'hkatakou_hiro');
+                    
+                    console.log(`🔍 広幅H形鋼 ${i}: 寸法比較 ${dimensions} vs H=${rowDims.H}, B=${rowDims.B}, 距離: ${distance}`);
                     
                     if (distance < minDistance) {
                         minDistance = distance;
                         bestMatch = {
                             index: i,
                             rowData: rowData,
-                            dimensions: hiroDims,
+                            dimensions: rowDims,
                             distance: distance,
                             steelType: 'hkatakou_hiro'
                         };

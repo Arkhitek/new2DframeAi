@@ -2840,13 +2840,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (updates.sectionProperties.iy) row.dataset.iy = updates.sectionProperties.iy;
 
                 if (updates.sectionProperties.sectionInfo) {
-                    setRowSectionInfo(row, updates.sectionProperties.sectionInfo);
+                    window.setRowSectionInfo(row, updates.sectionProperties.sectionInfo);
                 }
 
                 if (Object.prototype.hasOwnProperty.call(updates.sectionProperties, 'sectionAxis')) {
-                    applySectionAxisDataset(row, updates.sectionProperties.sectionAxis);
+                    window.applySectionAxisDataset(row, updates.sectionProperties.sectionAxis);
                 } else if (updates.sectionProperties.sectionInfo && updates.sectionProperties.sectionInfo.axis) {
-                    applySectionAxisDataset(row, updates.sectionProperties.sectionInfo.axis);
+                    window.applySectionAxisDataset(row, updates.sectionProperties.sectionInfo.axis);
                 }
             }
             
@@ -3587,12 +3587,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
 
                         if (sectionInfoToApply) {
-                            setRowSectionInfo(newRow, sectionInfoToApply);
+                            window.setRowSectionInfo(newRow, sectionInfoToApply);
                         } else if (axisInfo) {
-                            applySectionAxisDataset(newRow, axisInfo);
+                            window.applySectionAxisDataset(newRow, axisInfo);
                         } else {
                             // 念のため既存のデータセットをクリア
-                            applySectionAxisDataset(newRow, null);
+                            window.applySectionAxisDataset(newRow, null);
                         }
                     }
                 } catch (memberError) {
@@ -10781,9 +10781,9 @@ const loadPreset = (index) => {
                 if (axisInfo && !sectionInfoFromPreset.axis) {
                     sectionInfoFromPreset.axis = { ...axisInfo };
                 }
-                setRowSectionInfo(newRow, sectionInfoFromPreset);
+                window.setRowSectionInfo(newRow, sectionInfoFromPreset);
             } else if (axisInfo) {
-                applySectionAxisDataset(newRow, axisInfo);
+                window.applySectionAxisDataset(newRow, axisInfo);
             }
 
             const zxToApply = propertySource?.Zx ?? m.Zx;
@@ -11541,7 +11541,7 @@ const loadPreset = (index) => {
             row.dataset.sectionLabel = enrichedInfo.label || '';
             row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
             row.dataset.sectionSource = enrichedInfo.source || '';
-            applySectionAxisDataset(row, enrichedInfo.axis);
+            window.applySectionAxisDataset(row, enrichedInfo.axis);
 
             // 断面名称セルを更新
             const sectionNameCell = row.cells[sectionNameCellIndex];
@@ -11565,7 +11565,7 @@ const loadPreset = (index) => {
             delete row.dataset.sectionLabel;
             delete row.dataset.sectionSummary;
             delete row.dataset.sectionSource;
-            applySectionAxisDataset(row, null);
+            window.applySectionAxisDataset(row, null);
 
             // 断面名称セルをクリア
             const sectionNameCell = row.cells[sectionNameCellIndex];
@@ -11718,9 +11718,9 @@ const loadPreset = (index) => {
             setDatasetValue('iy', resolvedIy);
 
             if (props.sectionInfo) {
-                setRowSectionInfo(row, props.sectionInfo);
+                window.setRowSectionInfo(row, props.sectionInfo);
             } else if (props.sectionAxis) {
-                applySectionAxisDataset(row, props.sectionAxis);
+                window.applySectionAxisDataset(row, props.sectionAxis);
             }
             
             // 変更を計算に反映させるためにchangeイベントを発火

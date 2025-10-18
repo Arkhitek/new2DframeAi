@@ -14508,21 +14508,26 @@ async function fetchSteelProperties(steelInfo) {
 async function findSteelPropertiesFromLibrary(steelInfo) {
     console.log('🔍 ライブラリから断面性能を検索:', steelInfo);
     
-    // steel_selector.jsのsteelDataにアクセス
-    if (typeof steelData === 'undefined') {
-        console.warn('steelDataが利用できません');
+    // steel_selector.jsのwindow.steelDataにアクセス
+    if (typeof window.steelData === 'undefined') {
+        console.warn('window.steelDataが利用できません');
+        console.log('🔍 window.steelData:', window.steelData);
+        console.log('🔍 window.steelImages:', window.steelImages);
+        console.log('🔍 利用可能なwindowオブジェクト:', Object.keys(window).filter(key => key.includes('steel')));
         return null;
     }
+    
+    console.log('✅ steelDataライブラリが利用可能:', Object.keys(window.steelData));
     
     const steelType = steelInfo.type;
     const dimensions = steelInfo.dimensions;
     
-    if (!steelData[steelType]) {
+    if (!window.steelData[steelType]) {
         console.warn(`鋼材タイプ ${steelType} のデータが見つかりません`);
         return null;
     }
     
-    const steel = steelData[steelType];
+    const steel = window.steelData[steelType];
     const headers = steel.headers;
     const data = steel.data;
     

@@ -1157,7 +1157,7 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             pickupWrapper.classList.add('hidden');
             return;
         }
-        const steel = steelData[selectedTypeKey];
+        const steel = window.steelData[selectedTypeKey];
         if (!steel || !steel.data || !steel.data[rowIndex]) return;
         const rowData = steel.data[rowIndex];
         pickupTbody.innerHTML = '';
@@ -1197,8 +1197,8 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             // ピックアップ表示もクリア
             pickupWrapper.classList.add('hidden');
 
-            if (steelData[selectedTypeKey]) {
-                const steel = steelData[selectedTypeKey];
+            if (window.steelData[selectedTypeKey]) {
+                const steel = window.steelData[selectedTypeKey];
                 if (!steel.headers || !steel.data || steel.data.length === 0) { 
                     alert('「' + typeSelect.options[typeSelect.selectedIndex].text + '」のデータは現在利用できません。'); 
                     return; 
@@ -1313,7 +1313,7 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         console.log('✅ 選択行:', selectedRow);
         const selectedTypeKey = document.getElementById('steel-type-select').value;
         console.log('✅ 選択された鋼材タイプ:', selectedTypeKey);
-        const steel = steelData[selectedTypeKey], rowIndex = selectedRow.dataset.index, rowData = steel.data[rowIndex];
+        const steel = window.steelData[selectedTypeKey], rowIndex = selectedRow.dataset.index, rowData = steel.data[rowIndex];
         const normalizedHeaders = steel.headers.map(normalizeHeaderKey);
         const getProp = (...keys) => findRowValueByKeys(steel.headers, normalizedHeaders, rowData, ...keys);
         const selectedAxis = document.querySelector('#pickup-axis-selector input[name="axis-select"]:checked')?.value || 'x';
@@ -1641,7 +1641,7 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             customInputs.appendChild(labelEl);
             customInputs.appendChild(inputEl);
         });
-        const steel = steelData[typeKey];
+        const steel = window.steelData[typeKey];
         if (steel && steel.data.length > 0) {
             const initialDims = getDimensionsFromRow(typeKey, steel.data[0], steel.headers);
             for (const key in initialDims) {

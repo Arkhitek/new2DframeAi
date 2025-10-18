@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鋼材断面検出機能デバッグテスト</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .test-section h2 {
+            color: #666;
+            margin-top: 0;
+        }
+        .test-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .test-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        .test-button:hover {
+            background-color: #0056b3;
+        }
+        .result-area {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .test-examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .example-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+        }
+        .example-button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 鋼材断面検出機能デバッグテスト</h1>
+        
+        <!-- ライブラリ状態確認 -->
+        <div class="test-section">
+            <h2>📚 ライブラリ状態確認</h2>
+            <button class="test-button" onclick="checkLibraryStatus()">ライブラリ状態を確認</button>
+            <div id="library-status" class="status" style="display: none;"></div>
+            <div id="library-details" class="result-area" style="display: none;"></div>
+        </div>
+        
+        <!-- 鋼材断面検出テスト -->
+        <div class="test-section">
+            <h2>🔍 鋼材断面検出テスト</h2>
+            <input type="text" id="test-input" class="test-input" placeholder="鋼材断面を指定してください（例：H-100×100×6×8）">
+            <button class="test-button" onclick="testSteelDetection()">検出テスト実行</button>
+            
+            <div class="test-examples">
+                <button class="example-button" onclick="setTestInput('H-100×100×6×8の梁で門型ラーメンを作成')">H-100×100×6×8の梁で門型ラーメンを作成</button>
+                <button class="example-button" onclick="setTestInput('柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください')">柱をH-200×200×8×12に設定し、梁をH-150×150×6×9にしてください</button>
+                <button class="example-button" onclick="setTestInput('□100×100×6の角パイプを使用')">□100×100×6の角パイプを使用</button>
+                <button class="example-button" onclick="setTestInput('φ150×6の円パイプで構造を作成')">φ150×6の円パイプで構造を作成</button>
+                <button class="example-button" onclick="setTestInput('C-200×75×6×9のチャンネルを使用')">C-200×75×6×9のチャンネルを使用</button>
+                <button class="example-button" onclick="setTestInput('L-100×100×6の角鋼を使用')">L-100×100×6の角鋼を使用</button>
+            </div>
+            
+            <div id="detection-result" class="result-area" style="display: none;"></div>
+        </div>
+        
+        <!-- 断面性能取得テスト -->
+        <div class="test-section">
+            <h2>📊 断面性能取得テスト</h2>
+            <button class="test-button" onclick="testSteelProperties()">断面性能取得テスト</button>
+            <div id="properties-result" class="result-area" style="display: none;"></div>
+        </div>
+        
+        <!-- コンソールログ表示 -->
+        <div class="test-section">
+            <h2>📝 コンソールログ</h2>
+            <button class="test-button" onclick="clearConsole()">ログをクリア</button>
+            <div id="console-log" class="result-area"></div>
+        </div>
+    </div>
+
+    <!-- 必要なスクリプトを読み込み -->
+    <script src="steel_data.js"></script>
+    <script src="frame_analyzer.js"></script>
+    
+    <script>
+        // コンソールログをキャプチャ
+        const originalLog = console.log;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        
+        function addToConsoleLog(message, type = 'log') {
+            const consoleLog = document.getElementById('console-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.style.marginBottom = '5px';
+            logEntry.style.padding = '5px';
+            logEntry.style.borderRadius = '3px';
+            
+            if (type === 'error') {
+                logEntry.style.backgroundColor = '#f8d7da';
+                logEntry.style.color = '#721c24';
+            } else if (type === 'warn') {
+                logEntry.style.backgroundColor = '#fff3cd';
+                logEntry.style.color = '#856404';
+            } else {
+                logEntry.style.backgroundColor = '#d1ecf1';
+                logEntry.style.color = '#0c5460';
+            }
+            
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            consoleLog.appendChild(logEntry);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsoleLog(args.join(' '), 'log');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToConsoleLog(args.join(' '), 'warn');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsoleLog(args.join(' '), 'error');
+        };
+        
+        // ライブラリ状態確認
+        function checkLibraryStatus() {
+            const statusDiv = document.getElementById('library-status');
+            const detailsDiv = document.getElementById('library-details');
+            
+            let status = '';
+            let details = '';
+            
+            if (typeof window.steelData !== 'undefined') {
+                status = '✅ steelDataライブラリが利用可能です';
+                statusDiv.className = 'status success';
+                
+                const steelTypes = Object.keys(window.steelData);
+                details = `利用可能な鋼材タイプ (${steelTypes.length}種類):\n`;
+                details += steelTypes.join(', ') + '\n\n';
+                
+                // 各タイプのデータ数を表示
+                steelTypes.forEach(type => {
+                    const steel = window.steelData[type];
+                    if (steel && steel.data) {
+                        details += `${type}: ${steel.data.length}個の断面データ\n`;
+                    }
+                });
+            } else {
+                status = '❌ steelDataライブラリが利用できません';
+                statusDiv.className = 'status error';
+                details = 'window.steelDataが定義されていません。\n';
+                details += 'steel_data.jsが正しく読み込まれているか確認してください。';
+            }
+            
+            if (typeof window.steelImages !== 'undefined') {
+                details += `\nsteelImages: ${Object.keys(window.steelImages).length}個の画像データ`;
+            } else {
+                details += '\nsteelImages: 利用できません';
+            }
+            
+            statusDiv.textContent = status;
+            statusDiv.style.display = 'block';
+            detailsDiv.textContent = details;
+            detailsDiv.style.display = 'block';
+        }
+        
+        // テスト入力設定
+        function setTestInput(text) {
+            document.getElementById('test-input').value = text;
+        }
+        
+        // 鋼材断面検出テスト
+        async function testSteelDetection() {
+            const input = document.getElementById('test-input').value.trim();
+            const resultDiv = document.getElementById('detection-result');
+            
+            if (!input) {
+                resultDiv.textContent = 'テストするテキストを入力してください。';
+                resultDiv.style.display = 'block';
+                return;
+            }
+            
+            console.log('🔍 鋼材断面検出テスト開始:', input);
+            
+            try {
+                // frame_analyzer.jsの関数を使用
+                if (typeof detectAndFetchSteelProperties === 'function') {
+                    const result = await detectAndFetchSteelProperties(input);
+                    
+                    let output = `入力: ${input}\n\n`;
+                    output += `検出結果:\n`;
+                    output += JSON.stringify(result, null, 2);
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'detectAndFetchSteelProperties関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('鋼材断面検出テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // 断面性能取得テスト
+        async function testSteelProperties() {
+            const resultDiv = document.getElementById('properties-result');
+            
+            console.log('🔍 断面性能取得テスト開始');
+            
+            try {
+                // テスト用の鋼材情報
+                const testSteelInfo = {
+                    type: 'hkatakou_hiro',
+                    dimensions: {
+                        H: 100,
+                        B: 100,
+                        t1: 6,
+                        t2: 8
+                    }
+                };
+                
+                if (typeof findSteelPropertiesFromLibrary === 'function') {
+                    const result = await findSteelPropertiesFromLibrary(testSteelInfo);
+                    
+                    let output = `テスト鋼材情報: ${JSON.stringify(testSteelInfo, null, 2)}\n\n`;
+                    output += `取得結果:\n`;
+                    output += JSON.stringify(result, null, 2);
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'findSteelPropertiesFromLibrary関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('断面性能取得テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // コンソールログクリア
+        function clearConsole() {
+            document.getElementById('console-log').innerHTML = '';
+        }
+        
+        // ページ読み込み時にライブラリ状態を確認
+        window.addEventListener('load', () => {
+            console.log('🔧 鋼材断面検出機能デバッグテストページが読み込まれました');
+            checkLibraryStatus();
+        });
+    </script>
+</body>
+</html>

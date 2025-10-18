@@ -428,13 +428,13 @@
                     setMemberSectionInfoFromAI(0, testSteelData);
                     
                     let output = `テスト鋼材データ: ${JSON.stringify(testSteelData, null, 2)}\n\n`;
-                    output += `部材0に断面情報を設定しました（既存形式で）。\n\n`;
+                    output += `部材0に断面情報を設定しました（部材断面選択と同じ形式で）。\n\n`;
                     output += `設定内容:\n`;
-                    output += `- 断面名称: ${testSteelData.sectionName}\n`;
-                    output += `- 軸方向: ${testSteelData.axisDirection}\n`;
+                    output += `- 断面名称: H形鋼（広幅） ${testSteelData.sectionName}\n`;
+                    output += `- 軸方向: ${testSteelData.isStrongAxisX ? '強軸 (X軸)' : '弱軸 (Y軸)'}\n`;
                     output += `- 断面タイプ: ${testSteelData.sectionType}\n`;
                     output += `- マッチング精度: ${(100 - testSteelData.matchDistance).toFixed(1)}%\n\n`;
-                    output += `既存の部材断面選択機能と同じ形式で設定されました。\n`;
+                    output += `部材断面選択機能と同じ表示形式で設定されました。\n`;
                     output += `エラーハンドリングとフォールバック機能も含まれています。\n`;
                     output += `メインアプリケーションの部材テーブルで確認してください。`;
                     

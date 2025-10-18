@@ -14877,15 +14877,40 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     
     console.log(`🔍 部材${memberIndex}の行を確認:`, row);
     
+    // 部材断面選択と同じ形式で断面名称を生成
+    const getTypeLabel = (sectionType) => {
+        const typeLabelMap = {
+            'hkatakou_hiro': 'H形鋼（広幅）',
+            'hkatakou_naka': 'H形鋼（中幅）',
+            'hkatakou_hoso': 'H形鋼（細幅）',
+            'ikatakou': 'I形鋼',
+            'mizogatakou': 'みぞ形鋼',
+            'touhenyamakatakou': '等辺山形鋼',
+            'futouhenyamagata': '不等辺山形鋼',
+            'keiryouhkatakou': '軽量H形鋼',
+            'keimizogatakou': '軽みぞ形鋼',
+            'keiryourippuhkatakou': '軽量リップH形鋼',
+            'rippumizokatakou': 'リップみぞ形鋼',
+            'seihoukei': '角形鋼管（正方形）',
+            'tyouhoukei': '角形鋼管（長方形）',
+            'maru': '円形鋼管'
+        };
+        return typeLabelMap[sectionType] || sectionType;
+    };
+    
+    const typeLabel = getTypeLabel(steelData.sectionType);
+    const designation = steelData.sectionName || '';
+    const fullLabel = designation ? `${typeLabel} ${designation}`.trim() : typeLabel;
+    
     // 既存の部材断面選択機能と同じ形式でsectionInfoオブジェクトを作成
     const sectionInfo = {
-        label: steelData.sectionName || '',
+        label: fullLabel,
         dimensionSummary: steelData.sectionSpec || '',
         source: 'AI生成',
         axis: {
             key: steelData.isStrongAxisX ? 'x' : 'y',
             mode: steelData.isStrongAxisX ? 'strong' : 'weak',
-            label: steelData.axisDirection || (steelData.isStrongAxisX ? '強軸 (X軸)' : '弱軸 (Y軸)')
+            label: steelData.isStrongAxisX ? '強軸 (X軸)' : '弱軸 (Y軸)'
         },
         dimensions: [
             { key: 'H', label: 'H', value: steelData.dimensions?.H || 0 },

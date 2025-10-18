@@ -14669,6 +14669,34 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
         }
     }
     
+    // 2つの寸法のH形鋼の場合、細幅H形鋼から近い断面を探す
+    if (!bestMatch && steelType === 'hkatakou_hiro' && dimensions.length === 2) {
+        console.log('🔍 2つの寸法のH形鋼のため、細幅H形鋼から近い断面を検索');
+        
+        const hosoData = window.steelData.hkatakou_hoso;
+        if (hosoData) {
+            for (let i = 0; i < hosoData.data.length; i++) {
+                const rowData = hosoData.data[i];
+                const rowDims = getDimensionsFromRow('hkatakou_hoso', rowData, hosoData.headers);
+                
+                // H×Bのみで比較
+                const hosoDims = rowDims.slice(0, 2);
+                const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestMatch = {
+                        index: i,
+                        rowData: rowData,
+                        dimensions: hosoDims,
+                        distance: distance,
+                        steelType: 'hkatakou_hoso'
+                    };
+                }
+            }
+        }
+    }
+    
     if (!bestMatch) {
         console.warn('適合する断面が見つかりませんでした');
         return null;
@@ -14677,8 +14705,11 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     console.log('✅ 最適な断面を発見:', bestMatch);
     
     // 断面性能を取得
-    const normalizedHeaders = headers.map(normalizeHeaderKey);
-    const getProp = (...keys) => findRowValueByKeys(headers, normalizedHeaders, bestMatch.rowData, ...keys);
+    const actualSteelType = bestMatch.steelType || steelType;
+    const actualSteelData = window.steelData[actualSteelType];
+    const actualHeaders = actualSteelData.headers;
+    const normalizedHeaders = actualHeaders.map(normalizeHeaderKey);
+    const getProp = (...keys) => findRowValueByKeys(actualHeaders, normalizedHeaders, bestMatch.rowData, ...keys);
     
     const areaValue = getProp('断面積', '面積', 'A');
     const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
@@ -14697,7 +14728,7 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     return {
         sectionName: sectionName,
         sectionSpec: steelInfo.spec,
-        sectionType: steelType,
+        sectionType: actualSteelType,
         dimensions: bestMatch.dimensions,
         axisDirection: axisDirection,
         isStrongAxisX: isStrongAxisX,

@@ -14461,8 +14461,29 @@ async function detectAndFetchSteelProperties(prompt) {
         /L-(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/gi
     ];
     
+    // 部材タイプのパターンを検出
+    const memberTypePatterns = [
+        { pattern: /柱部材|柱|垂直部材|コラム/gi, type: 'column' },
+        { pattern: /梁部材|梁|水平部材|ビーム/gi, type: 'beam' }
+    ];
+    
     let detectedSteels = [];
+    let detectedMemberTypes = [];
     let enhancedPrompt = prompt;
+    
+    // 部材タイプを検出
+    memberTypePatterns.forEach(({ pattern, type }) => {
+        const matches = [...prompt.matchAll(pattern)];
+        matches.forEach(match => {
+            detectedMemberTypes.push({
+                type: type,
+                match: match[0],
+                position: match.index
+            });
+        });
+    });
+    
+    console.log('🔍 検出された部材タイプ:', detectedMemberTypes);
     
     // 各パターンで検索
     steelPatterns.forEach((pattern, index) => {
@@ -14854,7 +14875,11 @@ function enhancePromptWithSteelData(originalPrompt, steelProperties) {
     
     enhancedPrompt += '\n上記の断面性能値を用いて構造モデルを生成してください。\n';
     
-    return enhancedPrompt;
+    return { 
+        prompt: enhancedPrompt, 
+        steelData: steelProperties,
+        memberTypes: detectedMemberTypes
+    };
 }
 
 /**
@@ -14986,10 +15011,73 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
 }
 
 /**
- * AI生成時に複数の部材の断面情報を設定する関数
+ * 部材が柱（垂直）か梁（水平）かを判定する関数
+ * @param {number} memberIndex - 部材のインデックス
+ * @returns {string} 'column' | 'beam' | 'unknown'
  */
-function setMultipleMembersSectionInfoFromAI(steelDataArray) {
-    console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray);
+function getMemberType(memberIndex) {
+    try {
+        const membersTable = document.getElementById('members-table');
+        if (!membersTable) return 'unknown';
+        
+        const rows = membersTable.querySelectorAll('tbody tr');
+        if (memberIndex >= rows.length) return 'unknown';
+        
+        const row = rows[memberIndex];
+        const cells = row.cells;
+        
+        // 節点番号を取得
+        const iCell = cells[0]; // i節点
+        const jCell = cells[1]; // j節点
+        
+        if (!iCell || !jCell) return 'unknown';
+        
+        const iNodeIndex = parseInt(iCell.querySelector('input')?.value) - 1;
+        const jNodeIndex = parseInt(jCell.querySelector('input')?.value) - 1;
+        
+        if (isNaN(iNodeIndex) || isNaN(jNodeIndex)) return 'unknown';
+        
+        // 節点座標を取得
+        const nodesTable = document.getElementById('nodes-table');
+        if (!nodesTable) return 'unknown';
+        
+        const nodeRows = nodesTable.querySelectorAll('tbody tr');
+        const iNodeRow = nodeRows[iNodeIndex];
+        const jNodeRow = nodeRows[jNodeIndex];
+        
+        if (!iNodeRow || !jNodeRow) return 'unknown';
+        
+        const iX = parseFloat(iNodeRow.cells[1].querySelector('input')?.value) || 0;
+        const iY = parseFloat(iNodeRow.cells[2].querySelector('input')?.value) || 0;
+        const jX = parseFloat(jNodeRow.cells[1].querySelector('input')?.value) || 0;
+        const jY = parseFloat(jNodeRow.cells[2].querySelector('input')?.value) || 0;
+        
+        // X座標の差とY座標の差を計算
+        const deltaX = Math.abs(jX - iX);
+        const deltaY = Math.abs(jY - iY);
+        
+        // Y方向の変化がX方向の変化より大きい場合は柱（垂直）
+        // X方向の変化がY方向の変化より大きい場合は梁（水平）
+        if (deltaY > deltaX) {
+            return 'column'; // 柱（垂直）
+        } else if (deltaX > deltaY) {
+            return 'beam';   // 梁（水平）
+        } else {
+            return 'unknown'; // 斜材など
+        }
+    } catch (error) {
+        console.warn(`部材${memberIndex}のタイプ判定でエラー:`, error);
+        return 'unknown';
+    }
+}
+
+/**
+ * AI生成時に複数の部材の断面情報を設定する関数
+ * @param {Array} steelDataArray - 鋼材断面データの配列
+ * @param {Array} memberTypes - 部材タイプ情報の配列
+ */
+function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
+    console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray, memberTypes);
     
     if (!Array.isArray(steelDataArray)) {
         console.warn('steelDataArrayが配列ではありません');
@@ -15010,22 +15098,43 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray) {
         return;
     }
     
-    // 検出された鋼材断面情報をすべての部材に適用
-    // 複数の鋼材断面が検出された場合は、最初の断面をすべての部材に適用
-    // 1つの鋼材断面が検出された場合は、その断面をすべての部材に適用
-    const steelDataToApply = steelDataArray[0]; // 最初の鋼材断面を使用
-    
-    if (steelDataToApply && steelDataToApply.sectionName) {
-        console.log(`🔍 鋼材断面「${steelDataToApply.sectionName}」をすべての部材に適用`);
+    // 部材タイプ別の処理
+    if (memberTypes && memberTypes.length > 0) {
+        console.log('🔍 部材タイプ別の断面情報設定を実行');
         
-        // すべての部材に同じ断面情報を適用
-        for (let i = 0; i < rows.length; i++) {
-            setMemberSectionInfoFromAI(i, steelDataToApply);
-        }
-        
-        console.log(`✅ ${rows.length}個の部材に断面情報を設定完了`);
+        // 各部材タイプに対して処理
+        memberTypes.forEach((memberTypeInfo, index) => {
+            const steelData = steelDataArray[index] || steelDataArray[0]; // 対応する鋼材断面または最初の断面
+            const targetType = memberTypeInfo.type;
+            
+            console.log(`🔍 ${targetType}部材に断面情報を設定:`, steelData);
+            
+            // 該当する部材タイプの部材を検索して設定
+            for (let i = 0; i < rows.length; i++) {
+                const actualMemberType = getMemberType(i);
+                if (actualMemberType === targetType) {
+                    console.log(`🔍 部材${i}は${targetType}部材です。断面情報を設定します。`);
+                    setMemberSectionInfoFromAI(i, steelData);
+                }
+            }
+        });
     } else {
-        console.warn('適用可能な鋼材断面情報がありません');
+        // 従来の処理：検出された鋼材断面情報をすべての部材に適用
+        console.log('🔍 従来の処理：すべての部材に断面情報を適用');
+        const steelDataToApply = steelDataArray[0]; // 最初の鋼材断面を使用
+        
+        if (steelDataToApply && steelDataToApply.sectionName) {
+            console.log(`🔍 鋼材断面「${steelDataToApply.sectionName}」をすべての部材に適用`);
+            
+            // すべての部材に同じ断面情報を適用
+            for (let i = 0; i < rows.length; i++) {
+                setMemberSectionInfoFromAI(i, steelDataToApply);
+            }
+            
+            console.log(`✅ ${rows.length}個の部材に断面情報を設定完了`);
+        } else {
+            console.warn('適用可能な鋼材断面情報がありません');
+        }
     }
 }
 
@@ -15840,7 +15949,8 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 const steelDetectionResult = await detectAndFetchSteelProperties(naturalLanguageInput);
                 if (steelDetectionResult && steelDetectionResult.steelData && steelDetectionResult.steelData.length > 0) {
                     console.log('🔍 AI生成後に部材の断面情報を設定:', steelDetectionResult.steelData);
-                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData);
+                    console.log('🔍 検出された部材タイプ:', steelDetectionResult.memberTypes);
+                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes);
                     
                     // 3Dビューアが開いている場合は更新を送信
                     if (viewerWindow && !viewerWindow.closed) {

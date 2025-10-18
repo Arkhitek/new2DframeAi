@@ -161,6 +161,14 @@
             <div id="member-setting-result" class="result-area" style="display: none;"></div>
         </div>
         
+        <!-- 部材タイプ別断面情報設定テスト -->
+        <div class="test-section">
+            <h2>🏗️ 部材タイプ別断面情報設定テスト</h2>
+            <p>柱部材と梁部材を個別に指定して断面情報を設定する機能をテストします。</p>
+            <button class="test-button" onclick="testMemberTypeSpecificSetting()">部材タイプ別設定テスト</button>
+            <div id="member-type-result" class="result-area" style="display: none;"></div>
+        </div>
+        
         <!-- コンソールログ表示 -->
         <div class="test-section">
             <h2>📝 コンソールログ</h2>
@@ -448,6 +456,96 @@
                 }
             } catch (error) {
                 console.error('部材断面情報設定テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // 部材タイプ別断面情報設定テスト
+        function testMemberTypeSpecificSetting() {
+            const resultDiv = document.getElementById('member-type-result');
+            resultDiv.style.display = 'none';
+            
+            try {
+                // テスト用の鋼材データ（柱用）
+                const columnSteelData = {
+                    sectionName: '200×100',
+                    sectionSpec: 'H-200×100×6×8',
+                    sectionType: 'hkatakou_hiro',
+                    axisDirection: 'X軸',
+                    isStrongAxisX: true,
+                    dimensions: {
+                        H: 200,
+                        B: 100,
+                        t1: 6,
+                        t2: 8
+                    },
+                    properties: {
+                        A: 25.66,
+                        Ix: 1840,
+                        Iy: 134,
+                        Zx: 184,
+                        Zy: 26.7,
+                        ix: 8.47,
+                        iy: 2.28
+                    },
+                    matchDistance: 0.2
+                };
+                
+                // テスト用の鋼材データ（梁用）
+                const beamSteelData = {
+                    sectionName: '300×150',
+                    sectionSpec: 'H-300×150×6.5×9',
+                    sectionType: 'hkatakou_hiro',
+                    axisDirection: 'X軸',
+                    isStrongAxisX: true,
+                    dimensions: {
+                        H: 300,
+                        B: 150,
+                        t1: 6.5,
+                        t2: 9
+                    },
+                    properties: {
+                        A: 46.78,
+                        Ix: 7210,
+                        Iy: 508,
+                        Zx: 481,
+                        Zy: 67.7,
+                        ix: 12.4,
+                        iy: 3.29
+                    },
+                    matchDistance: 0.1
+                };
+                
+                // テスト用の部材タイプ情報
+                const memberTypes = [
+                    { type: 'column', match: '柱部材', position: 0 },
+                    { type: 'beam', match: '梁部材', position: 10 }
+                ];
+                
+                if (typeof setMultipleMembersSectionInfoFromAI === 'function') {
+                    // 部材タイプ別に断面情報を設定
+                    setMultipleMembersSectionInfoFromAI([columnSteelData, beamSteelData], memberTypes);
+                    
+                    let output = '✅ 部材タイプ別断面情報設定テスト完了\n\n';
+                    output += `設定内容:\n`;
+                    output += `- 柱部材: H形鋼（広幅） ${columnSteelData.sectionName} (${columnSteelData.sectionSpec})\n`;
+                    output += `- 梁部材: H形鋼（広幅） ${beamSteelData.sectionName} (${beamSteelData.sectionSpec})\n\n`;
+                    output += `機能説明:\n`;
+                    output += `- 柱部材（垂直部材）のみにH-200×100×6×8が設定されます\n`;
+                    output += `- 梁部材（水平部材）のみにH-300×150×6.5×9が設定されます\n`;
+                    output += `- 部材の向きは節点座標から自動判定されます\n`;
+                    output += `- 3Dビューアでも部材タイプ別の断面が表示されます\n`;
+                    output += `メインアプリケーションで「柱部材をH-200×100に変更」のような指示をテストしてください。`;
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'setMultipleMembersSectionInfoFromAI関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('部材タイプ別設定テストエラー:', error);
                 resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
                 resultDiv.style.display = 'block';
             }

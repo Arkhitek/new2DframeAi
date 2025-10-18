@@ -15714,20 +15714,24 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             const sectionAxisCell = row.querySelector('.section-axis-cell');
             const sectionInfo = row.dataset.sectionInfo;
             
+            console.log(`🔍 [バックアップ] 部材${index + 1}: dataset.sectionInfo存在=${!!sectionInfo}, 長さ=${sectionInfo ? sectionInfo.length : 0}`);
+            
             // 安全にJSONパースを実行（URLデコードが必要）
             let parsedSectionInfo = null;
             if (sectionInfo) {
+                console.log(`🔍 [バックアップ] 部材${index + 1}: 生のsectionInfo=${sectionInfo.substring(0, 100)}...`);
                 try {
                     // URLデコードしてからJSONパース
                     const decoded = decodeURIComponent(sectionInfo);
+                    console.log(`🔍 [バックアップ] 部材${index + 1}: デコード後=${decoded.substring(0, 100)}...`);
                     parsedSectionInfo = JSON.parse(decoded);
-                    console.log(`🔧 部材${index + 1}の断面情報をバックアップ:`, parsedSectionInfo);
+                    console.log(`✅ [バックアップ] 部材${index + 1}の断面情報をバックアップ:`, parsedSectionInfo);
                 } catch (error) {
-                    console.warn(`部材${index + 1}の断面情報のパースに失敗:`, error);
-                    console.log(`🔧 部材${index + 1}の生のsectionInfo:`, sectionInfo);
+                    console.error(`❌ [バックアップ] 部材${index + 1}の断面情報のパースに失敗:`, error);
+                    console.log(`🔍 [バックアップ] 部材${index + 1}の生のsectionInfo:`, sectionInfo);
                 }
             } else {
-                console.log(`⚠️ 部材${index + 1}のdataset.sectionInfoが存在しません`);
+                console.log(`⚠️ [バックアップ] 部材${index + 1}のdataset.sectionInfoが存在しません`);
             }
             
             existingSectionInfo[index] = {
@@ -15790,16 +15794,17 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                         console.log(`🔧 部材${index + 1}の軸方向を復元: ${backup.sectionAxis}`);
                     }
 
-                    // 断面情報のdataset属性を復元（setRowSectionInfo関数を使用）
-                    console.log(`🔧 部材${index + 1}の復元条件チェック:`, {
-                        hasBackupSectionInfo: !!backup.sectionInfo,
-                        backupSectionInfo: backup.sectionInfo,
-                        hasSetRowSectionInfo: typeof window.setRowSectionInfo === 'function'
-                    });
-                    
-                    if (backup.sectionInfo && typeof window.setRowSectionInfo === 'function') {
-                        console.log(`🔧 部材${index + 1}のsectionInfoをsetRowSectionInfoで復元:`, backup.sectionInfo);
-                        window.setRowSectionInfo(row, backup.sectionInfo);
+                   // 断面情報のdataset属性を復元（setRowSectionInfo関数を使用）
+                   console.log(`🔍 [復元] 部材${index + 1}の復元条件チェック:`, {
+                       hasBackupSectionInfo: !!backup.sectionInfo,
+                       backupSectionInfoType: typeof backup.sectionInfo,
+                       backupSectionInfo: backup.sectionInfo,
+                       hasSetRowSectionInfo: typeof window.setRowSectionInfo === 'function'
+                   });
+                   
+                   if (backup.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+                       console.log(`✅ [復元] 部材${index + 1}のsectionInfoをsetRowSectionInfoで復元:`, backup.sectionInfo);
+                       window.setRowSectionInfo(row, backup.sectionInfo);
                         
                         // 復元直後にdataset.sectionInfoの状態を確認
                         const restoredSectionInfo = row.dataset.sectionInfo;

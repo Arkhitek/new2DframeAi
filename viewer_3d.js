@@ -507,10 +507,15 @@ function createSectionShape(sectionInfo, member) {
  * 部材の断面名称を取得（板厚まで含んだ完全な名称）
  */
 function getSectionName(member) {
-    if (!member.sectionInfo) return null;
+    console.log('🔍 getSectionName呼び出し:', member);
+    if (!member.sectionInfo) {
+        console.log('⚠️ sectionInfoが存在しません');
+        return null;
+    }
 
     const typeKey = member.sectionInfo.typeKey;
     const dims = member.sectionInfo.rawDims;
+    console.log('🔍 typeKey:', typeKey, 'dims:', dims);
 
     // typeKeyから推定の場合
     if (typeKey === 'estimated') {
@@ -524,11 +529,13 @@ function getSectionName(member) {
 
     // rawDimsがない場合は既存のlabelを使用
     if (!dims) {
+        console.log('🔍 rawDimsがないためlabelを使用:', member.sectionInfo.label);
         return member.sectionInfo.label || null;
     }
 
     // 形状タイプに応じて板厚まで含んだ名称を生成
     let sectionName;
+    console.log('🔍 形状タイプに応じて名称を生成:', typeKey);
     switch (typeKey) {
         case 'hkatakou_hiro':
             if (dims.t1 && dims.t2) {
@@ -638,6 +645,7 @@ function getSectionName(member) {
             break;
         default:
             // typeKeyがあるがswitchに該当しない場合、labelを使用
+            console.log('🔍 デフォルトケース: labelを使用:', member.sectionInfo.label);
             sectionName = member.sectionInfo.label || null;
             break;
     }
@@ -647,6 +655,7 @@ function getSectionName(member) {
         sectionName += ` (${member.sectionAxis.label})`;
     }
 
+    console.log('🔍 生成された断面名称:', sectionName);
     return sectionName;
 }
 

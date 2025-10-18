@@ -4625,9 +4625,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         // エンコードされていない場合
                         sectionInfo = JSON.parse(sectionInfoStr);
                     }
+                    console.log(`🔍 部材${index + 1}の断面情報を取得:`, sectionInfo);
                 } catch (error) {
                     console.warn(`部材 ${index + 1}: 断面情報のパースに失敗`, error);
                 }
+            } else {
+                console.log(`⚠️ 部材${index + 1}: sectionInfoが存在しません`);
             }
 
             // 軸情報を取得（3つの個別属性から構築）
@@ -4637,6 +4640,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     mode: row.dataset.sectionAxisMode,
                     label: row.dataset.sectionAxisLabel
                 };
+                console.log(`🔍 部材${index + 1}の軸情報を取得:`, sectionAxis);
             }
 
             return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis };
@@ -13648,6 +13652,12 @@ function sendModelToViewer() {
     if (viewerWindow && !viewerWindow.closed) {
         try {
             const modelData = parseInputs();
+            console.log('🔧 3Dビューアに送信するモデルデータ:', modelData);
+            console.log('🔧 部材の断面情報:', modelData.members.map((m, i) => ({
+                memberIndex: i + 1,
+                sectionInfo: m.sectionInfo,
+                sectionAxis: m.sectionAxis
+            })));
             viewerWindow.postMessage({ type: 'updateModel', data: modelData }, '*');
         } catch (error) {
             console.error("3Dビューアへのモデル更新送信に失敗しました:", error);
@@ -15802,27 +15812,30 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             rows.forEach((row, index) => {
                 const memberType = identifyMemberType(currentModel.members[index], currentModel.nodes);
                 const shouldChange = memberTypes.some(mt => mt.type === memberType);
-                
+
                 console.log(`🔍 部材${index + 1}: タイプ=${memberType}, 変更対象=${shouldChange}`);
-                
+
                 if (!shouldChange && existingSectionInfo[index]) {
                     const backup = existingSectionInfo[index];
                     const sectionNameCell = row.querySelector('.section-name-cell');
                     const sectionAxisCell = row.querySelector('.section-axis-cell');
-                    
+
                     // 断面名称を復元
                     if (sectionNameCell && backup.sectionName) {
                         sectionNameCell.textContent = backup.sectionName;
+                        console.log(`🔧 部材${index + 1}の断面名称を復元: ${backup.sectionName}`);
                     }
-                    
+
                     // 軸方向を復元
                     if (sectionAxisCell && backup.sectionAxis) {
                         sectionAxisCell.textContent = backup.sectionAxis;
+                        console.log(`🔧 部材${index + 1}の軸方向を復元: ${backup.sectionAxis}`);
                     }
-                    
+
                     // 断面情報のdataset属性を復元
                     if (backup.sectionInfo) {
                         row.dataset.sectionInfo = JSON.stringify(backup.sectionInfo);
+                        console.log(`🔧 部材${index + 1}のsectionInfoを復元:`, backup.sectionInfo);
                     }
                     if (backup.sectionInfoEncoded) {
                         row.dataset.sectionInfoEncoded = backup.sectionInfoEncoded;
@@ -15845,21 +15858,21 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                     if (backup.sectionAxisLabel) {
                         row.dataset.sectionAxisLabel = backup.sectionAxisLabel;
                     }
-                    
-                    console.log(`🔧 部材${index + 1} (${memberType})の断面情報を復元: ${backup.sectionName}`);
+
+                    console.log(`🔧 部材${index + 1} (${memberType})の断面情報を復元完了: ${backup.sectionName}`);
                 } else if (shouldChange) {
                     console.log(`🔧 部材${index + 1} (${memberType})は変更対象のため復元をスキップ`);
                 } else {
                     console.log(`⚠️ 部材${index + 1} (${memberType})のバックアップ情報がありません`);
                 }
             });
-            
+
             // 復元完了後に3Dビューアを更新
             if (typeof sendModelToViewer === 'function') {
                 console.log('🔧 断面情報復元後に3Dビューアを更新');
                 sendModelToViewer();
             }
-        }, 500);
+        }, 100);
     } else {
         // 鋼材データに部材タイプ情報が含まれている場合の処理
         const steelDataWithMemberType = steelDataArray.filter(steel => steel.memberType);

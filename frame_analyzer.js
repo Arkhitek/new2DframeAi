@@ -14824,8 +14824,10 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     }
     
     const rows = membersTable.querySelectorAll('tbody tr');
+    console.log(`🔍 部材テーブルの行数: ${rows.length}, 対象部材: ${memberIndex}`);
+    
     if (memberIndex >= rows.length) {
-        console.warn(`部材${memberIndex}の行が見つかりません`);
+        console.warn(`部材${memberIndex}の行が見つかりません (総行数: ${rows.length})`);
         return;
     }
     
@@ -14835,10 +14837,14 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
         return;
     }
     
+    console.log(`🔍 部材${memberIndex}の行を確認:`, row);
+    
     // 密度列の有無を確認
     const hasDensityColumn = row.querySelector('.density-cell') !== null;
     const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
     const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+    
+    console.log(`🔍 密度列の有無: ${hasDensityColumn}, 断面名称セルインデックス: ${sectionNameCellIndex}, 軸方向セルインデックス: ${sectionAxisCellIndex}`);
     
     // 断面名称セルを更新
     const sectionNameCell = row.cells[sectionNameCellIndex];
@@ -14847,7 +14853,11 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
         if (nameSpan && steelData.sectionName) {
             nameSpan.textContent = steelData.sectionName;
             console.log(`✅ 部材${memberIndex}の断面名称を設定: ${steelData.sectionName}`);
+        } else {
+            console.warn(`部材${memberIndex}の断面名称セルが見つからないか、データが無効です`);
         }
+    } else {
+        console.warn(`部材${memberIndex}の断面名称セルが見つかりません (インデックス: ${sectionNameCellIndex})`);
     }
     
     // 軸方向セルを更新
@@ -14857,12 +14867,21 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
         if (axisSpan && steelData.axisDirection) {
             axisSpan.textContent = steelData.axisDirection;
             console.log(`✅ 部材${memberIndex}の軸方向を設定: ${steelData.axisDirection}`);
+        } else {
+            console.warn(`部材${memberIndex}の軸方向セルが見つからないか、データが無効です`);
         }
+    } else {
+        console.warn(`部材${memberIndex}の軸方向セルが見つかりません (インデックス: ${sectionAxisCellIndex})`);
     }
     
     // データセット属性も更新
     row.dataset.sectionLabel = steelData.sectionName || '';
     row.dataset.sectionAxisLabel = steelData.axisDirection || '';
+    
+    console.log(`🔍 部材${memberIndex}のデータセット属性を更新:`, {
+        sectionLabel: steelData.sectionName,
+        sectionAxisLabel: steelData.axisDirection
+    });
 }
 
 /**
@@ -15673,17 +15692,40 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         }
         
         // AI生成時に検出された鋼材断面情報を部材テーブルに設定
-        setTimeout(() => {
+        // 複数回の試行で確実に設定する
+        const attemptSetMemberInfo = async (attempt = 1, maxAttempts = 3) => {
             try {
-                // 自然言語入力から鋼材断面情報を取得
-                const steelDetectionResult = detectAndFetchSteelProperties(naturalLanguageInput);
+                console.log(`🔍 AI生成後に部材の断面情報を設定開始 (試行 ${attempt}/${maxAttempts})`);
+                
+                // 部材テーブルが存在するか確認
+                const membersTable = document.getElementById('members-table');
+                const rows = membersTable ? membersTable.querySelectorAll('tbody tr') : [];
+                
+                if (rows.length === 0) {
+                    console.log(`🔍 部材テーブルがまだ準備できていません (試行 ${attempt})`);
+                    if (attempt < maxAttempts) {
+                        setTimeout(() => attemptSetMemberInfo(attempt + 1, maxAttempts), 2000);
+                    }
+                    return;
+                }
+                
+                // 自然言語入力から鋼材断面情報を取得（非同期処理）
+                const steelDetectionResult = await detectAndFetchSteelProperties(naturalLanguageInput);
                 if (steelDetectionResult && steelDetectionResult.steelData && steelDetectionResult.steelData.length > 0) {
                     console.log('🔍 AI生成後に部材の断面情報を設定:', steelDetectionResult.steelData);
                     setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData);
+                } else {
+                    console.log('🔍 鋼材断面情報が見つかりませんでした');
                 }
             } catch (error) {
-                console.warn('部材断面情報の設定でエラーが発生しました:', error);
+                console.warn(`部材断面情報の設定でエラーが発生しました (試行 ${attempt}):`, error);
+                if (attempt < maxAttempts) {
+                    setTimeout(() => attemptSetMemberInfo(attempt + 1, maxAttempts), 2000);
+                }
             }
-        }, 1000); // 1秒後に実行（テーブルの描画完了を待つ）
+        };
+        
+        // 最初の試行を2秒後に開始
+        setTimeout(() => attemptSetMemberInfo(), 2000);
     }
 }

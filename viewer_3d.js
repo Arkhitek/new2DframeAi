@@ -531,46 +531,54 @@ function getSectionName(member) {
     let sectionName;
     switch (typeKey) {
         case 'hkatakou_hiro':
+            sectionName = `H形鋼（広幅） ${dims.H}×${dims.B}`;
+            break;
         case 'hkatakou_naka':
+            sectionName = `H形鋼（中幅） ${dims.H}×${dims.B}`;
+            break;
         case 'hkatakou_hoso':
-            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `H形鋼（細幅） ${dims.H}×${dims.B}`;
             break;
         case 'ikatakou':
-            sectionName = `I-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `I形鋼 ${dims.H}×${dims.B}`;
             break;
         case 'keiryouhkatakou':
-            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `軽量H形鋼 ${dims.H}×${dims.B}`;
             break;
         case 'keiryourippuhkatakou':
-            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `軽量リップH形鋼 ${dims.H}×${dims.B}`;
             break;
         case 'seihoukei':
+            sectionName = `角形鋼管（正方形） ${dims.A}×${dims.A}`;
+            break;
         case 'tyouhoukei':
-            sectionName = `□-${dims.A}×${dims.B || dims.A}×${dims.t}`;
+            sectionName = `角形鋼管（長方形） ${dims.A}×${dims.B}`;
             break;
         case 'koukan':
-            sectionName = `○-${dims.D}×${dims.t}`;
+            sectionName = `丸形鋼管 φ${dims.D}`;
             break;
         case 'mizogatakou':
+            sectionName = `みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
+            break;
         case 'keimizogatakou':
-            sectionName = `C-${dims.H}×${dims.B || dims.A}×${dims.t1 || dims.t}×${dims.t2 || dims.t}`;
+            sectionName = `軽みぞ形鋼 ${dims.H}×${dims.B || dims.A}`;
             break;
         case 'rippumizokatakou':
-            sectionName = `C-${dims.H}×${dims.A}×${dims.C}×${dims.t}`;
+            sectionName = `リップみぞ形鋼 ${dims.H}×${dims.A}`;
             break;
         case 'touhenyamakatakou':
-            sectionName = `L-${dims.A}×${dims.A}×${dims.t}`;
+            sectionName = `等辺山形鋼 ${dims.A}×${dims.A}`;
             break;
         case 'futouhenyamagata':
-            sectionName = `L-${dims.A}×${dims.B}×${dims.t}`;
+            sectionName = `不等辺山形鋼 ${dims.A}×${dims.B}`;
             break;
         case '矩形':
         case 'rectangular':
-            sectionName = `矩形-${dims.H}×${dims.B}`;
+            sectionName = `矩形断面 ${dims.H}×${dims.B}`;
             break;
         case '円形':
         case 'circular':
-            sectionName = `円形-φ${dims.D}`;
+            sectionName = `円形断面 φ${dims.D}`;
             break;
         default:
             // typeKeyがあるがswitchに該当しない場合、labelを使用

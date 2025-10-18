@@ -14764,6 +14764,30 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     
     const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
     
+    // 鋼材タイプからラベルを生成
+    const getTypeLabel = (steelType) => {
+        const typeLabels = {
+            'hkatakou_hiro': 'H形鋼（広幅）',
+            'hkatakou_naka': 'H形鋼（中幅）',
+            'hkatakou_hoso': 'H形鋼（細幅）',
+            'ikatakou': 'I形鋼',
+            'keiryouhkatakou': '軽量H形鋼',
+            'keiryourippuhkatakou': '軽量リップH形鋼',
+            'mizogatakou': 'みぞ形鋼',
+            'keimizogatakou': '軽みぞ形鋼',
+            'rippumizokatakou': 'リップみぞ形鋼',
+            'touhenyamakatakou': '等辺山形鋼',
+            'futouhenyamagata': '不等辺山形鋼',
+            'seihoukei': '角形鋼管（正方形）',
+            'tyouhoukei': '角形鋼管（長方形）',
+            'koukan': '丸形鋼管'
+        };
+        return typeLabels[steelType] || steelType;
+    };
+    
+    const typeLabel = getTypeLabel(actualSteelType);
+    const designation = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : '';
+    
     // 軸方向の判定（Ix > Iy の場合は強軸がX軸、そうでなければY軸）
     const isStrongAxisX = (ixValue && iyValue) ? ixValue > iyValue : true;
     const axisDirection = isStrongAxisX ? 'X軸' : 'Y軸';
@@ -14772,6 +14796,8 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
         sectionName: sectionName,
         sectionSpec: steelInfo.spec,
         sectionType: actualSteelType,
+        typeLabel: typeLabel,
+        designation: designation,
         dimensions: bestMatch.dimensions,
         axisDirection: axisDirection,
         isStrongAxisX: isStrongAxisX,
@@ -15094,9 +15120,20 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         return;
     }
     
+    // 断面名称を正しい形式で生成
+    let sectionName = '';
+    if (steelData.sectionName) {
+        sectionName = steelData.sectionName;
+    } else if (steelData.typeLabel && steelData.designation) {
+        // steel_selector.jsと同じ形式で生成
+        sectionName = `${steelData.typeLabel} ${steelData.designation}`.trim();
+    } else if (steelData.typeLabel) {
+        sectionName = steelData.typeLabel;
+    }
+    
     // 断面名称を更新 (cell 8)
     if (row.cells[8]) {
-        row.cells[8].textContent = steelData.sectionName || '';
+        row.cells[8].textContent = sectionName;
     }
     
     // 断面性能を更新
@@ -15120,7 +15157,7 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         }
     }
     
-    console.log(`✅ 部材テーブル行${memberIndex}の断面情報を更新: ${steelData.sectionName}`);
+    console.log(`✅ 部材テーブル行${memberIndex}の断面情報を更新: ${sectionName}`);
 }
 
 /**

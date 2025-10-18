@@ -2438,3 +2438,148 @@ header {
 #copy-share-link-btn:hover {
     background-color: #218838;
 }
+
+/* === 断面算定結果表示のスタイル === */
+.section {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.section h3 {
+    margin: 0 0 15px 0;
+    color: #495057;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.result-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.result-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+.result-item .label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.result-item .value {
+    font-weight: 600;
+    color: #212529;
+}
+
+.result-item .status {
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.result-item .status.未実行 {
+    background: #e9ecef;
+    color: #6c757d;
+}
+
+.result-item .status.実行中 {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.result-item .status.完了 {
+    background: #d4edda;
+    color: #155724;
+}
+
+.result-item .status.エラー {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.result-item .judgment {
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.result-item .judgment.安全 {
+    background: #d4edda;
+    color: #155724;
+}
+
+.result-item .judgment.危険 {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.result-item .judgment.注意 {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* 断面算定結果のレスポンシブ対応 */
+@media (max-width: 768px) {
+    .result-section {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* === 断面算定ボタンのスタイル === */
+.section-calc-controls {
+    text-align: center;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.section-calc-btn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.section-calc-btn:hover {
+    background-color: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.4);
+}
+
+.section-calc-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.section-calc-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.section-calc-note {
+    margin-top: 10px;
+    color: #6c757d;
+    font-size: 0.9em;
+    font-style: italic;
+}

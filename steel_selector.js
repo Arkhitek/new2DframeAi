@@ -1869,6 +1869,113 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         console.log('Results displayed successfully');
     };
 
+    // 断面算定結果表示機能
+    function updateSectionResultDisplay(result) {
+        const statusElement = document.getElementById('section-status');
+        const stressElement = document.getElementById('section-stress');
+        const allowableElement = document.getElementById('section-allowable');
+        const ratioElement = document.getElementById('section-ratio');
+        const judgmentElement = document.getElementById('section-judgment');
+        const detailsElement = document.getElementById('section-details');
+        
+        if (!result) {
+            statusElement.textContent = '未実行';
+            statusElement.className = 'status 未実行';
+            stressElement.textContent = '-';
+            allowableElement.textContent = '-';
+            ratioElement.textContent = '-';
+            judgmentElement.textContent = '-';
+            judgmentElement.className = 'judgment';
+            detailsElement.textContent = '-';
+            return;
+        }
+        
+        // ステータス更新
+        statusElement.textContent = result.status || '完了';
+        statusElement.className = `status ${result.status || '完了'}`;
+        
+        // 応力度情報更新
+        if (result.stress) {
+            stressElement.textContent = `${result.stress.toFixed(2)} N/mm²`;
+        } else {
+            stressElement.textContent = '-';
+        }
+        
+        if (result.allowable) {
+            allowableElement.textContent = `${result.allowable.toFixed(2)} N/mm²`;
+        } else {
+            allowableElement.textContent = '-';
+        }
+        
+        if (result.ratio) {
+            ratioElement.textContent = result.ratio.toFixed(3);
+        } else {
+            ratioElement.textContent = '-';
+        }
+        
+        // 判定更新
+        if (result.judgment) {
+            judgmentElement.textContent = result.judgment;
+            judgmentElement.className = `judgment ${result.judgment}`;
+        } else {
+            judgmentElement.textContent = '-';
+            judgmentElement.className = 'judgment';
+        }
+        
+        // 詳細情報更新
+        if (result.details) {
+            detailsElement.textContent = result.details;
+        } else {
+            detailsElement.textContent = '-';
+        }
+    }
+    
+    // 断面算定実行機能
+    function executeSectionCalculation() {
+        const statusElement = document.getElementById('section-status');
+        statusElement.textContent = '実行中';
+        statusElement.className = 'status 実行中';
+        
+        // 現在選択されている鋼材の情報を取得
+        const selectedSteel = getSelectedSteel();
+        if (!selectedSteel) {
+            updateSectionResultDisplay({
+                status: 'エラー',
+                details: '鋼材が選択されていません'
+            });
+            return;
+        }
+        
+        // 断面算定を実行（実際の計算ロジックは後で実装）
+        try {
+            // 仮の計算結果（実際の計算ロジックに置き換える）
+            const result = {
+                status: '完了',
+                stress: 150.5, // 使用応力度 (N/mm²)
+                allowable: 200.0, // 許容応力度 (N/mm²)
+                ratio: 0.753, // 応力度比
+                judgment: '安全', // 判定
+                details: `鋼材: ${selectedSteel.name}, 断面積: ${selectedSteel.A} cm²`
+            };
+            
+            updateSectionResultDisplay(result);
+        } catch (error) {
+            updateSectionResultDisplay({
+                status: 'エラー',
+                details: `計算エラー: ${error.message}`
+            });
+        }
+    }
+    
+    // 断面算定ボタンのイベントリスナーを追加
+    const sectionCalcBtn = document.getElementById('section-calc-btn');
+    if (sectionCalcBtn) {
+        sectionCalcBtn.addEventListener('click', executeSectionCalculation);
+    }
+    
+    // 初期状態で断面算定結果をリセット
+    updateSectionResultDisplay(null);
+
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));
 });

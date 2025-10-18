@@ -14911,10 +14911,18 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     const fullLabel = designation ? `${typeLabel} ${designation}`.trim() : typeLabel;
     
     // 既存の部材断面選択機能と同じ形式でsectionInfoオブジェクトを作成
+    // 3Dビューアに必要なrawDimsとtypeKeyを含める
     const sectionInfo = {
+        typeKey: steelData.sectionType, // 3Dビューアで断面形状を決定するために必要
         label: fullLabel,
         dimensionSummary: steelData.sectionSpec || '',
         source: 'AI生成',
+        rawDims: { // 3Dビューアで断面形状を生成するために必要
+            H: steelData.dimensions?.H || 0,
+            B: steelData.dimensions?.B || 0,
+            t1: steelData.dimensions?.t1 || 0,
+            t2: steelData.dimensions?.t2 || 0
+        },
         axis: {
             key: steelData.isStrongAxisX ? 'x' : 'y',
             mode: steelData.isStrongAxisX ? 'strong' : 'weak',

@@ -528,41 +528,62 @@ function getSectionName(member) {
     }
 
     // 形状タイプに応じて板厚まで含んだ名称を生成
+    let sectionName;
     switch (typeKey) {
         case 'hkatakou_hiro':
         case 'hkatakou_naka':
         case 'hkatakou_hoso':
-            return `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            break;
         case 'ikatakou':
-            return `I-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `I-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            break;
         case 'keiryouhkatakou':
-            return `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            break;
         case 'keiryourippuhkatakou':
-            return `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            sectionName = `H-${dims.H}×${dims.B}×${dims.t1}×${dims.t2}`;
+            break;
         case 'seihoukei':
         case 'tyouhoukei':
-            return `□-${dims.A}×${dims.B || dims.A}×${dims.t}`;
+            sectionName = `□-${dims.A}×${dims.B || dims.A}×${dims.t}`;
+            break;
         case 'koukan':
-            return `○-${dims.D}×${dims.t}`;
+            sectionName = `○-${dims.D}×${dims.t}`;
+            break;
         case 'mizogatakou':
         case 'keimizogatakou':
-            return `C-${dims.H}×${dims.B || dims.A}×${dims.t1 || dims.t}×${dims.t2 || dims.t}`;
+            sectionName = `C-${dims.H}×${dims.B || dims.A}×${dims.t1 || dims.t}×${dims.t2 || dims.t}`;
+            break;
         case 'rippumizokatakou':
-            return `C-${dims.H}×${dims.A}×${dims.C}×${dims.t}`;
+            sectionName = `C-${dims.H}×${dims.A}×${dims.C}×${dims.t}`;
+            break;
         case 'touhenyamakatakou':
-            return `L-${dims.A}×${dims.A}×${dims.t}`;
+            sectionName = `L-${dims.A}×${dims.A}×${dims.t}`;
+            break;
         case 'futouhenyamagata':
-            return `L-${dims.A}×${dims.B}×${dims.t}`;
+            sectionName = `L-${dims.A}×${dims.B}×${dims.t}`;
+            break;
         case '矩形':
         case 'rectangular':
-            return `矩形-${dims.H}×${dims.B}`;
+            sectionName = `矩形-${dims.H}×${dims.B}`;
+            break;
         case '円形':
         case 'circular':
-            return `円形-φ${dims.D}`;
+            sectionName = `円形-φ${dims.D}`;
+            break;
         default:
             // typeKeyがあるがswitchに該当しない場合、labelを使用
-            return member.sectionInfo.label || null;
+            sectionName = member.sectionInfo.label || null;
+            break;
     }
+
+    // 軸方向情報を追加
+    if (member.sectionAxis && member.sectionAxis.label) {
+        sectionName += ` (${member.sectionAxis.label})`;
+    }
+
+    return sectionName;
 }
 
 /**

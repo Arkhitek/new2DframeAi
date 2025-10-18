@@ -14728,6 +14728,26 @@ function setupAIModelGenerationListeners() {
     // 初期状態を設定
     updateModeDescription();
     
+    // 例文適用ボタンのイベントリスナー
+    const applyExampleBtn = document.getElementById('apply-example-btn');
+    if (applyExampleBtn) {
+        applyExampleBtn.addEventListener('click', () => {
+            const exampleSelect = document.getElementById('example-prompts-select');
+            const naturalLanguageInput = document.getElementById('natural-language-input');
+            
+            if (exampleSelect && naturalLanguageInput && exampleSelect.value) {
+                naturalLanguageInput.value = exampleSelect.value;
+                // テキストエリアの高さを自動調整
+                naturalLanguageInput.style.height = 'auto';
+                naturalLanguageInput.style.height = naturalLanguageInput.scrollHeight + 'px';
+                
+                console.log('例文を適用しました:', exampleSelect.value);
+            } else {
+                console.warn('例文が選択されていません');
+            }
+        });
+    }
+    
     console.log('✅ AIモデル生成のイベントリスナー設定完了');
 }
 
@@ -16176,6 +16196,134 @@ function updateModeDescription() {
     } else if (selectedMode === 'edit') {
         descriptionElement.textContent = '現在のモデルに対して追加・編集したい内容を自然言語で入力してください。(例: 2階部分を追加、梁の断面をH-300x150に変更)';
     }
+    
+    // 例文選択肢を更新
+    updateExamplePrompts(selectedMode);
+}
+
+/**
+ * 例文選択肢を更新する関数
+ * @param {string} mode - 選択されたモード ('new' または 'edit')
+ */
+function updateExamplePrompts(mode) {
+    const exampleSelect = document.getElementById('example-prompts-select');
+    if (!exampleSelect) {
+        console.error('Error: Could not find element with id "example-prompts-select"');
+        return;
+    }
+    
+    // 既存のオプションをクリア（最初のオプションは残す）
+    while (exampleSelect.children.length > 1) {
+        exampleSelect.removeChild(exampleSelect.lastChild);
+    }
+    
+    // モードに応じた例文を追加
+    const examples = mode === 'new' ? getNewModeExamples() : getEditModeExamples();
+    
+    examples.forEach((example, index) => {
+        const option = document.createElement('option');
+        option.value = example.text;
+        option.textContent = `${index + 1}. ${example.title}`;
+        exampleSelect.appendChild(option);
+    });
+}
+
+/**
+ * 新規作成モード用の例文を取得
+ * @returns {Array} 例文の配列
+ */
+function getNewModeExamples() {
+    return [
+        {
+            title: '門型ラーメン（基本）',
+            text: '高さ5m、スパン10mの門型ラーメン。柱脚は固定支点とする。'
+        },
+        {
+            title: '多層ラーメン',
+            text: '3層、2スパンのラーメン構造。各階高3.5m、スパン6m。基礎は固定支点。'
+        },
+        {
+            title: '門型ラーメン（ピン支点）',
+            text: '高さ4m、スパン8mの門型ラーメン。柱脚はピン支点とする。'
+        },
+        {
+            title: '単純梁',
+            text: 'スパン12mの単純梁。両端はピン支点とする。'
+        },
+        {
+            title: '連続梁',
+            text: '3スパンの連続梁。スパン長は6m、8m、6m。両端はピン支点、中間は剛接合。'
+        },
+        {
+            title: 'トラス構造',
+            text: '高さ3m、スパン15mのワーレントラス。上下弦材と斜材で構成。'
+        },
+        {
+            title: 'カンチレバー',
+            text: '長さ5mのカンチレバー梁。固定端は剛接合、自由端は荷重を作用。'
+        },
+        {
+            title: '2層フレーム',
+            text: '2層、3スパンのフレーム構造。階高3m、スパン5m。柱脚は固定支点。'
+        },
+        {
+            title: 'アーチ構造',
+            text: 'スパン20m、矢高4mのアーチ構造。両端はピン支点とする。'
+        },
+        {
+            title: '複雑なフレーム',
+            text: '4層、4スパンの複雑なフレーム構造。階高3.2m、スパン7m。基礎は固定支点、各層に水平荷重を作用。'
+        }
+    ];
+}
+
+/**
+ * 追加編集モード用の例文を取得
+ * @returns {Array} 例文の配列
+ */
+function getEditModeExamples() {
+    return [
+        {
+            title: '部材断面変更',
+            text: '柱部材をH-200×100×8×12に変更し、梁部材をH-300×150×8×12に変更する。'
+        },
+        {
+            title: '層の追加',
+            text: '現在の構造に3階部分を追加する。階高3.5m、既存の柱を延長して梁を追加。'
+        },
+        {
+            title: 'スパンの追加',
+            text: '右側に2スパン分を追加する。スパン長は6m、既存の梁と同様の断面とする。'
+        },
+        {
+            title: '荷重の追加',
+            text: '2階の梁に等分布荷重5kN/mを追加し、1階の柱に集中荷重10kNを追加する。'
+        },
+        {
+            title: '境界条件変更',
+            text: '柱脚の境界条件をピン支点に変更し、中間部材の接合を剛接合に変更する。'
+        },
+        {
+            title: '部材の削除',
+            text: '中央の柱1本を削除し、その部分の梁を単純梁に変更する。'
+        },
+        {
+            title: '断面の最適化',
+            text: '全ての柱部材をH-250×125に統一し、梁部材をH-400×200に統一する。'
+        },
+        {
+            title: '構造の拡張',
+            text: '左側に1スパン、右側に1スパンを追加して全体を拡張する。スパン長は既存と同じ6mとする。'
+        },
+        {
+            title: '荷重条件の変更',
+            text: '既存の荷重を全て削除し、新たに屋根荷重3kN/m²、床荷重5kN/m²を設定する。'
+        },
+        {
+            title: '材料の変更',
+            text: '全ての部材の材料をステンレス鋼に変更し、弾性係数を193GPaに設定する。'
+        }
+    ];
 }
 
 /**

@@ -229,6 +229,15 @@
                         作成したい構造モデルを自然言語で入力してください。(例: 高さ5m、スパン10mの門型ラーメン。柱脚は固定。)
                     </p>
                     
+                    <!-- 例文選択機能 -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: bold; margin-right: 10px;">指示例文:</label>
+                        <select id="example-prompts-select" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+                            <option value="">例文を選択してください...</option>
+                        </select>
+                        <button id="apply-example-btn" style="margin-top: 5px; padding: 4px 8px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">例文を適用</button>
+                    </div>
+                    
                     <div style="position: relative;">
                         <textarea id="natural-language-input" rows="3" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></textarea>
                         <button id="voice-input-btn" style="position: absolute; top: 8px; right: 8px; background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 14px;" title="音声入力">🎤</button>

@@ -2840,13 +2840,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (updates.sectionProperties.iy) row.dataset.iy = updates.sectionProperties.iy;
 
                 if (updates.sectionProperties.sectionInfo) {
-                    window.setRowSectionInfo(row, updates.sectionProperties.sectionInfo);
+                    if (typeof window.setRowSectionInfo === 'function') {
+                        window.setRowSectionInfo(row, updates.sectionProperties.sectionInfo);
+                    } else {
+                        console.warn('setRowSectionInfo関数が定義されていません。断面情報更新をスキップします。');
+                    }
                 }
 
                 if (Object.prototype.hasOwnProperty.call(updates.sectionProperties, 'sectionAxis')) {
-                    window.applySectionAxisDataset(row, updates.sectionProperties.sectionAxis);
+                    if (typeof window.applySectionAxisDataset === 'function') {
+                        window.applySectionAxisDataset(row, updates.sectionProperties.sectionAxis);
+                    } else {
+                        console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
+                    }
                 } else if (updates.sectionProperties.sectionInfo && updates.sectionProperties.sectionInfo.axis) {
-                    window.applySectionAxisDataset(row, updates.sectionProperties.sectionInfo.axis);
+                    if (typeof window.applySectionAxisDataset === 'function') {
+                        window.applySectionAxisDataset(row, updates.sectionProperties.sectionInfo.axis);
+                    } else {
+                        console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
+                    }
                 }
             }
             
@@ -3587,12 +3599,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
 
                         if (sectionInfoToApply) {
-                            window.setRowSectionInfo(newRow, sectionInfoToApply);
+                            if (typeof window.setRowSectionInfo === 'function') {
+                                window.setRowSectionInfo(newRow, sectionInfoToApply);
+                            } else {
+                                console.warn('setRowSectionInfo関数が定義されていません。断面情報復元をスキップします。');
+                            }
                         } else if (axisInfo) {
-                            window.applySectionAxisDataset(newRow, axisInfo);
+                            if (typeof window.applySectionAxisDataset === 'function') {
+                                window.applySectionAxisDataset(newRow, axisInfo);
+                            } else {
+                                console.warn('applySectionAxisDataset関数が定義されていません。軸情報復元をスキップします。');
+                            }
                         } else {
                             // 念のため既存のデータセットをクリア
-                            window.applySectionAxisDataset(newRow, null);
+                            if (typeof window.applySectionAxisDataset === 'function') {
+                                window.applySectionAxisDataset(newRow, null);
+                            }
                         }
                     }
                 } catch (memberError) {
@@ -10781,9 +10803,17 @@ const loadPreset = (index) => {
                 if (axisInfo && !sectionInfoFromPreset.axis) {
                     sectionInfoFromPreset.axis = { ...axisInfo };
                 }
-                window.setRowSectionInfo(newRow, sectionInfoFromPreset);
+                if (typeof window.setRowSectionInfo === 'function') {
+                    window.setRowSectionInfo(newRow, sectionInfoFromPreset);
+                } else {
+                    console.warn('setRowSectionInfo関数が定義されていません。プリセット読み込みをスキップします。');
+                }
             } else if (axisInfo) {
-                window.applySectionAxisDataset(newRow, axisInfo);
+                if (typeof window.applySectionAxisDataset === 'function') {
+                    window.applySectionAxisDataset(newRow, axisInfo);
+                } else {
+                    console.warn('applySectionAxisDataset関数が定義されていません。軸情報設定をスキップします。');
+                }
             }
 
             const zxToApply = propertySource?.Zx ?? m.Zx;
@@ -11718,9 +11748,17 @@ const loadPreset = (index) => {
             setDatasetValue('iy', resolvedIy);
 
             if (props.sectionInfo) {
-                window.setRowSectionInfo(row, props.sectionInfo);
+                if (typeof window.setRowSectionInfo === 'function') {
+                    window.setRowSectionInfo(row, props.sectionInfo);
+                } else {
+                    console.warn('setRowSectionInfo関数が定義されていません。断面情報更新をスキップします。');
+                }
             } else if (props.sectionAxis) {
-                window.applySectionAxisDataset(row, props.sectionAxis);
+                if (typeof window.applySectionAxisDataset === 'function') {
+                    window.applySectionAxisDataset(row, props.sectionAxis);
+                } else {
+                    console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
+                }
             }
             
             // 変更を計算に反映させるためにchangeイベントを発火

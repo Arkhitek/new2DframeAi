@@ -8201,8 +8201,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 memberRow.querySelector('.delete-row-btn').onclick.apply(memberRow.querySelector('.delete-row-btn'));
                 addRow(elements.nodesTable, [`#`,`<input type="number" value="${finalCoords.x.toFixed(2)}">`,`<input type="number" value="${finalCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false);
                 const newNodeId = elements.nodesTable.rows.length;
-                addRow(elements.membersTable, [`#`, ...memberRowHTML(startNodeId, newNodeId, props.E, props.F, props.I, props.A, props.Z, props.i_conn, 'rigid')], false);
-                addRow(elements.membersTable, [`#`, ...memberRowHTML(newNodeId, endNodeId, props.E, props.F, props.I, props.A, props.Z, 'rigid', props.j_conn)], false);
+                const newRow1 = addRow(elements.membersTable, [`#`, ...memberRowHTML(startNodeId, newNodeId, props.E, props.F, props.I, props.A, props.Z, props.i_conn, 'rigid', '', '')], false);
+                const newRow2 = addRow(elements.membersTable, [`#`, ...memberRowHTML(newNodeId, endNodeId, props.E, props.F, props.I, props.A, props.Z, 'rigid', props.j_conn, '', '')], false);
+                
+                // 手動追加部材に断面情報を設定
+                if (newRow1 && typeof window.setRowSectionInfo === 'function') {
+                    const defaultSectionInfo1 = {
+                        typeKey: 'estimated',
+                        label: '推定断面（円形）',
+                        rawDims: {
+                            D: Math.sqrt(props.A * 1e4 / Math.PI) * 2 * 10,
+                            D_scaled: Math.sqrt(props.A * 1e4 / Math.PI) * 2 * 10
+                        },
+                        source: '手動追加'
+                    };
+                    window.setRowSectionInfo(newRow1, defaultSectionInfo1);
+                }
+                
+                if (newRow2 && typeof window.setRowSectionInfo === 'function') {
+                    const defaultSectionInfo2 = {
+                        typeKey: 'estimated',
+                        label: '推定断面（円形）',
+                        rawDims: {
+                            D: Math.sqrt(props.A * 1e4 / Math.PI) * 2 * 10,
+                            D_scaled: Math.sqrt(props.A * 1e4 / Math.PI) * 2 * 10
+                        },
+                        source: '手動追加'
+                    };
+                    window.setRowSectionInfo(newRow2, defaultSectionInfo2);
+                }
                 renumberTables(); drawOnCanvas();
             } else { 
                 const spacing=parseFloat(elements.gridSpacing.value), snapTolerance=spacing/2.5;
@@ -11053,7 +11080,22 @@ const loadPreset = (index) => {
                     const I_m4 = parseFloat(newMemberDefaults.I) * 1e-8;
                     const A_m2 = parseFloat(newMemberDefaults.A) * 1e-4;
                     const Z_m3 = parseFloat(newMemberDefaults.Z) * 1e-6;
-                    addRow(elements.membersTable, [`#`, ...memberRowHTML(i,j,newMemberDefaults.E,newMemberDefaults.F,I_m4,A_m2,Z_m3,newMemberDefaults.i_conn,newMemberDefaults.j_conn)]);
+                    const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(i,j,newMemberDefaults.E,newMemberDefaults.F,I_m4,A_m2,Z_m3,newMemberDefaults.i_conn,newMemberDefaults.j_conn, '', '')]);
+                    
+                    // 手動追加部材に断面情報を設定
+                    if (newRow && typeof window.setRowSectionInfo === 'function') {
+                        // デフォルトの断面情報を作成
+                        const defaultSectionInfo = {
+                            typeKey: 'estimated',
+                            label: '推定断面（円形）',
+                            rawDims: {
+                                D: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10, // Aから直径を計算（mm）
+                                D_scaled: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10
+                            },
+                            source: '手動追加'
+                        };
+                        window.setRowSectionInfo(newRow, defaultSectionInfo);
+                    }
                     return;
                 }
             }

@@ -72,6 +72,24 @@
                                     <li><strong>部材情報表示:</strong> マウスオーバー情報</li>
                                 </ul>
                             </div>
+                            
+                            <div class="guide-section">
+                                <h5>🤖 AI機能</h5>
+                                <ul>
+                                    <li><strong>新規作成モード:</strong> 自然言語で構造モデルを生成</li>
+                                    <li><strong>追加編集モード:</strong> 既存モデルに部材を追加</li>
+                                    <li><strong>音声入力:</strong> 🎤ボタンで音声から指示入力</li>
+                                    <li><strong>鋼材断面検出:</strong> H-200×100等の断面指定を自動認識</li>
+                                    <li><strong>部材タイプ識別:</strong> 柱部材・梁部材を自動判別</li>
+                                    <li><strong>断面情報保持:</strong> 既存部材の断面情報を自動保持</li>
+                                </ul>
+                                <div style="margin-top: 8px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; font-size: 12px;">
+                                    <strong>使用例:</strong><br>
+                                    「高さ5m、スパン10mの門型ラーメン。柱脚は固定。」<br>
+                                    「柱部材をH-200×100に変更」<br>
+                                    「梁部材をH-300×150に変更」
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="guide-column">
@@ -91,7 +109,7 @@
                                 <h5>📊 解析・結果表示</h5>
                                 <ul>
                                     <li><strong>構造解析:</strong> 変位・断面力・支点反力</li>
-                                    <li><strong>断面算定:</strong> 検定比・短期/長期</li>
+                                    <li><strong>断面算定:</strong> 検定比・短期/長期・応力・許容応力</li>
                                     <li><strong>弾性座屈解析:</strong> 座屈荷重・安全率</li>
                                     <li><strong>アニメーション:</strong> 変位の動的表示</li>
                                     <li><strong>応力図:</strong> BMD・AFD・SFD・検定比図</li>
@@ -99,12 +117,24 @@
                             </div>
                             
                             <div class="guide-section">
-                                <h5>� データ管理</h5>
+                                <h5>🔍 断面算定機能</h5>
+                                <ul>
+                                    <li><strong>断面算定ボタン:</strong> 選択部材の断面算定実行</li>
+                                    <li><strong>算定結果表示:</strong> 応力・許容応力・検定比・判定</li>
+                                    <li><strong>短期/長期切替:</strong> 荷重条件の選択</li>
+                                    <li><strong>検定比図:</strong> 部材全体の検定比を色分け表示</li>
+                                    <li><strong>詳細結果:</strong> 各節点での算定結果詳細</li>
+                                </ul>
+                            </div>
+                            
+                            <div class="guide-section">
+                                <h5>📁 データ管理</h5>
                                 <ul>
                                     <li><strong>プリセット:</strong> 計算例の読込</li>
                                     <li><strong>CSV保存/読込:</strong> 入力データ管理</li>
                                     <li><strong>レポート出力:</strong> 印刷用総合レポート</li>
                                     <li><strong>エクセル出力:</strong> 結果データのExcel形式出力</li>
+                                    <li><strong>共有リンク:</strong> モデルデータのURL共有</li>
                                 </ul>
                             </div>
                             

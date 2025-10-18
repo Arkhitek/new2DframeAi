@@ -10833,6 +10833,42 @@ const loadPreset = (index) => {
         // プリセット読み込み完了フラグをクリア
         window.isLoadingPreset = false;
         
+        // デフォルト表示時（プリセット15）の断面情報を再設定
+        if (index === 15) {
+            setTimeout(() => {
+                console.log('🔧 デフォルト表示時の断面情報を再設定中...');
+                const memberRows = elements.membersTable.querySelectorAll('tbody tr');
+                memberRows.forEach((row, memberIndex) => {
+                    const cells = row.cells;
+                    if (cells && cells.length >= 9) {
+                        // 断面性能から断面情報を推定
+                        const IInput = cells[5]?.querySelector('input');
+                        const AInput = cells[6]?.querySelector('input');
+                        const ZInput = cells[7]?.querySelector('input');
+                        
+                        if (IInput && AInput && ZInput) {
+                            const I = parseFloat(IInput.value) || 0;
+                            const A = parseFloat(AInput.value) || 0;
+                            const Z = parseFloat(ZInput.value) || 0;
+                            
+                            // 断面性能から断面プロファイルを検索
+                            const presetProfile = PRESET_SECTION_PROFILES.find(({ target }) =>
+                                approxEqual(I, target.I) &&
+                                approxEqual(A, target.A) &&
+                                approxEqual(Z, target.Z)
+                            );
+                            
+                            if (presetProfile && presetProfile.sectionInfo) {
+                                console.log(`🔧 部材${memberIndex + 1}の断面情報を設定:`, presetProfile.sectionInfo.label);
+                                window.setRowSectionInfo(row, presetProfile.sectionInfo);
+                            }
+                        }
+                    }
+                });
+                console.log('✅ デフォルト表示時の断面情報再設定完了');
+            }, 100);
+        }
+        
         // 自重考慮チェックボックスがONの場合、自重を再計算して表示を更新
         const considerSelfWeightCheckbox = document.getElementById('consider-self-weight-checkbox');
         if (considerSelfWeightCheckbox && considerSelfWeightCheckbox.checked) {

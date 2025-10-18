@@ -14812,6 +14812,78 @@ function enhancePromptWithSteelData(originalPrompt, steelProperties) {
 }
 
 /**
+ * AI生成時に部材の断面名称と軸方向を設定する関数
+ */
+function setMemberSectionInfoFromAI(memberIndex, steelData) {
+    console.log('🔍 AI生成時に部材の断面情報を設定:', memberIndex, steelData);
+    
+    const membersTable = document.getElementById('members-table');
+    if (!membersTable) {
+        console.warn('部材テーブルが見つかりません');
+        return;
+    }
+    
+    const rows = membersTable.querySelectorAll('tbody tr');
+    if (memberIndex >= rows.length) {
+        console.warn(`部材${memberIndex}の行が見つかりません`);
+        return;
+    }
+    
+    const row = rows[memberIndex];
+    if (!row) {
+        console.warn(`部材${memberIndex}の行が無効です`);
+        return;
+    }
+    
+    // 密度列の有無を確認
+    const hasDensityColumn = row.querySelector('.density-cell') !== null;
+    const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
+    const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+    
+    // 断面名称セルを更新
+    const sectionNameCell = row.cells[sectionNameCellIndex];
+    if (sectionNameCell) {
+        const nameSpan = sectionNameCell.querySelector('.section-name-cell');
+        if (nameSpan && steelData.sectionName) {
+            nameSpan.textContent = steelData.sectionName;
+            console.log(`✅ 部材${memberIndex}の断面名称を設定: ${steelData.sectionName}`);
+        }
+    }
+    
+    // 軸方向セルを更新
+    const sectionAxisCell = row.cells[sectionAxisCellIndex];
+    if (sectionAxisCell) {
+        const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
+        if (axisSpan && steelData.axisDirection) {
+            axisSpan.textContent = steelData.axisDirection;
+            console.log(`✅ 部材${memberIndex}の軸方向を設定: ${steelData.axisDirection}`);
+        }
+    }
+    
+    // データセット属性も更新
+    row.dataset.sectionLabel = steelData.sectionName || '';
+    row.dataset.sectionAxisLabel = steelData.axisDirection || '';
+}
+
+/**
+ * AI生成時に複数の部材の断面情報を設定する関数
+ */
+function setMultipleMembersSectionInfoFromAI(steelDataArray) {
+    console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray);
+    
+    if (!Array.isArray(steelDataArray)) {
+        console.warn('steelDataArrayが配列ではありません');
+        return;
+    }
+    
+    steelDataArray.forEach((steelData, index) => {
+        if (steelData && steelData.sectionName) {
+            setMemberSectionInfoFromAI(index, steelData);
+        }
+    });
+}
+
+/**
  * 音声入力機能のイベントリスナーを設定する関数
  */
 function setupVoiceInputListeners() {
@@ -15599,5 +15671,19 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         } else {
             console.warn('AI生成後のデータが不完全です。解析をスキップします。');
         }
+        
+        // AI生成時に検出された鋼材断面情報を部材テーブルに設定
+        setTimeout(() => {
+            try {
+                // 自然言語入力から鋼材断面情報を取得
+                const steelDetectionResult = detectAndFetchSteelProperties(naturalLanguageInput);
+                if (steelDetectionResult && steelDetectionResult.steelData && steelDetectionResult.steelData.length > 0) {
+                    console.log('🔍 AI生成後に部材の断面情報を設定:', steelDetectionResult.steelData);
+                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData);
+                }
+            } catch (error) {
+                console.warn('部材断面情報の設定でエラーが発生しました:', error);
+            }
+        }, 1000); // 1秒後に実行（テーブルの描画完了を待つ）
     }
 }

@@ -154,6 +154,13 @@
             <div id="prompt-result" class="result-area" style="display: none;"></div>
         </div>
         
+        <!-- 部材断面情報設定テスト -->
+        <div class="test-section">
+            <h2>🔧 部材断面情報設定テスト</h2>
+            <button class="test-button" onclick="testMemberSectionInfoSetting()">部材断面情報設定テスト</button>
+            <div id="member-setting-result" class="result-area" style="display: none;"></div>
+        </div>
+        
         <!-- コンソールログ表示 -->
         <div class="test-section">
             <h2>📝 コンソールログ</h2>
@@ -379,6 +386,64 @@
                 }
             } catch (error) {
                 console.error('AIプロンプト拡張テストエラー:', error);
+                resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        // 部材断面情報設定テスト
+        async function testMemberSectionInfoSetting() {
+            const resultDiv = document.getElementById('member-setting-result');
+            
+            console.log('🔍 部材断面情報設定テスト開始');
+            
+            try {
+                // テスト用の鋼材データ
+                const testSteelData = {
+                    sectionName: '100×100',
+                    sectionSpec: 'H-100×100×6×8',
+                    sectionType: 'hkatakou_hiro',
+                    axisDirection: 'X軸',
+                    isStrongAxisX: true,
+                    dimensions: {
+                        H: 100,
+                        B: 100,
+                        t1: 6,
+                        t2: 8
+                    },
+                    properties: {
+                        A: 21.59,
+                        Ix: 378,
+                        Iy: 134,
+                        Zx: 75.6,
+                        Zy: 26.7,
+                        ix: 4.18,
+                        iy: 2.49
+                    },
+                    matchDistance: 0.5
+                };
+                
+                if (typeof setMemberSectionInfoFromAI === 'function') {
+                    // 部材0に断面情報を設定
+                    setMemberSectionInfoFromAI(0, testSteelData);
+                    
+                    let output = `テスト鋼材データ: ${JSON.stringify(testSteelData, null, 2)}\n\n`;
+                    output += `部材0に断面情報を設定しました。\n\n`;
+                    output += `設定内容:\n`;
+                    output += `- 断面名称: ${testSteelData.sectionName}\n`;
+                    output += `- 軸方向: ${testSteelData.axisDirection}\n`;
+                    output += `- 断面タイプ: ${testSteelData.sectionType}\n`;
+                    output += `- マッチング精度: ${(100 - testSteelData.matchDistance).toFixed(1)}%\n\n`;
+                    output += `メインアプリケーションの部材テーブルで確認してください。`;
+                    
+                    resultDiv.textContent = output;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.textContent = 'setMemberSectionInfoFromAI関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('部材断面情報設定テストエラー:', error);
                 resultDiv.textContent = `エラー: ${error.message}\n\nスタックトレース:\n${error.stack}`;
                 resultDiv.style.display = 'block';
             }

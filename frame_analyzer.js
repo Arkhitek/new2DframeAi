@@ -10854,6 +10854,9 @@ window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo)
 window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
     console.log('🔧 setRowSectionInfo called with:', { row, sectionInfo });
     
+    // 呼び出し元のスタックトレースを記録
+    console.log('🔧 setRowSectionInfo call stack:', new Error().stack);
+    
     if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
         console.warn('setRowSectionInfo called with invalid row element:', row);
         return;
@@ -10867,11 +10870,15 @@ window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
         const enrichedInfo = ensureSectionSvgMarkup(sectionInfo);
         try {
             row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
+            console.log('🔧 setRowSectionInfo: dataset.sectionInfoを設定しました');
         } catch (error) {
             console.error('Failed to encode sectionInfo:', error, enrichedInfo);
             // エンコードに失敗した場合は既存の断面情報を保持
             if (!row.dataset.sectionInfo) {
                 row.dataset.sectionInfo = JSON.stringify(enrichedInfo);
+                console.log('🔧 setRowSectionInfo: エンコード失敗、フォールバックでdataset.sectionInfoを設定しました');
+            } else {
+                console.log('🔧 setRowSectionInfo: エンコード失敗、既存のdataset.sectionInfoを保持しました');
             }
         }
         row.dataset.sectionLabel = enrichedInfo.label || '';
@@ -15753,7 +15760,7 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
         
         // 変更されなかった部材の断面情報を復元
         setTimeout(() => {
-            console.log('🔧 変更されなかった部材の断面情報を復元');
+            console.log('🔧 変更されなかった部材の断面情報を復元 (500ms後):', new Date().toISOString());
             rows.forEach((row, index) => {
                 const memberType = identifyMemberType(currentModel.members[index], currentModel.nodes);
                 const shouldChange = memberTypes.some(mt => mt.type === memberType);
@@ -15781,10 +15788,27 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                     if (backup.sectionInfo && typeof window.setRowSectionInfo === 'function') {
                         console.log(`🔧 部材${index + 1}のsectionInfoをsetRowSectionInfoで復元:`, backup.sectionInfo);
                         window.setRowSectionInfo(row, backup.sectionInfo);
+                        
+                        // 復元直後にdataset.sectionInfoの状態を確認
+                        const restoredSectionInfo = row.dataset.sectionInfo;
+                        console.log(`🔧 部材${index + 1}の復元直後のdataset.sectionInfo:`, restoredSectionInfo ? '存在' : '不存在');
+                        if (restoredSectionInfo) {
+                            try {
+                                const decoded = decodeURIComponent(restoredSectionInfo);
+                                const parsed = JSON.parse(decoded);
+                                console.log(`🔧 部材${index + 1}の復元直後のsectionInfo内容:`, parsed);
+                            } catch (error) {
+                                console.log(`🔧 部材${index + 1}の復元直後のsectionInfo解析エラー:`, error);
+                            }
+                        }
                     } else if (backup.sectionInfo) {
                         // フォールバック: 直接設定
                         console.log(`🔧 部材${index + 1}のsectionInfoを直接復元（フォールバック）:`, backup.sectionInfo);
                         row.dataset.sectionInfo = JSON.stringify(backup.sectionInfo);
+                        
+                        // フォールバック復元直後にdataset.sectionInfoの状態を確認
+                        const restoredSectionInfo = row.dataset.sectionInfo;
+                        console.log(`🔧 部材${index + 1}のフォールバック復元直後のdataset.sectionInfo:`, restoredSectionInfo ? '存在' : '不存在');
                     }
                     // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
 
@@ -15800,6 +15824,7 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             console.log('🔧 断面情報復元処理の検証');
             rows.forEach((row, index) => {
                 const sectionInfo = row.dataset.sectionInfo;
+                console.log(`🔧 部材${index + 1}の検証前のdataset.sectionInfo:`, sectionInfo ? '存在' : '不存在');
                 if (sectionInfo) {
                     console.log(`✅ 部材${index + 1}: 断面情報が存在します`);
                 } else {
@@ -16699,11 +16724,12 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     
                     // 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用
                     console.log('🔧 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用');
+                    console.log('🔧 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
                     setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes);
                     
                     // 断面情報設定完了後に、全ての部材の断面情報を再確認
                     setTimeout(() => {
-                        console.log('🔧 断面情報設定完了後の再確認を実行');
+                        console.log('🔧 断面情報設定完了後の再確認を実行 (1000ms後):', new Date().toISOString());
                         const membersTable = document.getElementById('members-table');
                         if (membersTable) {
                             const rows = membersTable.querySelectorAll('tbody tr');
@@ -16721,6 +16747,7 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     if (viewerWindow && !viewerWindow.closed) {
                         console.log('🔍 3Dビューアに断面情報更新を送信中...');
                         setTimeout(() => {
+                            console.log('🔧 3Dビューア更新実行 (500ms後):', new Date().toISOString());
                             sendModelToViewer();
                         }, 500); // 断面情報設定完了後に送信
                     }

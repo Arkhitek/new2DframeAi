@@ -15933,6 +15933,24 @@ function integrateEditData(newState) {
                 if (existingMember.sectionName !== undefined) integratedMember.sectionName = existingMember.sectionName;
                 if (existingMember.sectionAxis !== undefined) integratedMember.sectionAxis = existingMember.sectionAxis;
                 
+                // 断面情報の詳細データも保持
+                if (existingMember.sectionInfo !== undefined) integratedMember.sectionInfo = existingMember.sectionInfo;
+                if (existingMember.sectionInfoEncoded !== undefined) integratedMember.sectionInfoEncoded = existingMember.sectionInfoEncoded;
+                if (existingMember.sectionLabel !== undefined) integratedMember.sectionLabel = existingMember.sectionLabel;
+                if (existingMember.sectionSummary !== undefined) integratedMember.sectionSummary = existingMember.sectionSummary;
+                if (existingMember.sectionSource !== undefined) integratedMember.sectionSource = existingMember.sectionSource;
+                
+                // 軸情報の詳細データも保持
+                if (existingMember.sectionAxisKey !== undefined) integratedMember.sectionAxisKey = existingMember.sectionAxisKey;
+                if (existingMember.sectionAxisMode !== undefined) integratedMember.sectionAxisMode = existingMember.sectionAxisMode;
+                if (existingMember.sectionAxisLabel !== undefined) integratedMember.sectionAxisLabel = existingMember.sectionAxisLabel;
+                
+                // その他の断面関連データも保持
+                if (existingMember.Zx !== undefined) integratedMember.Zx = existingMember.Zx;
+                if (existingMember.Zy !== undefined) integratedMember.Zy = existingMember.Zy;
+                if (existingMember.ix !== undefined) integratedMember.ix = existingMember.ix;
+                if (existingMember.iy !== undefined) integratedMember.iy = existingMember.iy;
+                
                 console.log(`🔍 部材${i + 1}統合: 新規部材に既存の物性値を適用`, integratedMember);
             } else {
                 console.log(`🔍 部材${i + 1}使用: 新規部材（既存部材なし）`, integratedMember);
@@ -16377,17 +16395,37 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     r_forced: r_forced 
                 };
             }),
-            members: modelData.members.map(m => ({
-                i: m.i, j: m.j,
-                E: m.E || '205000',
-                strengthType: 'F-value', // デフォルト
-                strengthValue: m.F || '235',
-                I: (m.I * 1e8).toString(), // m4 -> cm4
-                A: (m.A * 1e4).toString(), // m2 -> cm2
-                Z: (m.Z * 1e6).toString(), // m3 -> cm3
-                i_conn: m.i_conn || 'rigid',
-                j_conn: m.j_conn || 'rigid'
-            })),
+            members: modelData.members.map((m, index) => {
+                // 既存の部材データから断面情報を取得
+                const existingMember = currentModel && currentModel.members && currentModel.members[index];
+                
+                return {
+                    i: m.i, j: m.j,
+                    E: m.E || '205000',
+                    strengthType: 'F-value', // デフォルト
+                    strengthValue: m.F || '235',
+                    I: (m.I * 1e8).toString(), // m4 -> cm4
+                    A: (m.A * 1e4).toString(), // m2 -> cm2
+                    Z: (m.Z * 1e6).toString(), // m3 -> cm3
+                    i_conn: m.i_conn || 'rigid',
+                    j_conn: m.j_conn || 'rigid',
+                    // 既存の断面情報を保持
+                    sectionInfo: existingMember?.sectionInfo || null,
+                    sectionInfoEncoded: existingMember?.sectionInfoEncoded || '',
+                    sectionLabel: existingMember?.sectionLabel || '',
+                    sectionSummary: existingMember?.sectionSummary || '',
+                    sectionSource: existingMember?.sectionSource || '',
+                    sectionAxisKey: existingMember?.sectionAxisKey || '',
+                    sectionAxisMode: existingMember?.sectionAxisMode || '',
+                    sectionAxisLabel: existingMember?.sectionAxisLabel || '',
+                    sectionName: existingMember?.sectionName || '',
+                    sectionAxis: existingMember?.sectionAxis || '',
+                    Zx: existingMember?.Zx || '',
+                    Zy: existingMember?.Zy || '',
+                    ix: existingMember?.ix || '',
+                    iy: existingMember?.iy || ''
+                };
+            }),
             nodeLoads: (modelData.nl || []).map(l => ({ 
                 node: l.n, px: l.px || 0, py: l.py || 0, mz: l.mz || 0 
             })),

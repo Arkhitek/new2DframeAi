@@ -14839,49 +14839,30 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     
     console.log(`🔍 部材${memberIndex}の行を確認:`, row);
     
-    // 密度列の有無を確認
-    const hasDensityColumn = row.querySelector('.density-cell') !== null;
-    const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
-    const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+    // 既存の部材断面選択機能と同じ形式でsectionInfoオブジェクトを作成
+    const sectionInfo = {
+        label: steelData.sectionName || '',
+        dimensionSummary: steelData.sectionSpec || '',
+        source: 'AI生成',
+        axis: {
+            key: steelData.isStrongAxisX ? 'x' : 'y',
+            mode: steelData.isStrongAxisX ? 'strong' : 'weak',
+            label: steelData.axisDirection || (steelData.isStrongAxisX ? '強軸 (X軸)' : '弱軸 (Y軸)')
+        },
+        dimensions: [
+            { key: 'H', label: 'H', value: steelData.dimensions?.H || 0 },
+            { key: 'B', label: 'B', value: steelData.dimensions?.B || 0 },
+            { key: 't1', label: 't1', value: steelData.dimensions?.t1 || 0 },
+            { key: 't2', label: 't2', value: steelData.dimensions?.t2 || 0 }
+        ].filter(dim => dim.value > 0)
+    };
     
-    console.log(`🔍 密度列の有無: ${hasDensityColumn}, 断面名称セルインデックス: ${sectionNameCellIndex}, 軸方向セルインデックス: ${sectionAxisCellIndex}`);
+    console.log(`🔍 作成したsectionInfo:`, sectionInfo);
     
-    // 断面名称セルを更新
-    const sectionNameCell = row.cells[sectionNameCellIndex];
-    if (sectionNameCell) {
-        const nameSpan = sectionNameCell.querySelector('.section-name-cell');
-        if (nameSpan && steelData.sectionName) {
-            nameSpan.textContent = steelData.sectionName;
-            console.log(`✅ 部材${memberIndex}の断面名称を設定: ${steelData.sectionName}`);
-        } else {
-            console.warn(`部材${memberIndex}の断面名称セルが見つからないか、データが無効です`);
-        }
-    } else {
-        console.warn(`部材${memberIndex}の断面名称セルが見つかりません (インデックス: ${sectionNameCellIndex})`);
-    }
+    // 既存のsetRowSectionInfo関数を使用して設定
+    setRowSectionInfo(row, sectionInfo);
     
-    // 軸方向セルを更新
-    const sectionAxisCell = row.cells[sectionAxisCellIndex];
-    if (sectionAxisCell) {
-        const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-        if (axisSpan && steelData.axisDirection) {
-            axisSpan.textContent = steelData.axisDirection;
-            console.log(`✅ 部材${memberIndex}の軸方向を設定: ${steelData.axisDirection}`);
-        } else {
-            console.warn(`部材${memberIndex}の軸方向セルが見つからないか、データが無効です`);
-        }
-    } else {
-        console.warn(`部材${memberIndex}の軸方向セルが見つかりません (インデックス: ${sectionAxisCellIndex})`);
-    }
-    
-    // データセット属性も更新
-    row.dataset.sectionLabel = steelData.sectionName || '';
-    row.dataset.sectionAxisLabel = steelData.axisDirection || '';
-    
-    console.log(`🔍 部材${memberIndex}のデータセット属性を更新:`, {
-        sectionLabel: steelData.sectionName,
-        sectionAxisLabel: steelData.axisDirection
-    });
+    console.log(`✅ 部材${memberIndex}の断面情報を既存形式で設定完了`);
 }
 
 /**

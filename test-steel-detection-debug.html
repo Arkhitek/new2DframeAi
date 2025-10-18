@@ -424,16 +424,17 @@
                 };
                 
                 if (typeof setMemberSectionInfoFromAI === 'function') {
-                    // 部材0に断面情報を設定
+                    // 部材0に断面情報を設定（既存形式で）
                     setMemberSectionInfoFromAI(0, testSteelData);
                     
                     let output = `テスト鋼材データ: ${JSON.stringify(testSteelData, null, 2)}\n\n`;
-                    output += `部材0に断面情報を設定しました。\n\n`;
+                    output += `部材0に断面情報を設定しました（既存形式で）。\n\n`;
                     output += `設定内容:\n`;
                     output += `- 断面名称: ${testSteelData.sectionName}\n`;
                     output += `- 軸方向: ${testSteelData.axisDirection}\n`;
                     output += `- 断面タイプ: ${testSteelData.sectionType}\n`;
                     output += `- マッチング精度: ${(100 - testSteelData.matchDistance).toFixed(1)}%\n\n`;
+                    output += `既存の部材断面選択機能と同じ形式で設定されました。\n`;
                     output += `メインアプリケーションの部材テーブルで確認してください。`;
                     
                     resultDiv.textContent = output;

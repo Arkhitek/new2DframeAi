@@ -14728,26 +14728,6 @@ function setupAIModelGenerationListeners() {
     // 初期状態を設定
     updateModeDescription();
     
-    // 例文適用ボタンのイベントリスナー
-    const applyExampleBtn = document.getElementById('apply-example-btn');
-    if (applyExampleBtn) {
-        applyExampleBtn.addEventListener('click', () => {
-            const exampleSelect = document.getElementById('example-prompts-select');
-            const naturalLanguageInput = document.getElementById('natural-language-input');
-            
-            if (exampleSelect && naturalLanguageInput && exampleSelect.value) {
-                naturalLanguageInput.value = exampleSelect.value;
-                // テキストエリアの高さを自動調整
-                naturalLanguageInput.style.height = 'auto';
-                naturalLanguageInput.style.height = naturalLanguageInput.scrollHeight + 'px';
-                
-                console.log('例文を適用しました:', exampleSelect.value);
-            } else {
-                console.warn('例文が選択されていません');
-            }
-        });
-    }
-    
     console.log('✅ AIモデル生成のイベントリスナー設定完了');
 }
 
@@ -16223,8 +16203,23 @@ function updateExamplePrompts(mode) {
     examples.forEach((example, index) => {
         const option = document.createElement('option');
         option.value = example.text;
-        option.textContent = `${index + 1}. ${example.title}`;
+        // タイトルと例文内容を表示（例文内容は括弧書きで表示）
+        option.textContent = `${index + 1}. ${example.title} (${example.text})`;
         exampleSelect.appendChild(option);
+    });
+    
+    // 選択時の自動適用イベントリスナーを設定
+    exampleSelect.addEventListener('change', () => {
+        const naturalLanguageInput = document.getElementById('natural-language-input');
+        
+        if (exampleSelect.value && naturalLanguageInput) {
+            naturalLanguageInput.value = exampleSelect.value;
+            // テキストエリアの高さを自動調整
+            naturalLanguageInput.style.height = 'auto';
+            naturalLanguageInput.style.height = naturalLanguageInput.scrollHeight + 'px';
+            
+            console.log('例文を自動適用しました:', exampleSelect.value);
+        }
     });
 }
 

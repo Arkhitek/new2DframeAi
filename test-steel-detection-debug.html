@@ -423,25 +423,26 @@
                     matchDistance: 0.5
                 };
                 
-                if (typeof setMemberSectionInfoFromAI === 'function') {
-                    // 部材0に断面情報を設定（既存形式で）
-                    setMemberSectionInfoFromAI(0, testSteelData);
+                if (typeof setMultipleMembersSectionInfoFromAI === 'function') {
+                    // すべての部材に断面情報を設定（新しい処理で）
+                    setMultipleMembersSectionInfoFromAI([testSteelData]);
                     
                     let output = `テスト鋼材データ: ${JSON.stringify(testSteelData, null, 2)}\n\n`;
-                    output += `部材0に断面情報を設定しました（部材断面選択と同じ形式で）。\n\n`;
+                    output += `すべての部材に断面情報を設定しました（梁と柱の両方に適用）。\n\n`;
                     output += `設定内容:\n`;
                     output += `- 断面名称: H形鋼（広幅） ${testSteelData.sectionName}\n`;
                     output += `- 軸方向: ${testSteelData.isStrongAxisX ? '強軸 (X軸)' : '弱軸 (Y軸)'}\n`;
                     output += `- 断面タイプ: ${testSteelData.sectionType}\n`;
                     output += `- マッチング精度: ${(100 - testSteelData.matchDistance).toFixed(1)}%\n\n`;
                     output += `部材断面選択機能と同じ表示形式で設定されました。\n`;
-                    output += `エラーハンドリングとフォールバック機能も含まれています。\n`;
-                    output += `メインアプリケーションの部材テーブルで確認してください。`;
+                    output += `梁と柱の両方の部材に同じ断面情報が適用されます。\n`;
+                    output += `3Dビューアが開いている場合は自動的に更新されます。\n`;
+                    output += `メインアプリケーションの部材テーブルと3Dビューアで確認してください。`;
                     
                     resultDiv.textContent = output;
                     resultDiv.style.display = 'block';
                 } else {
-                    resultDiv.textContent = 'setMemberSectionInfoFromAI関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
+                    resultDiv.textContent = 'setMultipleMembersSectionInfoFromAI関数が見つかりません。frame_analyzer.jsが正しく読み込まれているか確認してください。';
                     resultDiv.style.display = 'block';
                 }
             } catch (error) {

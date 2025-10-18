@@ -13714,6 +13714,14 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         const successMessage = mode === 'edit' ? 'AIによるモデル編集が完了しました。' : 'AIによるモデル生成が完了しました。';
         // AI生成中のアラートは表示しない
         console.log(successMessage + (retryCount > 0 ? ` (${retryCount}回のリトライ後に成功)` : ''));
+        
+        // 3Dビューアが開いている場合は更新を送信
+        if (viewerWindow && !viewerWindow.closed) {
+            console.log('🔍 AI生成完了後、3Dビューアに更新を送信中...');
+            setTimeout(() => {
+                sendModelToViewer();
+            }, 1000); // AI生成完了後に送信
+        }
 
     } catch (error) {
         console.error('AIモデル生成エラー:', error);
@@ -14980,11 +14988,37 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray) {
         return;
     }
     
-    steelDataArray.forEach((steelData, index) => {
-        if (steelData && steelData.sectionName) {
-            setMemberSectionInfoFromAI(index, steelData);
+    const membersTable = document.getElementById('members-table');
+    if (!membersTable) {
+        console.warn('部材テーブルが見つかりません');
+        return;
+    }
+    
+    const rows = membersTable.querySelectorAll('tbody tr');
+    console.log(`🔍 部材テーブルの行数: ${rows.length}, 検出された鋼材断面数: ${steelDataArray.length}`);
+    
+    if (rows.length === 0) {
+        console.warn('部材テーブルに部材がありません');
+        return;
+    }
+    
+    // 検出された鋼材断面情報をすべての部材に適用
+    // 複数の鋼材断面が検出された場合は、最初の断面をすべての部材に適用
+    // 1つの鋼材断面が検出された場合は、その断面をすべての部材に適用
+    const steelDataToApply = steelDataArray[0]; // 最初の鋼材断面を使用
+    
+    if (steelDataToApply && steelDataToApply.sectionName) {
+        console.log(`🔍 鋼材断面「${steelDataToApply.sectionName}」をすべての部材に適用`);
+        
+        // すべての部材に同じ断面情報を適用
+        for (let i = 0; i < rows.length; i++) {
+            setMemberSectionInfoFromAI(i, steelDataToApply);
         }
-    });
+        
+        console.log(`✅ ${rows.length}個の部材に断面情報を設定完了`);
+    } else {
+        console.warn('適用可能な鋼材断面情報がありません');
+    }
 }
 
 /**
@@ -15799,6 +15833,14 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 if (steelDetectionResult && steelDetectionResult.steelData && steelDetectionResult.steelData.length > 0) {
                     console.log('🔍 AI生成後に部材の断面情報を設定:', steelDetectionResult.steelData);
                     setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData);
+                    
+                    // 3Dビューアが開いている場合は更新を送信
+                    if (viewerWindow && !viewerWindow.closed) {
+                        console.log('🔍 3Dビューアに断面情報更新を送信中...');
+                        setTimeout(() => {
+                            sendModelToViewer();
+                        }, 500); // 断面情報設定完了後に送信
+                    }
                 } else {
                     console.log('🔍 鋼材断面情報が見つかりませんでした');
                 }

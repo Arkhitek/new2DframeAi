@@ -3579,31 +3579,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         if(m.ix) newRow.dataset.ix = m.ix;
                         if(m.iy) newRow.dataset.iy = m.iy;
                         
-                        // 断面情報のdataset属性を設定
-                        if (m.sectionInfo) {
+                        // 断面情報のdataset属性を設定（setRowSectionInfo関数を使用）
+                        if (m.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+                            console.log(`🔧 addMember: 部材の断面情報をsetRowSectionInfoで設定:`, m.sectionInfo);
+                            window.setRowSectionInfo(newRow, m.sectionInfo);
+                        } else if (m.sectionInfo) {
+                            // フォールバック: 直接設定
+                            console.log(`🔧 addMember: 部材の断面情報を直接設定（フォールバック）:`, m.sectionInfo);
                             newRow.dataset.sectionInfo = JSON.stringify(m.sectionInfo);
                         }
-                        if (m.sectionInfoEncoded) {
-                            newRow.dataset.sectionInfoEncoded = m.sectionInfoEncoded;
-                        }
-                        if (m.sectionLabel) {
-                            newRow.dataset.sectionLabel = m.sectionLabel;
-                        }
-                        if (m.sectionSummary) {
-                            newRow.dataset.sectionSummary = m.sectionSummary;
-                        }
-                        if (m.sectionSource) {
-                            newRow.dataset.sectionSource = m.sectionSource;
-                        }
-                        if (m.sectionAxisKey) {
-                            newRow.dataset.sectionAxisKey = m.sectionAxisKey;
-                        }
-                        if (m.sectionAxisMode) {
-                            newRow.dataset.sectionAxisMode = m.sectionAxisMode;
-                        }
-                        if (m.sectionAxisLabel) {
-                            newRow.dataset.sectionAxisLabel = m.sectionAxisLabel;
-                        }
+                        // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
 
                         // 断面情報と軸情報を復元
                         let sectionInfoToApply = parseSectionInfo(m);
@@ -3683,31 +3668,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             sectionAxisCell.textContent = memberData.sectionAxis;
                         }
                         
-                        // dataset属性の設定（既に設定済みだが、念のため再設定）
-                        if (memberData.sectionInfo) {
+                        // dataset属性の設定（setRowSectionInfo関数を使用）
+                        if (memberData.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+                            console.log(`🔧 restoreState: 部材${memberIndex}の断面情報をsetRowSectionInfoで設定:`, memberData.sectionInfo);
+                            window.setRowSectionInfo(row, memberData.sectionInfo);
+                        } else if (memberData.sectionInfo) {
+                            // フォールバック: 直接設定
+                            console.log(`🔧 restoreState: 部材${memberIndex}の断面情報を直接設定（フォールバック）:`, memberData.sectionInfo);
                             row.dataset.sectionInfo = JSON.stringify(memberData.sectionInfo);
                         }
-                        if (memberData.sectionInfoEncoded) {
-                            row.dataset.sectionInfoEncoded = memberData.sectionInfoEncoded;
-                        }
-                        if (memberData.sectionLabel) {
-                            row.dataset.sectionLabel = memberData.sectionLabel;
-                        }
-                        if (memberData.sectionSummary) {
-                            row.dataset.sectionSummary = memberData.sectionSummary;
-                        }
-                        if (memberData.sectionSource) {
-                            row.dataset.sectionSource = memberData.sectionSource;
-                        }
-                        if (memberData.sectionAxisKey) {
-                            row.dataset.sectionAxisKey = memberData.sectionAxisKey;
-                        }
-                        if (memberData.sectionAxisMode) {
-                            row.dataset.sectionAxisMode = memberData.sectionAxisMode;
-                        }
-                        if (memberData.sectionAxisLabel) {
-                            row.dataset.sectionAxisLabel = memberData.sectionAxisLabel;
-                        }
+                        // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
                         
                         console.log(`🔧 部材${memberIndex + 1}の断面情報を更新: ${memberData.sectionName}`);
                     }
@@ -4349,8 +4319,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     const parseInputs = () => {
+        console.log('🔍 parseInputs called - 現在の部材テーブルの状態を確認');
+        
         // プリセット読み込み中は簡易的なダミーデータを返してエラーを回避
         if (window.isLoadingPreset) {
+            console.log('🔍 parseInputs: プリセット読み込み中のためダミーデータを返します');
             return {
                 nodes: [],
                 members: [],
@@ -10879,6 +10852,8 @@ window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo)
 };
 
 window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
+    console.log('🔧 setRowSectionInfo called with:', { row, sectionInfo });
+    
     if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
         console.warn('setRowSectionInfo called with invalid row element:', row);
         return;
@@ -15435,30 +15410,14 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         }
     }
     
-    // 断面情報のdataset属性を設定
-    if (steelData.sectionInfo) {
+    // 断面情報のdataset属性を設定（setRowSectionInfo関数を使用）
+    if (steelData.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+        console.log(`🔧 部材${memberIndex}の断面情報をsetRowSectionInfoで設定:`, steelData.sectionInfo);
+        window.setRowSectionInfo(row, steelData.sectionInfo);
+    } else if (steelData.sectionInfo) {
+        // フォールバック: 直接設定（エンコードなし）
+        console.log(`🔧 部材${memberIndex}の断面情報を直接設定（フォールバック）:`, steelData.sectionInfo);
         row.dataset.sectionInfo = JSON.stringify(steelData.sectionInfo);
-    }
-    if (steelData.sectionInfoEncoded) {
-        row.dataset.sectionInfoEncoded = steelData.sectionInfoEncoded;
-    }
-    if (steelData.sectionLabel) {
-        row.dataset.sectionLabel = steelData.sectionLabel;
-    }
-    if (steelData.sectionSummary) {
-        row.dataset.sectionSummary = steelData.sectionSummary;
-    }
-    if (steelData.sectionSource) {
-        row.dataset.sectionSource = steelData.sectionSource;
-    }
-    if (steelData.sectionAxisKey) {
-        row.dataset.sectionAxisKey = steelData.sectionAxisKey;
-    }
-    if (steelData.sectionAxisMode) {
-        row.dataset.sectionAxisMode = steelData.sectionAxisMode;
-    }
-    if (steelData.sectionAxisLabel) {
-        row.dataset.sectionAxisLabel = steelData.sectionAxisLabel;
     }
     
     // 軸情報も更新 (cell 9)
@@ -15818,32 +15777,16 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                         console.log(`🔧 部材${index + 1}の軸方向を復元: ${backup.sectionAxis}`);
                     }
 
-                    // 断面情報のdataset属性を復元
-                    if (backup.sectionInfo) {
+                    // 断面情報のdataset属性を復元（setRowSectionInfo関数を使用）
+                    if (backup.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+                        console.log(`🔧 部材${index + 1}のsectionInfoをsetRowSectionInfoで復元:`, backup.sectionInfo);
+                        window.setRowSectionInfo(row, backup.sectionInfo);
+                    } else if (backup.sectionInfo) {
+                        // フォールバック: 直接設定
+                        console.log(`🔧 部材${index + 1}のsectionInfoを直接復元（フォールバック）:`, backup.sectionInfo);
                         row.dataset.sectionInfo = JSON.stringify(backup.sectionInfo);
-                        console.log(`🔧 部材${index + 1}のsectionInfoを復元:`, backup.sectionInfo);
                     }
-                    if (backup.sectionInfoEncoded) {
-                        row.dataset.sectionInfoEncoded = backup.sectionInfoEncoded;
-                    }
-                    if (backup.sectionLabel) {
-                        row.dataset.sectionLabel = backup.sectionLabel;
-                    }
-                    if (backup.sectionSummary) {
-                        row.dataset.sectionSummary = backup.sectionSummary;
-                    }
-                    if (backup.sectionSource) {
-                        row.dataset.sectionSource = backup.sectionSource;
-                    }
-                    if (backup.sectionAxisKey) {
-                        row.dataset.sectionAxisKey = backup.sectionAxisKey;
-                    }
-                    if (backup.sectionAxisMode) {
-                        row.dataset.sectionAxisMode = backup.sectionAxisMode;
-                    }
-                    if (backup.sectionAxisLabel) {
-                        row.dataset.sectionAxisLabel = backup.sectionAxisLabel;
-                    }
+                    // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
 
                     console.log(`🔧 部材${index + 1} (${memberType})の断面情報を復元完了: ${backup.sectionName}`);
                 } else if (shouldChange) {

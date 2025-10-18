@@ -3578,6 +3578,32 @@ document.addEventListener('DOMContentLoaded', () => {
                         if(m.Zy) newRow.dataset.zy = m.Zy;
                         if(m.ix) newRow.dataset.ix = m.ix;
                         if(m.iy) newRow.dataset.iy = m.iy;
+                        
+                        // 断面情報のdataset属性を設定
+                        if (m.sectionInfo) {
+                            newRow.dataset.sectionInfo = JSON.stringify(m.sectionInfo);
+                        }
+                        if (m.sectionInfoEncoded) {
+                            newRow.dataset.sectionInfoEncoded = m.sectionInfoEncoded;
+                        }
+                        if (m.sectionLabel) {
+                            newRow.dataset.sectionLabel = m.sectionLabel;
+                        }
+                        if (m.sectionSummary) {
+                            newRow.dataset.sectionSummary = m.sectionSummary;
+                        }
+                        if (m.sectionSource) {
+                            newRow.dataset.sectionSource = m.sectionSource;
+                        }
+                        if (m.sectionAxisKey) {
+                            newRow.dataset.sectionAxisKey = m.sectionAxisKey;
+                        }
+                        if (m.sectionAxisMode) {
+                            newRow.dataset.sectionAxisMode = m.sectionAxisMode;
+                        }
+                        if (m.sectionAxisLabel) {
+                            newRow.dataset.sectionAxisLabel = m.sectionAxisLabel;
+                        }
 
                         // 断面情報と軸情報を復元
                         let sectionInfoToApply = parseSectionInfo(m);
@@ -3637,6 +3663,63 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             renumberTables();
+            
+            // 部材テーブルの断面情報表示を更新
+            setTimeout(() => {
+                console.log('🔧 restoreState: 部材テーブルの断面情報表示を更新中...');
+                const memberRows = elements.membersTable.querySelectorAll('tbody tr');
+                memberRows.forEach((row, memberIndex) => {
+                    const memberData = state.members[memberIndex];
+                    if (memberData && memberData.sectionName) {
+                        // 断面名称セルの更新
+                        const sectionNameCell = row.querySelector('.section-name-cell');
+                        if (sectionNameCell) {
+                            sectionNameCell.textContent = memberData.sectionName;
+                        }
+                        
+                        // 軸情報セルの更新
+                        const sectionAxisCell = row.querySelector('.section-axis-cell');
+                        if (sectionAxisCell && memberData.sectionAxis) {
+                            sectionAxisCell.textContent = memberData.sectionAxis;
+                        }
+                        
+                        // dataset属性の設定（既に設定済みだが、念のため再設定）
+                        if (memberData.sectionInfo) {
+                            row.dataset.sectionInfo = JSON.stringify(memberData.sectionInfo);
+                        }
+                        if (memberData.sectionInfoEncoded) {
+                            row.dataset.sectionInfoEncoded = memberData.sectionInfoEncoded;
+                        }
+                        if (memberData.sectionLabel) {
+                            row.dataset.sectionLabel = memberData.sectionLabel;
+                        }
+                        if (memberData.sectionSummary) {
+                            row.dataset.sectionSummary = memberData.sectionSummary;
+                        }
+                        if (memberData.sectionSource) {
+                            row.dataset.sectionSource = memberData.sectionSource;
+                        }
+                        if (memberData.sectionAxisKey) {
+                            row.dataset.sectionAxisKey = memberData.sectionAxisKey;
+                        }
+                        if (memberData.sectionAxisMode) {
+                            row.dataset.sectionAxisMode = memberData.sectionAxisMode;
+                        }
+                        if (memberData.sectionAxisLabel) {
+                            row.dataset.sectionAxisLabel = memberData.sectionAxisLabel;
+                        }
+                        
+                        console.log(`🔧 部材${memberIndex + 1}の断面情報を更新: ${memberData.sectionName}`);
+                    }
+                });
+                
+                // 3Dビューアが開いている場合は更新を送信
+                if (viewerWindow && !viewerWindow.closed) {
+                    console.log('🔧 restoreState: 3Dビューアに断面情報更新を送信中...');
+                    sendModelToViewer();
+                }
+            }, 100);
+            
             if (typeof drawOnCanvas === 'function') {
                 drawOnCanvas();
             }
@@ -14937,7 +15020,33 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
             ix: radiusXValue,
             iy: radiusYValue
         },
-        matchDistance: bestMatch.distance
+        matchDistance: bestMatch.distance,
+        // 断面情報オブジェクトを追加
+        sectionInfo: {
+            typeKey: actualSteelType,
+            typeLabel: typeLabel,
+            designation: designation,
+            dims: fullDimensions,
+            properties: {
+                A: areaValue,
+                Ix: ixValue,
+                Iy: iyValue,
+                Zx: zxValue,
+                Zy: zyValue,
+                ix: radiusXValue,
+                iy: radiusYValue
+            },
+            label: `${typeLabel} ${designation}`,
+            source: 'AI生成'
+        },
+        // その他の断面情報プロパティも追加
+        sectionInfoEncoded: '',
+        sectionLabel: `${typeLabel} ${designation}`,
+        sectionSummary: `${typeLabel} ${designation}`,
+        sectionSource: 'AI生成',
+        sectionAxisKey: isStrongAxisX ? 'X' : 'Y',
+        sectionAxisMode: 'strong',
+        sectionAxisLabel: isStrongAxisX ? '強軸 (X軸)' : '強軸 (Y軸)'
     };
 }
 
@@ -15289,7 +15398,13 @@ function updateMemberSectionInTable(memberIndex, steelData) {
     
     // 断面名称を更新 (cell 8)
     if (row.cells[8]) {
-        row.cells[8].textContent = sectionName;
+        // section-name-cellクラスの要素を更新
+        const sectionNameCell = row.cells[8].querySelector('.section-name-cell');
+        if (sectionNameCell) {
+            sectionNameCell.textContent = sectionName;
+        } else {
+            row.cells[8].textContent = sectionName;
+        }
     }
     
     // 断面性能を更新
@@ -15310,6 +15425,42 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         const modulusInput = row.cells[7]?.querySelector('input');
         if (modulusInput && steelData.properties.Zx) {
             modulusInput.value = steelData.properties.Zx;
+        }
+    }
+    
+    // 断面情報のdataset属性を設定
+    if (steelData.sectionInfo) {
+        row.dataset.sectionInfo = JSON.stringify(steelData.sectionInfo);
+    }
+    if (steelData.sectionInfoEncoded) {
+        row.dataset.sectionInfoEncoded = steelData.sectionInfoEncoded;
+    }
+    if (steelData.sectionLabel) {
+        row.dataset.sectionLabel = steelData.sectionLabel;
+    }
+    if (steelData.sectionSummary) {
+        row.dataset.sectionSummary = steelData.sectionSummary;
+    }
+    if (steelData.sectionSource) {
+        row.dataset.sectionSource = steelData.sectionSource;
+    }
+    if (steelData.sectionAxisKey) {
+        row.dataset.sectionAxisKey = steelData.sectionAxisKey;
+    }
+    if (steelData.sectionAxisMode) {
+        row.dataset.sectionAxisMode = steelData.sectionAxisMode;
+    }
+    if (steelData.sectionAxisLabel) {
+        row.dataset.sectionAxisLabel = steelData.sectionAxisLabel;
+    }
+    
+    // 軸情報も更新 (cell 9)
+    if (row.cells[9] && steelData.axisDirection) {
+        const sectionAxisCell = row.cells[9].querySelector('.section-axis-cell');
+        if (sectionAxisCell) {
+            sectionAxisCell.textContent = steelData.axisDirection;
+        } else {
+            row.cells[9].textContent = steelData.axisDirection;
         }
     }
     

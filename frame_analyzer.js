@@ -14679,12 +14679,12 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                 const rowData = hosoData.data[i];
                 const rowDims = getDimensionsFromRow('hkatakou_hoso', rowData, hosoData.headers);
                 
-                // rowDimsが配列かどうかチェック
-                if (Array.isArray(rowDims) && rowDims.length >= 2) {
+                // rowDimsがオブジェクトかどうかチェック
+                if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
                     // H×Bのみで比較
-                    const hosoDims = rowDims.slice(0, 2);
-                const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
-                
+                    const hosoDims = [rowDims.H, rowDims.B];
+                    const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
+                    
                     if (distance < minDistance) {
                         minDistance = distance;
                         bestMatch = {

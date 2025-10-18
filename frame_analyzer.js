@@ -14587,8 +14587,8 @@ function getSteelTypeFromPattern(patternIndex) {
     const types = [
         'hkatakou_hiro',  // H-xxx×xxx×xxx×xxx (4つの寸法)
         'hkatakou_hiro',  // Hxxx×xxx×xxx×xxx (4つの寸法)
-        'hkatakou_hiro',  // H-xxx×xxx (2つの寸法)
-        'hkatakou_hiro',  // Hxxx×xxx (2つの寸法)
+        'hkatakou_hoso',  // H-xxx×xxx (2つの寸法) - 細幅H形鋼を優先
+        'hkatakou_hoso',  // Hxxx×xxx (2つの寸法) - 細幅H形鋼を優先
         'seihoukei',      // □xxx×xxx×xxx
         'koukan',         // φxxx×xxx
         'mizogatakou',    // C-xxx×xxx×xxx×xxx
@@ -14672,20 +14672,26 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     }
     
     // 2つの寸法のH形鋼の場合、細幅H形鋼から近い断面を探す
-    if (!bestMatch && steelType === 'hkatakou_hiro' && dimensions.length === 2) {
+    if (steelType === 'hkatakou_hoso' && dimensions.length === 2) {
         console.log('🔍 2つの寸法のH形鋼のため、細幅H形鋼から近い断面を検索');
+        console.log('🔍 検索対象寸法:', dimensions);
         
         const hosoData = window.steelData.hkatakou_hoso;
         if (hosoData) {
+            console.log('🔍 細幅H形鋼データ数:', hosoData.data.length);
             for (let i = 0; i < hosoData.data.length; i++) {
                 const rowData = hosoData.data[i];
                 const rowDims = getDimensionsFromRow('hkatakou_hoso', rowData, hosoData.headers);
+                
+                console.log(`🔍 細幅H形鋼 ${i}: ${rowData[0]}, 抽出寸法:`, rowDims);
                 
                 // rowDimsがオブジェクトかどうかチェック
                 if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
                     // H×Bのみで比較
                     const hosoDims = [rowDims.H, rowDims.B];
                     const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
+                    
+                    console.log(`🔍 細幅H形鋼 ${i}: 寸法比較 ${dimensions} vs ${hosoDims}, 距離: ${distance}`);
                     
                     if (distance < minDistance) {
                         minDistance = distance;
@@ -14695,6 +14701,38 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                             dimensions: hosoDims,
                             distance: distance,
                             steelType: 'hkatakou_hoso'
+                        };
+                        console.log('🔍 新しい最適マッチ:', bestMatch);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 細幅H形鋼で見つからない場合、広幅H形鋼も検索
+    if (!bestMatch && steelType === 'hkatakou_hoso' && dimensions.length === 2) {
+        console.log('🔍 細幅H形鋼で見つからないため、広幅H形鋼も検索');
+        
+        const hiroData = window.steelData.hkatakou_hiro;
+        if (hiroData) {
+            for (let i = 0; i < hiroData.data.length; i++) {
+                const rowData = hiroData.data[i];
+                const rowDims = getDimensionsFromRow('hkatakou_hiro', rowData, hiroData.headers);
+                
+                // rowDimsがオブジェクトかどうかチェック
+                if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
+                    // H×Bのみで比較
+                    const hiroDims = [rowDims.H, rowDims.B];
+                    const distance = calculateDimensionDistance(dimensions, hiroDims, 'hkatakou_hiro');
+                    
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        bestMatch = {
+                            index: i,
+                            rowData: rowData,
+                            dimensions: hiroDims,
+                            distance: distance,
+                            steelType: 'hkatakou_hiro'
                         };
                     }
                 }
@@ -14852,6 +14890,7 @@ function getDimensionsFromRow(type, rowData, headers) {
                 [dims.H, dims.B] = hSizes.length >= 2 ? hSizes : [0, 0];
                 dims.t1 = findValue('t1');
                 dims.t2 = findValue('t2');
+                console.log(`🔍 getDimensionsFromRow: ${rowData[0]} → H=${dims.H}, B=${dims.B}, t1=${dims.t1}, t2=${dims.t2}`);
                 break;
             case 'seihoukei':
             case 'tyouhoukei':

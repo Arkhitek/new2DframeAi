@@ -14679,19 +14679,22 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                 const rowData = hosoData.data[i];
                 const rowDims = getDimensionsFromRow('hkatakou_hoso', rowData, hosoData.headers);
                 
-                // H×Bのみで比較
-                const hosoDims = rowDims.slice(0, 2);
+                // rowDimsが配列かどうかチェック
+                if (Array.isArray(rowDims) && rowDims.length >= 2) {
+                    // H×Bのみで比較
+                    const hosoDims = rowDims.slice(0, 2);
                 const distance = calculateDimensionDistance(dimensions, hosoDims, 'hkatakou_hoso');
                 
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    bestMatch = {
-                        index: i,
-                        rowData: rowData,
-                        dimensions: hosoDims,
-                        distance: distance,
-                        steelType: 'hkatakou_hoso'
-                    };
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        bestMatch = {
+                            index: i,
+                            rowData: rowData,
+                            dimensions: hosoDims,
+                            distance: distance,
+                            steelType: 'hkatakou_hoso'
+                        };
+                    }
                 }
             }
         }

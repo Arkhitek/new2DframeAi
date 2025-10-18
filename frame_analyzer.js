@@ -14760,13 +14760,17 @@ function calculateDimensionDistance(targetDims, actualDims, steelType) {
         case 'hkatakou_hoso':
         case 'ikatakou':
         case 'keiryouhkatakou':
-            // H形鋼: H, B, t1, t2
+            // H形鋼: H, B, t1, t2 または H, B のみ
             if (targetDims.length >= 4 && actualDims.H && actualDims.B && actualDims.t1 && actualDims.t2) {
-                // 主要寸法（H, B）に重みを付ける
+                // 4つの寸法が指定されている場合
                 distance += Math.pow(targetDims[0] - actualDims.H, 2) * 2;  // H
                 distance += Math.pow(targetDims[1] - actualDims.B, 2) * 2;  // B
                 distance += Math.pow(targetDims[2] - actualDims.t1, 2);     // t1
                 distance += Math.pow(targetDims[3] - actualDims.t2, 2);     // t2
+            } else if (targetDims.length >= 2 && actualDims.H && actualDims.B) {
+                // 2つの寸法（H, B）のみが指定されている場合
+                distance += Math.pow(targetDims[0] - actualDims.H, 2) * 3;  // H (重みを上げる)
+                distance += Math.pow(targetDims[1] - actualDims.B, 2) * 3;  // B (重みを上げる)
             } else {
                 distance = Infinity;
             }

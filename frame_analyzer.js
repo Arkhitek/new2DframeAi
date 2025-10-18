@@ -13868,6 +13868,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
     
     // 関数開始時の断面情報状態を記録
     const membersTable = document.getElementById('members-table');
+    let preAISectionInfoBackup = [];
     if (membersTable) {
         const rows = membersTable.querySelectorAll('tbody tr');
         console.log('🔍 generateModelWithAIInternal開始時の断面情報状態:');
@@ -13876,7 +13877,35 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             const sectionNameCell = row.querySelector('.section-name-cell');
             const sectionAxisCell = row.querySelector('.section-axis-cell');
             console.log(`🔍 部材${index + 1}: dataset.sectionInfo=${!!sectionInfo}, 長さ=${sectionInfo ? sectionInfo.length : 0}, 断面名称="${sectionNameCell ? sectionNameCell.textContent : 'N/A'}", 軸方向="${sectionAxisCell ? sectionAxisCell.textContent : 'N/A'}"`);
+            
+            // AI修正処理前に断面情報をバックアップ
+            let parsedSectionInfo = null;
+            if (sectionInfo) {
+                try {
+                    const decoded = decodeURIComponent(sectionInfo);
+                    parsedSectionInfo = JSON.parse(decoded);
+                    console.log(`✅ [AI前バックアップ] 部材${index + 1}の断面情報をバックアップ:`, parsedSectionInfo);
+                } catch (error) {
+                    console.error(`❌ [AI前バックアップ] 部材${index + 1}の断面情報のパースに失敗:`, error);
+                }
+            } else {
+                console.log(`⚠️ [AI前バックアップ] 部材${index + 1}のdataset.sectionInfoが存在しません`);
+            }
+            
+            preAISectionInfoBackup[index] = {
+                sectionName: sectionNameCell ? sectionNameCell.textContent : '',
+                sectionAxis: sectionAxisCell ? sectionAxisCell.textContent : '',
+                sectionInfo: parsedSectionInfo,
+                sectionInfoEncoded: row.dataset.sectionInfoEncoded || '',
+                sectionLabel: row.dataset.sectionLabel || '',
+                sectionSummary: row.dataset.sectionSummary || '',
+                sectionSource: row.dataset.sectionSource || '',
+                sectionAxisKey: row.dataset.sectionAxisKey || '',
+                sectionAxisMode: row.dataset.sectionAxisMode || '',
+                sectionAxisLabel: row.dataset.sectionAxisLabel || ''
+            };
         });
+        console.log('🔧 AI修正処理前の断面情報バックアップ完了:', preAISectionInfoBackup);
     }
     
     const aiGenerateBtn = document.getElementById('generate-model-btn');
@@ -15782,7 +15811,7 @@ function getMemberType(memberIndex) {
  * @param {Array} steelDataArray - 鋼材断面データの配列
  * @param {Array} memberTypes - 部材タイプ情報の配列
  */
-function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
+function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = [], preAISectionInfoBackup = null) {
     console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray, memberTypes);
     console.log('🔍 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
     
@@ -15834,16 +15863,19 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
             
             console.log(`🔍 [バックアップ] 部材${index + 1}: dataset.sectionInfo存在=${!!sectionInfo}, 長さ=${sectionInfo ? sectionInfo.length : 0}`);
             
-            // 安全にJSONパースを実行（URLデコードが必要）
+            // AI前のバックアップデータを優先的に使用
             let parsedSectionInfo = null;
-            if (sectionInfo) {
+            if (preAISectionInfoBackup && preAISectionInfoBackup[index] && preAISectionInfoBackup[index].sectionInfo) {
+                parsedSectionInfo = preAISectionInfoBackup[index].sectionInfo;
+                console.log(`✅ [バックアップ] 部材${index + 1}の断面情報をAI前バックアップから取得:`, parsedSectionInfo);
+            } else if (sectionInfo) {
                 console.log(`🔍 [バックアップ] 部材${index + 1}: 生のsectionInfo=${sectionInfo.substring(0, 100)}...`);
                 try {
                     // URLデコードしてからJSONパース
                     const decoded = decodeURIComponent(sectionInfo);
                     console.log(`🔍 [バックアップ] 部材${index + 1}: デコード後=${decoded.substring(0, 100)}...`);
                     parsedSectionInfo = JSON.parse(decoded);
-                    console.log(`✅ [バックアップ] 部材${index + 1}の断面情報をバックアップ:`, parsedSectionInfo);
+                    console.log(`✅ [バックアップ] 部材${index + 1}の断面情報をdatasetからバックアップ:`, parsedSectionInfo);
                 } catch (error) {
                     console.error(`❌ [バックアップ] 部材${index + 1}の断面情報のパースに失敗:`, error);
                     console.log(`🔍 [バックアップ] 部材${index + 1}の生のsectionInfo:`, sectionInfo);
@@ -15858,17 +15890,19 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = []) {
                 console.log(`🔄 [バックアップ] 部材${index + 1}の断面情報をcurrentModelからバックアップ:`, parsedSectionInfo);
             }
             
+            // AI前のバックアップデータから断面名称と軸方向を取得（優先）
+            const backupData = preAISectionInfoBackup && preAISectionInfoBackup[index];
             existingSectionInfo[index] = {
-                sectionName: sectionNameCell ? sectionNameCell.textContent : '',
-                sectionAxis: sectionAxisCell ? sectionAxisCell.textContent : '',
+                sectionName: backupData?.sectionName || (sectionNameCell ? sectionNameCell.textContent : ''),
+                sectionAxis: backupData?.sectionAxis || (sectionAxisCell ? sectionAxisCell.textContent : ''),
                 sectionInfo: parsedSectionInfo,
-                sectionInfoEncoded: row.dataset.sectionInfoEncoded || '',
-                sectionLabel: row.dataset.sectionLabel || '',
-                sectionSummary: row.dataset.sectionSummary || '',
-                sectionSource: row.dataset.sectionSource || '',
-                sectionAxisKey: row.dataset.sectionAxisKey || '',
-                sectionAxisMode: row.dataset.sectionAxisMode || '',
-                sectionAxisLabel: row.dataset.sectionAxisLabel || ''
+                sectionInfoEncoded: backupData?.sectionInfoEncoded || row.dataset.sectionInfoEncoded || '',
+                sectionLabel: backupData?.sectionLabel || row.dataset.sectionLabel || '',
+                sectionSummary: backupData?.sectionSummary || row.dataset.sectionSummary || '',
+                sectionSource: backupData?.sectionSource || row.dataset.sectionSource || '',
+                sectionAxisKey: backupData?.sectionAxisKey || row.dataset.sectionAxisKey || '',
+                sectionAxisMode: backupData?.sectionAxisMode || row.dataset.sectionAxisMode || '',
+                sectionAxisLabel: backupData?.sectionAxisLabel || row.dataset.sectionAxisLabel || ''
             };
         });
         
@@ -17038,7 +17072,7 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     // 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用
                     console.log('🔧 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用');
                     console.log('🔧 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
-                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes);
+                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes, preAISectionInfoBackup);
                     
                     // 断面情報設定完了後に、全ての部材の断面情報を再確認
                     setTimeout(() => {

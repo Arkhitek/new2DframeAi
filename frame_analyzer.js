@@ -614,7 +614,7 @@ function inverseTransform(mouseX, mouseY) {
 
 window.inverseTransform = inverseTransform;
 
-function normalizeAxisInfo(axisInfo) {
+window.normalizeAxisInfo = function normalizeAxisInfo(axisInfo) {
     if (!axisInfo || typeof axisInfo !== 'object') return null;
 
     const fallbackKeyFromMode = (mode) => {
@@ -10222,7 +10222,7 @@ const deriveSectionDimensions = (sectionInfo) => {
     return null;
 };
 
-const ensureSectionSvgMarkup = (sectionInfo) => {
+window.ensureSectionSvgMarkup = (sectionInfo) => {
     if (!sectionInfo || typeof sectionInfo !== 'object') return sectionInfo;
     if (sectionInfo.svgMarkup && sectionInfo.svgMarkup.includes('<svg')) return sectionInfo;
 
@@ -11505,7 +11505,7 @@ const loadPreset = (index) => {
         }, 100); // プリセット読み込み後に実行
     }
 
-    function applySectionAxisDataset(row, axisInfo) {
+    window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo) {
         if (!row) return;
 
         const normalizedAxis = normalizeAxisInfo(axisInfo);
@@ -11520,7 +11520,7 @@ const loadPreset = (index) => {
         }
     }
 
-    function setRowSectionInfo(row, sectionInfo) {
+    window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
         if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
             console.warn('setRowSectionInfo called with invalid row element:', row);
             return;
@@ -14860,9 +14860,50 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
     console.log(`🔍 作成したsectionInfo:`, sectionInfo);
     
     // 既存のsetRowSectionInfo関数を使用して設定
-    setRowSectionInfo(row, sectionInfo);
-    
-    console.log(`✅ 部材${memberIndex}の断面情報を既存形式で設定完了`);
+    try {
+        if (typeof window.setRowSectionInfo === 'function') {
+            window.setRowSectionInfo(row, sectionInfo);
+            console.log(`✅ 部材${memberIndex}の断面情報を既存形式で設定完了`);
+        } else {
+            console.error(`❌ setRowSectionInfo関数が見つかりません`);
+            // フォールバック: 直接セルを更新
+            const hasDensityColumn = row.querySelector('.density-cell') !== null;
+            const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
+            const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+            
+            // 断面名称セルを更新
+            const sectionNameCell = row.cells[sectionNameCellIndex];
+            if (sectionNameCell) {
+                const nameSpan = sectionNameCell.querySelector('.section-name-cell');
+                if (nameSpan) {
+                    nameSpan.textContent = sectionInfo.label || '-';
+                }
+            }
+            
+            // 軸方向セルを更新
+            const sectionAxisCell = row.cells[sectionAxisCellIndex];
+            if (sectionAxisCell) {
+                const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
+                if (axisSpan) {
+                    axisSpan.textContent = sectionInfo.axis?.label || '-';
+                }
+            }
+            
+            // データセット属性を更新
+            row.dataset.sectionLabel = sectionInfo.label || '';
+            row.dataset.sectionSummary = sectionInfo.dimensionSummary || '';
+            row.dataset.sectionSource = sectionInfo.source || '';
+            if (sectionInfo.axis) {
+                row.dataset.sectionAxisKey = sectionInfo.axis.key || '';
+                row.dataset.sectionAxisMode = sectionInfo.axis.mode || '';
+                row.dataset.sectionAxisLabel = sectionInfo.axis.label || '';
+            }
+            
+            console.log(`⚠️ フォールバック処理で部材${memberIndex}の断面情報を設定完了`);
+        }
+    } catch (error) {
+        console.error(`❌ 部材${memberIndex}の断面情報設定でエラーが発生:`, error);
+    }
 }
 
 /**

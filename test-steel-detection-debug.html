@@ -435,6 +435,7 @@
                     output += `- 断面タイプ: ${testSteelData.sectionType}\n`;
                     output += `- マッチング精度: ${(100 - testSteelData.matchDistance).toFixed(1)}%\n\n`;
                     output += `既存の部材断面選択機能と同じ形式で設定されました。\n`;
+                    output += `エラーハンドリングとフォールバック機能も含まれています。\n`;
                     output += `メインアプリケーションの部材テーブルで確認してください。`;
                     
                     resultDiv.textContent = output;

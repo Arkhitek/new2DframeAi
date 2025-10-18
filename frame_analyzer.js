@@ -10740,6 +10740,89 @@ const presets = [
     ], nl:[{n:6,px:20},{n:7,px:20},{n:8,px:20},{n:9,px:20},{n:10,px:20},{n:11,px:20},{n:12,px:20},{n:13,px:20},{n:14,px:20},{n:15,px:20},{n:16,px:20},{n:17,px:20},{n:18,px:20},{n:19,px:20},{n:20,px:20},{n:21,px:20},{n:22,px:20},{n:23,px:20},{n:24,px:20},{n:25,px:20}], ml:[] } }
 ];
 
+// 断面情報設定関数（loadPreset関数より前に定義）
+window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo) {
+    if (!row) return;
+
+    const normalizedAxis = normalizeAxisInfo(axisInfo);
+    if (normalizedAxis) {
+        row.dataset.sectionAxisKey = normalizedAxis.key;
+        row.dataset.sectionAxisMode = normalizedAxis.mode;
+        row.dataset.sectionAxisLabel = normalizedAxis.label;
+    } else {
+        delete row.dataset.sectionAxisKey;
+        delete row.dataset.sectionAxisMode;
+        delete row.dataset.sectionAxisLabel;
+    }
+};
+
+window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
+    if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
+        console.warn('setRowSectionInfo called with invalid row element:', row);
+        return;
+    }
+
+    const hasDensityColumn = row.querySelector('.density-cell') !== null;
+    const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
+    const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+
+    if (sectionInfo) {
+        const enrichedInfo = ensureSectionSvgMarkup(sectionInfo);
+        try {
+            row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
+        } catch (error) {
+            console.error('Failed to encode sectionInfo:', error, enrichedInfo);
+            row.dataset.sectionInfo = '';
+        }
+        row.dataset.sectionLabel = enrichedInfo.label || '';
+        row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
+        row.dataset.sectionSource = enrichedInfo.source || '';
+        window.applySectionAxisDataset(row, enrichedInfo.axis);
+
+        // 断面名称セルを更新
+        const sectionNameCell = row.cells[sectionNameCellIndex];
+        if (sectionNameCell) {
+            const nameSpan = sectionNameCell.querySelector('.section-name-cell');
+            if (nameSpan) {
+                nameSpan.textContent = enrichedInfo.label || '-';
+            }
+        }
+
+        // 軸方向セルを更新
+        const sectionAxisCell = row.cells[sectionAxisCellIndex];
+        if (sectionAxisCell) {
+            const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
+            if (axisSpan) {
+                axisSpan.textContent = enrichedInfo.axis?.label || '-';
+            }
+        }
+    } else {
+        delete row.dataset.sectionInfo;
+        delete row.dataset.sectionLabel;
+        delete row.dataset.sectionSummary;
+        delete row.dataset.sectionSource;
+        window.applySectionAxisDataset(row, null);
+
+        // 断面名称セルをクリア
+        const sectionNameCell = row.cells[sectionNameCellIndex];
+        if (sectionNameCell) {
+            const nameSpan = sectionNameCell.querySelector('.section-name-cell');
+            if (nameSpan) {
+                nameSpan.textContent = '-';
+            }
+        }
+
+        // 軸方向セルをクリア
+        const sectionAxisCell = row.cells[sectionAxisCellIndex];
+        if (sectionAxisCell) {
+            const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
+            if (axisSpan) {
+                axisSpan.textContent = '-';
+            }
+        }
+    }
+};
+
 const loadPreset = (index) => {
         const preset = presets[index];
         if (!preset || !preset.data) return;
@@ -11606,87 +11689,7 @@ const loadPreset = (index) => {
         }, 100); // プリセット読み込み後に実行
     }
 
-    window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo) {
-        if (!row) return;
 
-        const normalizedAxis = normalizeAxisInfo(axisInfo);
-        if (normalizedAxis) {
-            row.dataset.sectionAxisKey = normalizedAxis.key;
-            row.dataset.sectionAxisMode = normalizedAxis.mode;
-            row.dataset.sectionAxisLabel = normalizedAxis.label;
-        } else {
-            delete row.dataset.sectionAxisKey;
-            delete row.dataset.sectionAxisMode;
-            delete row.dataset.sectionAxisLabel;
-        }
-    }
-
-    window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
-        if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
-            console.warn('setRowSectionInfo called with invalid row element:', row);
-            return;
-        }
-
-        const hasDensityColumn = row.querySelector('.density-cell') !== null;
-        const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
-        const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
-
-        if (sectionInfo) {
-            const enrichedInfo = ensureSectionSvgMarkup(sectionInfo);
-            try {
-                row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
-            } catch (error) {
-                console.error('Failed to encode sectionInfo:', error, enrichedInfo);
-                row.dataset.sectionInfo = '';
-            }
-            row.dataset.sectionLabel = enrichedInfo.label || '';
-            row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
-            row.dataset.sectionSource = enrichedInfo.source || '';
-            window.applySectionAxisDataset(row, enrichedInfo.axis);
-
-            // 断面名称セルを更新
-            const sectionNameCell = row.cells[sectionNameCellIndex];
-            if (sectionNameCell) {
-                const nameSpan = sectionNameCell.querySelector('.section-name-cell');
-                if (nameSpan) {
-                    nameSpan.textContent = enrichedInfo.label || '-';
-                }
-            }
-
-            // 軸方向セルを更新
-            const sectionAxisCell = row.cells[sectionAxisCellIndex];
-            if (sectionAxisCell) {
-                const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-                if (axisSpan) {
-                    axisSpan.textContent = enrichedInfo.axis?.label || '-';
-                }
-            }
-        } else {
-            delete row.dataset.sectionInfo;
-            delete row.dataset.sectionLabel;
-            delete row.dataset.sectionSummary;
-            delete row.dataset.sectionSource;
-            window.applySectionAxisDataset(row, null);
-
-            // 断面名称セルをクリア
-            const sectionNameCell = row.cells[sectionNameCellIndex];
-            if (sectionNameCell) {
-                const nameSpan = sectionNameCell.querySelector('.section-name-cell');
-                if (nameSpan) {
-                    nameSpan.textContent = '-';
-                }
-            }
-
-            // 軸方向セルをクリア
-            const sectionAxisCell = row.cells[sectionAxisCellIndex];
-            if (sectionAxisCell) {
-                const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-                if (axisSpan) {
-                    axisSpan.textContent = '-';
-                }
-            }
-        }
-    }
 
     function updateMemberProperties(memberIndex, props) {
         if (memberIndex >= 0 && memberIndex < elements.membersTable.rows.length) {

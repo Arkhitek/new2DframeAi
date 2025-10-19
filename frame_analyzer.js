@@ -14018,7 +14018,15 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         aiStatus.style.color = '#28a745';
 
         // 取り出したモデルデータを、アプリケーションのテーブルに反映させます
-        applyGeneratedModel(modelData, userPrompt, mode, currentModel);
+        try {
+            applyGeneratedModel(modelData, userPrompt, mode, currentModel);
+        } catch (error) {
+            console.error('モデルデータの適用でエラーが発生しました:', error);
+            // エラーが発生してもポップアップを閉じる
+            hideAIGenerationPopup();
+            isAIGenerationInProgress = false;
+            throw error; // エラーを再スローして上位で処理
+        }
 
         // AI生成完了後の断面情報状態を記録
         console.log('🔍 AI生成完了後の断面情報状態:');
@@ -16911,14 +16919,15 @@ function validateModelData(modelData) {
 }
 
 function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new', currentModel = null) {
-    // モデルデータの妥当性をチェック
-    validateModelData(modelData);
+    try {
+        // モデルデータの妥当性をチェック
+        validateModelData(modelData);
 
-    const confirmMessage = mode === 'edit' 
-        ? 'AIが編集したモデルを適用します。現在のモデルデータが更新されますが、よろしいですか？'
-        : 'AIが生成したモデルを適用します。現在のモデルデータはクリアされますが、よろしいですか？';
+        const confirmMessage = mode === 'edit' 
+            ? 'AIが編集したモデルを適用します。現在のモデルデータが更新されますが、よろしいですか？'
+            : 'AIが生成したモデルを適用します。現在のモデルデータはクリアされますが、よろしいですか？';
 
-    if (confirm(confirmMessage)) {
+        if (safeConfirm(confirmMessage)) {
         // 既存の`restoreState`関数を再利用して、データをテーブルに反映します
         
         // 適用中の再描画などを一時的に抑制するためのフラグ
@@ -17229,5 +17238,11 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         
         // 最初の試行を5秒後に開始（restoreState関数の修正完了を待つ）
         setTimeout(() => attemptSetMemberInfo(), 5000);
+    }
+    } catch (error) {
+        console.error('applyGeneratedModel関数でエラーが発生しました:', error);
+        // エラーが発生した場合でもフラグをクリア
+        window.isLoadingPreset = false;
+        throw error; // エラーを再スローして上位で処理
     }
 }

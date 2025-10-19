@@ -13993,6 +13993,8 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         // 仲介役からの返答を受け取ります
         const data = await response.json();
         console.error('🔍 レスポンスデータ:', JSON.stringify(data, null, 2));
+        console.error('🔍 レスポンスデータの型:', typeof data);
+        console.error('🔍 レスポンスデータのキー:', Object.keys(data));
 
         // 返答に問題があった場合のエラー処理
         if (!response.ok) {
@@ -14016,9 +14018,13 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         // プログラム的生成の場合の処理
         if (data.success && data.model && data.generatedBy === 'programmatic') {
             console.log('🔍 プログラム的生成のレスポンスを処理中...');
+            console.log('🔍 data.success:', data.success);
+            console.log('🔍 data.model:', data.model);
+            console.log('🔍 data.generatedBy:', data.generatedBy);
             modelData = data.model;
         } else {
             // AI生成の場合の処理
+            console.log('🔍 AI生成のレスポンスを処理中...');
             const jsonText = extractJsonFromResponse(data);
             modelData = JSON.parse(jsonText);
         }
@@ -14031,6 +14037,8 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             applyGeneratedModel(modelData, userPrompt, mode, currentModel);
         } catch (error) {
             console.error('モデルデータの適用でエラーが発生しました:', error);
+            console.error('エラーの詳細:', error.message);
+            console.error('エラースタック:', error.stack);
             // エラーが発生してもポップアップを閉じる
             hideAIGenerationPopup();
             isAIGenerationInProgress = false;
@@ -14091,6 +14099,13 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
 
     } catch (error) {
         console.error('AIモデル生成エラー:', error);
+        console.error('エラーの詳細:', error.message);
+        console.error('エラースタック:', error.stack);
+        console.error('エラー発生時の状態:', {
+            isAIGenerationInProgress,
+            aiGenerationCancelled,
+            retryCount
+        });
         
         // キャンセルされた場合は特別な処理
         if (aiGenerationCancelled || (error.name === 'AbortError')) {

@@ -885,8 +885,8 @@ function validateSpanCount(model) {
     }
     
     // 部材数の検証
-    const expectedColumnCount = expectedNodeCount * layerNodeCounts.length;
-    const expectedBeamCount = spanCount * layerNodeCounts.length;
+    const expectedColumnCount = spanCount * (layerNodeCounts.length - 1); // 柱はスパン数×層数-1
+    const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数
     const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {

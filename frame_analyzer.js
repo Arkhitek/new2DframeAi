@@ -5150,7 +5150,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }); 
     };
     const drawConnections = (ctx, transform, nodes, members) => { ctx.fillStyle = 'white'; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; const offset = 6; members.forEach(m => { const n_i = nodes[m.i]; const p_i = transform(n_i.x, n_i.y); if (m.i_conn === 'pinned') { const p_i_offset = { x: p_i.x + offset * m.c, y: p_i.y - offset * m.s }; ctx.beginPath(); ctx.arc(p_i_offset.x, p_i_offset.y, 3, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); } if (m.j_conn === 'pinned') { const n_j = nodes[m.j]; const p_j = transform(n_j.x, n_j.y); const p_j_offset = { x: p_j.x - offset * m.c, y: p_j.y + offset * m.s }; ctx.beginPath(); ctx.arc(p_j_offset.x, p_j_offset.y, 3, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); } }); };
-    const drawBoundaryConditions = (ctx, transform, nodes) => { const size = 10; nodes.forEach(node => { if (node.support === 'free') return; const pos = transform(node.x, node.y); ctx.strokeStyle = '#008000'; ctx.fillStyle = '#008000'; ctx.lineWidth = 1.5; ctx.beginPath(); if (node.support === 'fixed') { ctx.moveTo(pos.x - size, pos.y + size); ctx.lineTo(pos.x + size, pos.y + size); for(let i=0; i < 5; i++){ ctx.moveTo(pos.x - size + i*size/2, pos.y + size); ctx.lineTo(pos.x - size + i*size/2 - size/2, pos.y + size + size/2); } } else if (node.support === 'pinned') { ctx.moveTo(pos.x, pos.y); ctx.lineTo(pos.x - size, pos.y + size); ctx.lineTo(pos.x + size, pos.y + size); ctx.closePath(); ctx.stroke(); ctx.moveTo(pos.x - size*1.2, pos.y + size); ctx.lineTo(pos.x + size*1.2, pos.y + size); } else if (node.support === 'roller') { ctx.moveTo(pos.x, pos.y); ctx.lineTo(pos.x - size, pos.y + size); ctx.lineTo(pos.x + size, pos.y + size); ctx.closePath(); ctx.stroke(); ctx.moveTo(pos.x - size, pos.y + size + 3); ctx.lineTo(pos.x + size, pos.y + size + 3); } ctx.stroke(); }); };
+    const drawBoundaryConditions = (ctx, transform, nodes) => { 
+        const size = 10; 
+        nodes.forEach(node => { 
+            // sプロパティまたはsupportプロパティをチェック
+            const support = node.s || node.support;
+            if (support === 'free' || support === 'f') return; 
+            
+            const pos = transform(node.x, node.y); 
+            ctx.strokeStyle = '#008000'; 
+            ctx.fillStyle = '#008000'; 
+            ctx.lineWidth = 1.5; 
+            ctx.beginPath(); 
+            
+            if (support === 'fixed' || support === 'x') { 
+                ctx.moveTo(pos.x - size, pos.y + size); 
+                ctx.lineTo(pos.x + size, pos.y + size); 
+                for(let i=0; i < 5; i++){ 
+                    ctx.moveTo(pos.x - size + i*size/2, pos.y + size); 
+                    ctx.lineTo(pos.x - size + i*size/2 - size/2, pos.y + size + size/2); 
+                } 
+            } else if (support === 'pinned' || support === 'p') { 
+                ctx.moveTo(pos.x, pos.y); 
+                ctx.lineTo(pos.x - size, pos.y + size); 
+                ctx.lineTo(pos.x + size, pos.y + size); 
+                ctx.closePath(); 
+                ctx.stroke(); 
+                ctx.moveTo(pos.x - size*1.2, pos.y + size); 
+                ctx.lineTo(pos.x + size*1.2, pos.y + size); 
+            } else if (support === 'roller' || support === 'r') { 
+                ctx.moveTo(pos.x, pos.y); 
+                ctx.lineTo(pos.x - size, pos.y + size); 
+                ctx.lineTo(pos.x + size, pos.y + size); 
+                ctx.closePath(); 
+                ctx.stroke(); 
+                ctx.moveTo(pos.x - size, pos.y + size + 3); 
+                ctx.lineTo(pos.x + size, pos.y + size + 3); 
+            } 
+            ctx.stroke(); 
+        }); 
+    };
     const drawDimensions = (ctx, transform, nodes, members, labelManager, obstacles) => { const offset = 15; ctx.strokeStyle = '#0000ff'; ctx.lineWidth = 1; members.forEach(m => { const n1 = nodes[m.i]; const n2 = nodes[m.j]; const p1 = transform(n1.x, n1.y); const p2 = transform(n2.x, n2.y); const midX = (p1.x + p2.x) / 2; const midY = (p1.y + p2.y) / 2; const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x); const offsetX = offset * Math.sin(angle); const offsetY = -offset * Math.cos(angle); const labelTargetX = midX + offsetX; const labelTargetY = midY + offsetY; const labelText = `${m.length.toFixed(2)}m`; ctx.fillStyle = '#0000ff'; labelManager.draw(ctx, labelText, labelTargetX, labelTargetY, obstacles); }); };
     const drawExternalLoads = (ctx, transform, nodes, members, nodeLoads, memberLoads, memberSelfWeights, nodeSelfWeights, labelManager, obstacles) => { 
         const arrowSize = 10; 

@@ -13770,6 +13770,9 @@ let isAIGenerationInProgress = false; // AI生成中のフラグ
 let autoRetryCount = 0; // 自動再試行回数
 const MAX_AUTO_RETRY = 5; // 自動再試行の最大回数
 
+// グローバル変数として断面情報バックアップを定義
+let globalPreAISectionInfoBackup = [];
+
 // AI生成中のポップアップを表示する関数
 function showAIGenerationPopup() {
     // 既存のポップアップがあれば削除
@@ -13868,7 +13871,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
     
     // 関数開始時の断面情報状態を記録
     const membersTable = document.getElementById('members-table');
-    let preAISectionInfoBackup = [];
+    globalPreAISectionInfoBackup = []; // グローバル変数をリセット
     if (membersTable) {
         const rows = membersTable.querySelectorAll('tbody tr');
         console.log('🔍 generateModelWithAIInternal開始時の断面情報状態:');
@@ -13892,7 +13895,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
                 console.log(`⚠️ [AI前バックアップ] 部材${index + 1}のdataset.sectionInfoが存在しません`);
             }
             
-            preAISectionInfoBackup[index] = {
+            globalPreAISectionInfoBackup[index] = {
                 sectionName: sectionNameCell ? sectionNameCell.textContent : '',
                 sectionAxis: sectionAxisCell ? sectionAxisCell.textContent : '',
                 sectionInfo: parsedSectionInfo,
@@ -13905,7 +13908,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
                 sectionAxisLabel: row.dataset.sectionAxisLabel || ''
             };
         });
-        console.log('🔧 AI修正処理前の断面情報バックアップ完了:', preAISectionInfoBackup);
+        console.log('🔧 AI修正処理前の断面情報バックアップ完了:', globalPreAISectionInfoBackup);
     }
     
     const aiGenerateBtn = document.getElementById('generate-model-btn');
@@ -15889,6 +15892,10 @@ function generateDefaultSteelDataFor4Layer4Span() {
  * @param {Array} memberTypes - 部材タイプ情報の配列
  */
 function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = [], preAISectionInfoBackup = null) {
+    // グローバル変数を使用
+    if (preAISectionInfoBackup === null) {
+        preAISectionInfoBackup = globalPreAISectionInfoBackup;
+    }
     try {
         console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray, memberTypes);
         console.log('🔍 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
@@ -16072,6 +16079,18 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = [], p
                     console.log(`🔧 部材${index + 1} (${memberType})は変更対象のため復元をスキップ`);
                 } else {
                     console.log(`⚠️ 部材${index + 1} (${memberType})のバックアップ情報がありません`);
+                    
+                    // バックアップ情報がない場合は、デフォルト断面情報を適用
+                    console.log(`🔧 部材${index + 1}にデフォルト断面情報を適用`);
+                    const defaultSteelData = generateDefaultSteelDataFor4Layer4Span();
+                    if (defaultSteelData && defaultSteelData.length > 0) {
+                        // 柱部材の場合は最初の断面、梁部材の場合は2番目の断面を使用
+                        const steelData = memberType === 'column' ? defaultSteelData[0] : defaultSteelData[1] || defaultSteelData[0];
+                        
+                        // setRowSectionInfoを使用して断面情報を設定
+                        setRowSectionInfo(row, steelData);
+                        console.log(`✅ 部材${index + 1}にデフォルト断面情報を適用完了`);
+                    }
                 }
             });
 
@@ -17104,11 +17123,8 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         // AI生成時に検出された鋼材断面情報を部材テーブルに設定
         // 複数回の試行で確実に設定する
         const attemptSetMemberInfo = async (attempt = 1, maxAttempts = 3) => {
-            // preAISectionInfoBackupが未定義の場合は空配列で初期化
-            if (typeof preAISectionInfoBackup === 'undefined') {
-                console.warn('⚠️ preAISectionInfoBackupが未定義です。空配列で初期化します。');
-                preAISectionInfoBackup = [];
-            }
+            // グローバル変数を使用
+            const preAISectionInfoBackup = globalPreAISectionInfoBackup;
             try {
                 console.log(`🔍 AI生成後に部材の断面情報を設定開始 (試行 ${attempt}/${maxAttempts})`);
                 console.log(`🔍 attemptSetMemberInfo呼び出し時刻:`, new Date().toISOString());
@@ -17160,7 +17176,7 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     // 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用
                     console.log('🔧 既存の断面情報を保持しながら、指定された部材タイプのみに断面変更を適用');
                     console.log('🔧 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
-                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes, preAISectionInfoBackup);
+                    setMultipleMembersSectionInfoFromAI(steelDetectionResult.steelData, steelDetectionResult.memberTypes, globalPreAISectionInfoBackup);
                     
                     // 断面情報設定完了後に、全ての部材の断面情報を再確認
                     setTimeout(() => {
@@ -17189,20 +17205,18 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 } else {
                     console.log('🔍 鋼材断面情報が見つかりませんでした');
                     
-                    // 4層4スパン構造の場合、デフォルトの断面情報を設定
-                    if (naturalLanguageInput.includes('4層') && naturalLanguageInput.includes('4スパン')) {
-                        console.log('🔧 4層4スパン構造のデフォルト断面情報を設定');
-                        const defaultSteelData = generateDefaultSteelDataFor4Layer4Span();
-                        setMultipleMembersSectionInfoFromAI(defaultSteelData, [], preAISectionInfoBackup);
-                        
-                        // 3Dビューアが開いている場合は更新を送信
-                        if (viewerWindow && !viewerWindow.closed) {
-                            console.log('🔍 3Dビューアにデフォルト断面情報更新を送信中...');
-                            setTimeout(() => {
-                                console.log('🔧 3Dビューア更新実行 (500ms後):', new Date().toISOString());
-                                sendModelToViewer();
-                            }, 500);
-                        }
+                    // デフォルトの断面情報を設定（4層4スパン構造以外でも適用）
+                    console.log('🔧 デフォルト断面情報を設定');
+                    const defaultSteelData = generateDefaultSteelDataFor4Layer4Span();
+                    setMultipleMembersSectionInfoFromAI(defaultSteelData, [], globalPreAISectionInfoBackup);
+                    
+                    // 3Dビューアが開いている場合は更新を送信
+                    if (viewerWindow && !viewerWindow.closed) {
+                        console.log('🔍 3Dビューアにデフォルト断面情報更新を送信中...');
+                        setTimeout(() => {
+                            console.log('🔧 3Dビューア更新実行 (500ms後):', new Date().toISOString());
+                            sendModelToViewer();
+                        }, 500);
                     }
                 }
             } catch (error) {

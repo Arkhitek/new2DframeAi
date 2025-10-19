@@ -57,7 +57,7 @@ export default async function handler(req, res) {
         let mistralResponse;
         let data;
         let retryCount = 0;
-        const maxRetries = 2;
+        const maxRetries = 5; // 再トライ回数を5回に増加
         
         while (retryCount <= maxRetries) {
             try {
@@ -79,24 +79,33 @@ export default async function handler(req, res) {
 
                 // 成功した場合はループを抜ける
                 if (mistralResponse.ok) {
+                    if (retryCount > 0) {
+                        console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目の試行で成功)`);
+                    } else {
+                        console.error('✅ AI呼び出し成功 (初回で成功)');
+                    }
                     break;
                 }
                 
                 // 容量制限エラーの場合
                 if (mistralResponse.status === 429 && data.code === '3505') {
-                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1})`);
+                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
+                    console.error('エラー詳細:', data);
                     
                     if (retryCount < maxRetries) {
-                        // リトライ前に待機
-                        const waitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
-                        console.error(`${waitTime}ms待機後にリトライします`);
+                        // リトライ前に待機（より長い待機時間）
+                        const baseWaitTime = 3000; // 基本3秒
+                        const exponentialWaitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
+                        const waitTime = Math.min(baseWaitTime + exponentialWaitTime, 30000); // 最大30秒
+                        
+                        console.error(`容量制限のため ${waitTime}ms 待機後にリトライします (${retryCount + 1}/${maxRetries}回目)`);
                         await new Promise(resolve => setTimeout(resolve, waitTime));
                         retryCount++;
                         continue;
                     } else {
                         // 最大リトライ回数に達した場合はエラーを返す
                         console.error('=== 最大リトライ回数に達しました: AI生成を諦めます ===');
-                        throw new Error('AI容量制限により、モデル生成に失敗しました。しばらく待ってから再試行してください。');
+                        throw new Error(`AI容量制限により、モデル生成に失敗しました。${maxRetries + 1}回の試行を行いましたが、容量制限が継続しています。しばらく待ってから再試行してください。`);
                     }
                 }
                 
@@ -104,11 +113,21 @@ export default async function handler(req, res) {
             throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
                 
             } catch (error) {
-                console.error(`AI呼び出し試行 ${retryCount + 1} でエラー:`, error.message);
+                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} でエラー:`, error.message);
+                console.error('エラータイプ:', error.constructor.name);
                 
-                if (retryCount < maxRetries) {
-                    const waitTime = Math.pow(2, retryCount) * 1000;
-                    console.error(`${waitTime}ms待機後にリトライします`);
+                // ネットワークエラーや一時的なエラーの場合は再トライ
+                if (retryCount < maxRetries && (
+                    error.name === 'TypeError' || // ネットワークエラー
+                    error.message.includes('fetch') || // fetch関連エラー
+                    error.message.includes('timeout') || // タイムアウトエラー
+                    error.message.includes('network') // ネットワークエラー
+                )) {
+                    const baseWaitTime = 2000; // 基本2秒
+                    const exponentialWaitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
+                    const waitTime = Math.min(baseWaitTime + exponentialWaitTime, 15000); // 最大15秒
+                    
+                    console.error(`一時的なエラーのため ${waitTime}ms 待機後にリトライします (${retryCount + 1}/${maxRetries}回目)`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;
                     continue;
@@ -240,13 +259,9 @@ export default async function handler(req, res) {
             
             let programmaticModel;
             
-            if (structureType === 'frame' && dimensions.layers === 4 && dimensions.spans === 4) {
-                console.error('4層4スパンラーメン構造をプログラム的に生成');
-                programmaticModel = generateCorrect4Layer4SpanStructure();
-            }
-            else if (structureType === 'frame' && dimensions.layers === 5 && dimensions.spans === 4) {
-                console.error('5層4スパンラーメン構造をプログラム的に生成');
-                programmaticModel = generateCorrect5Layer4SpanStructure();
+            if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
+                console.error(`${dimensions.layers}層${dimensions.spans}スパンラーメン構造をプログラム的に生成`);
+                programmaticModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
             }
             else {
                 console.error('基本的な構造をプログラム的に生成');
@@ -369,49 +384,33 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 - 全ての接合条件をピン接合（"pinned"）に設定
 - 下弦材は必ず全ての下部節点間を接続（欠落させない）`;
     } else if (structureType === 'frame') {
-        // ユーザープロンプトから層数とスパン数を検出
-        const structureInfo = detectStructureDimensions(userPrompt);
-        
-        if (structureInfo.layers >= 5 && structureInfo.spans >= 4) {
-            // 大規模構造（5層4スパン以上）の例
-            prompt += `
+        // ラーメン構造の一般的なルール
+        prompt += `
 
-**5層4スパンラーメン構造:**
-- 30節点（6層×5列）、45部材（25柱+20梁）
-- 4スパン=5列の節点（X:0,6,12,18,24m）
-- 5層=6層の節点（Y:0,3.5,7,10.5,14,17.5m）
+**ラーメン構造の基本ルール:**
+- 多層多スパン構造を正確に生成してください
+- 層数とスパン数はユーザーの指示に従ってください
+- 全ての柱と梁を適切に配置してください
 
-**必須ルール:**
-- 5層構造では6層分の節点（30節点）が必要
-- 5層目の柱と梁を必ず配置
-- 節点数=30、部材数=45で生成`;
-        } else if (structureInfo.layers >= 4 && structureInfo.spans >= 4) {
-            // 4層構造の例
-            prompt += `
+**節点配置のルール:**
+- N層構造 = (N+1)層の節点が必要（地面を含む）
+- Mスパン構造 = (M+1)列の節点が必要
+- 節点総数 = (N+1) × (M+1)
 
-**4層4スパンラーメン構造:**
-- 25節点（5層×5列）、36部材（20柱+16梁）
-- 4スパン=5列の節点（X:0,6,12,18,24m）
-- 4層=5層の節点（Y:0,3.5,7,10.5,14m）
+**部材配置のルール:**
+- 柱の数 = Mスパン × N層
+- 梁の数 = Mスパン × (N+1)層（各層に梁を配置）
+- 部材総数 = M × N + M × (N+1) = M × (2N+1)
 
-**絶対必須ルール:**
-- 4スパン構造では絶対に3スパン（4列）にしない
-- 4層構造では4層目の柱と梁を必ず配置
-- 節点数=25、部材数=36で生成
+**座標設定のルール:**
+- X座標: 0, スパン長, 2×スパン長, ..., M×スパン長
+- Y座標: 0, 階高, 2×階高, ..., N×階高
 
-**4スパン構造の必須ルール:**
-- 4スパン=5列の節点（X:0,6,12,18,24m）
-- 4層=5層の節点（Y:0,3.5,7,10.5,14m）
-- 4層目の柱5本+梁4本を必ず配置
-- 絶対に3スパン（4列）にしない`;
-        } else {
-            // 中小規模構造の例
-            prompt += `
-
-**ラーメン構造の例（2層2スパン）:**
-- 4節点、3部材（2柱+1梁）
-- 柱脚は固定支点（"x"）、中間節点は自由（"f"）`;
-        }
+**例（3層2スパン、スパン6m、階高3.5m）:**
+- 節点: 12個（4層×3列）
+- 部材: 15個（6柱+9梁）
+- X座標: 0, 6, 12m
+- Y座標: 0, 3.5, 7, 10.5m`;
         
         prompt += `
 **重要**: ラーメン構造では接合条件を"rigid"（デフォルト）に設定してください。`;
@@ -437,12 +436,13 @@ JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`j
 - 中間節点: 通常は自由（"f"）
 - 支点の種類: "x"（固定）、"p"（ピン）、"r"（ローラー）、"f"（自由）
 
-**大規模構造（4層4スパン以上）の特別ルール:**
+**多層多スパン構造の特別ルール:**
 - 必ず全ての柱と梁を配置してください
 - 柱の配置: 各層で同じX座標に垂直に配置
 - 梁の配置: 各層で柱間を水平に接続
 - 部材数の確認: 節点数と部材数が計算式と一致することを確認
-- 節点番号の連続性: 1から順番に番号を付けてください`;
+- 節点番号の連続性: 1から順番に番号を付けてください
+- ユーザーの指示する層数とスパン数を正確に反映してください`;
 
     return prompt;
 }
@@ -1253,7 +1253,7 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
     };
 }
 
-// 4層4スパン構造の検証と修正関数
+// 多層多スパン構造の検証と修正関数
 function validateAndFixStructure(model, userPrompt) {
     try {
         console.error('=== 構造検証開始 ===');
@@ -1263,24 +1263,29 @@ function validateAndFixStructure(model, userPrompt) {
         const errors = [];
         let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
         
-        // 4層4スパン構造の検出（より柔軟な検出）
-        const normalizedPrompt = userPrompt.toLowerCase().replace(/[、。]/g, '');
-        const is4Layer4Span = (userPrompt.includes('4層') && userPrompt.includes('4スパン')) ||
-                              (normalizedPrompt.includes('4層') && normalizedPrompt.includes('4スパン'));
-        console.error('4層4スパン構造検出結果:', is4Layer4Span);
-        console.error('ユーザープロンプト:', userPrompt);
-        console.error('正規化されたプロンプト:', normalizedPrompt);
-        console.error('4層を含む:', userPrompt.includes('4層'));
-        console.error('4スパンを含む:', userPrompt.includes('4スパン'));
-    
-    if (is4Layer4Span) {
-        console.error('4層4スパン構造の検証を実行');
+        // 構造の次元を検出
+        const dimensions = detectStructureDimensions(userPrompt);
+        console.error('検出された構造次元:', dimensions);
         
-        // 期待値の設定
-        const expectedNodes = 25; // 5層×5列
-        const expectedMembers = 36; // 16柱+20梁
-        const expectedSpans = 4; // 4スパン
-        const expectedLayers = 4; // 4層
+        // ラーメン構造かどうかを確認
+        const structureType = detectStructureType(userPrompt);
+        const isFrameStructure = structureType === 'frame';
+        console.error('構造タイプ:', structureType, 'ラーメン構造:', isFrameStructure);
+    
+    // ラーメン構造の場合のみ検証・修正を実行
+    if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {
+        console.error(`${dimensions.layers}層${dimensions.spans}スパン構造の検証を実行`);
+        
+        // 期待値の計算
+        const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
+        const expectedMembers = dimensions.spans * (2 * dimensions.layers + 1);
+        
+        console.error('期待値:', {
+            layers: dimensions.layers,
+            spans: dimensions.spans,
+            expectedNodes,
+            expectedMembers
+        });
         
         // 構造の検証
         let needsCorrection = false;
@@ -1306,50 +1311,17 @@ function validateAndFixStructure(model, userPrompt) {
             needsCorrection = true;
         }
         
-        // 4層目の部材配置検証
-        const topLayerValidation = validateTopLayerMembers(fixedModel);
-        if (!topLayerValidation.isValid) {
-            errors.push(`4層目の部材配置が不正: ${topLayerValidation.errors.join(', ')}`);
-            needsCorrection = true;
-        }
-        
-        // 修正が必要な場合は一度だけ実行
+        // 修正が必要な場合はプログラム的に生成
         if (needsCorrection) {
             console.error('構造修正を実行します');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrect4Layer4SpanStructure();
+            fixedModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
             console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
             console.error('修正後の構造:', {
                 nodeCount: fixedModel.nodes.length,
                 memberCount: fixedModel.members.length
             });
-        }
-    } else {
-        // 4層4スパン構造の検出に失敗した場合でも、構造が似ている場合は修正を試行
-        console.error('4層4スパン構造の検出に失敗しましたが、構造の特徴を確認します');
-        
-        // 構造の特徴を確認
-        const hasCorrectNodeCount = fixedModel.nodes.length === 20 || fixedModel.nodes.length === 25;
-        const hasCorrectMemberCount = fixedModel.members.length === 21 || fixedModel.members.length === 36;
-        const hasCorrectSpans = fixedModel.nodes.filter(node => node.y === 0).length === 4 || fixedModel.nodes.filter(node => node.y === 0).length === 5;
-        
-        console.error('構造の特徴:', {
-            nodeCount: fixedModel.nodes.length,
-            memberCount: fixedModel.members.length,
-            groundNodeCount: fixedModel.nodes.filter(node => node.y === 0).length,
-            hasCorrectNodeCount,
-            hasCorrectMemberCount,
-            hasCorrectSpans
-        });
-        
-        // 4層4スパン構造の特徴に合致する場合は修正を実行
-        if ((hasCorrectNodeCount || hasCorrectMemberCount || hasCorrectSpans) && 
-            (fixedModel.nodes.length < 25 || fixedModel.members.length < 36)) {
-            console.error('4層4スパン構造の特徴に合致するため、修正を実行します');
-            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrect4Layer4SpanStructure();
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
-            errors.push('構造の特徴から4層4スパン構造と判定し、修正を実行しました');
+            errors.push(`${dimensions.layers}層${dimensions.spans}スパン構造の修正を実行しました`);
         }
     }
     
@@ -1380,36 +1352,32 @@ function validateAndFixStructure(model, userPrompt) {
     }
 }
 
-// 正しい4層4スパン構造を生成する関数
-function generateCorrect4Layer4SpanStructure() {
+// 任意の多層多スパン構造を生成する関数
+function generateCorrectFrameStructure(layers, spans) {
     try {
-        console.error('=== 正しい4層4スパン構造を生成 ===');
+        console.error(`=== ${layers}層${spans}スパン構造を生成 ===`);
         
         const nodes = [];
         const members = [];
         
-        // 節点生成（5層×5列 = 25節点）
-        const layerHeights = [0, 3.5, 7, 10.5, 14]; // 4層+基礎
-        const spanPositions = [0, 6, 12, 18, 24]; // 4スパン+端部
-        
-        for (let layer = 0; layer < 5; layer++) {
-            for (let span = 0; span < 5; span++) {
-                const nodeIndex = layer * 5 + span + 1;
-                const support = (layer === 0) ? 'x' : 'f'; // 基礎は固定、他は自由
+        // 節点の生成
+        console.error(`節点の生成開始: ${layers + 1}層×${spans + 1}列`);
+        for (let layer = 0; layer <= layers; layer++) {
+            for (let span = 0; span <= spans; span++) {
+                const x = span * 6; // スパン長6m
+                const y = layer * 3.5; // 階高3.5m
+                const s = layer === 0 ? 'x' : 'f'; // 地面は固定、その他は自由
                 
-                nodes.push({
-                    x: spanPositions[span],
-                    y: layerHeights[layer],
-                    s: support
-                });
+                nodes.push({ x, y, s });
             }
         }
         
-        // 柱の生成（16本：4列×4層）
-        for (let span = 0; span < 4; span++) {
-            for (let layer = 0; layer < 4; layer++) {
-                const startNode = layer * 5 + span + 1;
-                const endNode = (layer + 1) * 5 + span + 1;
+        // 柱の生成
+        console.error(`柱の生成開始: ${spans + 1}列×${layers}層`);
+        for (let span = 0; span <= spans; span++) {
+            for (let layer = 0; layer < layers; layer++) {
+                const startNode = layer * (spans + 1) + span + 1;
+                const endNode = (layer + 1) * (spans + 1) + span + 1;
                 
                 members.push({
                     i: startNode,
@@ -1422,14 +1390,12 @@ function generateCorrect4Layer4SpanStructure() {
             }
         }
         
-        // 梁の生成（20本：5層×4スパン）
-        console.error('梁の生成開始: 5層×4スパン');
-        for (let layer = 1; layer <= 5; layer++) {
-            for (let span = 0; span < 4; span++) {
-                const startNode = (layer - 1) * 5 + span + 1; // 修正: layer-1で正しい層のノードを参照
-                const endNode = (layer - 1) * 5 + span + 2;   // 修正: layer-1で正しい層のノードを参照
-                
-                console.error(`梁生成: 層${layer}, スパン${span}, 節点${startNode}->${endNode}`);
+        // 梁の生成
+        console.error(`梁の生成開始: ${spans}スパン×${layers + 1}層`);
+        for (let layer = 0; layer <= layers; layer++) {
+            for (let span = 0; span < spans; span++) {
+                const startNode = layer * (spans + 1) + span + 1;
+                const endNode = layer * (spans + 1) + span + 2;
                 
                 members.push({
                     i: startNode,
@@ -1442,27 +1408,13 @@ function generateCorrect4Layer4SpanStructure() {
             }
         }
         
-        console.error('部材生成詳細:', {
-            columnCount: 16,
-            beamCount: 20,
-            totalMembers: members.length,
-            expectedTotal: 36
-        });
+        console.error(`=== ${layers}層${spans}スパン構造生成完了 ===`);
+        console.error(`節点数: ${nodes.length}, 部材数: ${members.length}`);
         
-        console.error('生成された構造:', {
-            nodeCount: nodes.length,
-            memberCount: members.length,
-            nodes: nodes,
-            members: members
-        });
-        console.error('=== 4層4スパン構造生成完了 ===');
+        return { nodes, members };
         
-        return {
-            nodes: nodes,
-            members: members
-        };
     } catch (error) {
-        console.error('generateCorrect4Layer4SpanStructure関数でエラーが発生しました:', error);
+        console.error('generateCorrectFrameStructure関数でエラーが発生しました:', error);
         console.error('エラーの詳細:', error.message);
         console.error('エラースタック:', error.stack);
         
@@ -1483,192 +1435,19 @@ function generateCorrect4Layer4SpanStructure() {
     }
 }
 
-// 4層目の部材配置を検証する関数
-function validateTopLayerMembers(model) {
-    try {
-        const errors = [];
-        
-        if (!model.nodes || !model.members) {
-            errors.push('節点または部材データが存在しません');
-            return { isValid: false, errors: errors };
-        }
-        
-        // 4層目の節点を特定（Y座標=14の節点）
-        const topLayerNodes = model.nodes.filter(node => node.y === 14);
-        
-        if (topLayerNodes.length === 0) {
-            errors.push('4層目の節点が存在しません');
-            return { isValid: false, errors: errors };
-        }
-        
-        // 4層目の柱を検証（3層目から4層目への垂直部材）
-        const topLayerColumns = model.members.filter(member => {
-            const startNode = model.nodes[member.i - 1];
-            const endNode = model.nodes[member.j - 1];
-            return startNode && endNode && startNode.y === 10.5 && endNode.y === 14;
-        });
-        
-        if (topLayerColumns.length < 4) {
-            errors.push(`4層目の柱が不足: 期待値4本、実際${topLayerColumns.length}本`);
-        }
-        
-        // 4層目の梁を検証（4層目の節点間の水平部材）
-        const topLayerBeams = model.members.filter(member => {
-            const startNode = model.nodes[member.i - 1];
-            const endNode = model.nodes[member.j - 1];
-            return startNode && endNode && startNode.y === 14 && endNode.y === 14;
-        });
-        
-        if (topLayerBeams.length < 4) {
-            errors.push(`4層目の梁が不足: 期待値4本、実際${topLayerBeams.length}本`);
-        }
-        
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
-    } catch (error) {
-        console.error('validateTopLayerMembers関数でエラーが発生しました:', error);
-        console.error('エラーの詳細:', error.message);
-        console.error('エラースタック:', error.stack);
-        
-        // エラーが発生した場合は、検証失敗として返す
-        return {
-            isValid: false,
-            errors: ['検証処理でエラーが発生しました']
-        };
-    }
-}
-
-// 5層4スパンラーメン構造の生成
+// 5層4スパンラーメン構造の生成（後方互換性のため残す）
 function generateCorrect5Layer4SpanStructure() {
-    console.error('=== 5層4スパンラーメン構造生成開始 ===');
-    
-    const nodes = [];
-    const members = [];
-    
-    // 節点の生成（30個：6層×5列）
-    for (let layer = 0; layer < 6; layer++) {
-        for (let span = 0; span < 5; span++) {
-            const nodeId = layer * 5 + span + 1;
-            nodes.push({
-                x: span * 6,
-                y: layer * 3.5,
-                s: layer === 0 ? 'x' : 'f'
-            });
-        }
-    }
-    
-    // 柱の生成（20本：4列×5層）
-    for (let span = 0; span < 4; span++) {
-        for (let layer = 0; layer < 5; layer++) {
-            const startNode = layer * 5 + span + 1;
-            const endNode = (layer + 1) * 5 + span + 1;
-            
-            members.push({
-                i: startNode,
-                j: endNode,
-                E: 205000,
-                I: 0.00011,
-                A: 0.005245,
-                Z: 0.000638
-            });
-        }
-    }
-    
-    // 梁の生成（25本：5層×5列）
-    for (let layer = 1; layer < 6; layer++) {
-        for (let span = 0; span < 4; span++) {
-            const startNode = layer * 5 + span + 1;
-            const endNode = layer * 5 + span + 2;
-            
-            members.push({
-                i: startNode,
-                j: endNode,
-                E: 205000,
-                I: 0.00011,
-                A: 0.005245,
-                Z: 0.000638
-            });
-        }
-    }
-    
-    console.error('5層4スパン構造生成完了:', {
-        nodeCount: nodes.length,
-        memberCount: members.length,
-        columnCount: 20,
-        beamCount: 25
-    });
-    
-    return { nodes, members };
+    return generateCorrectFrameStructure(5, 4);
 }
 
-// 基本的な構造生成
+// 基本的な構造生成（後方互換性のため残す）
 function generateBasicStructure(userPrompt, dimensions) {
     console.error('=== 基本構造生成開始 ===');
     console.error('次元情報:', dimensions);
     
-    const nodes = [];
-    const members = [];
-    
     // デフォルト値の設定
     const layers = dimensions.layers || 2;
     const spans = dimensions.spans || 2;
-    const storyHeight = 3.5;
-    const spanLength = 6.0;
     
-    // 節点の生成
-    for (let layer = 0; layer <= layers; layer++) {
-        for (let span = 0; span <= spans; span++) {
-            const nodeId = layer * (spans + 1) + span + 1;
-            nodes.push({
-                x: span * spanLength,
-                y: layer * storyHeight,
-                s: layer === 0 ? 'x' : 'f'
-            });
-        }
-    }
-    
-    // 柱の生成
-    for (let span = 0; span <= spans; span++) {
-        for (let layer = 0; layer < layers; layer++) {
-            const startNode = layer * (spans + 1) + span + 1;
-            const endNode = (layer + 1) * (spans + 1) + span + 1;
-            
-            members.push({
-                i: startNode,
-                j: endNode,
-                E: 205000,
-                I: 0.00011,
-                A: 0.005245,
-                Z: 0.000638
-            });
-        }
-    }
-    
-    // 梁の生成
-    for (let layer = 1; layer <= layers; layer++) {
-        for (let span = 0; span < spans; span++) {
-            const startNode = layer * (spans + 1) + span + 1;
-            const endNode = layer * (spans + 1) + span + 2;
-            
-            members.push({
-                i: startNode,
-                j: endNode,
-                E: 205000,
-                I: 0.00011,
-                A: 0.005245,
-                Z: 0.000638
-            });
-        }
-    }
-    
-    console.error('基本構造生成完了:', {
-        nodeCount: nodes.length,
-        memberCount: members.length,
-        layers: layers,
-        spans: spans
-    });
-    
-    return { nodes, members };
+    return generateCorrectFrameStructure(layers, spans);
 }

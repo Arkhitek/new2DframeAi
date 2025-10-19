@@ -13928,8 +13928,8 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
     }
 
     const API_URL = '/api/generate-model';
-    const MAX_RETRIES = 3;
-    const BASE_DELAY = 2000; // 2秒
+    const MAX_RETRIES = 5; // サーバーサイドと合わせて5回に増加
+    const BASE_DELAY = 3000; // 3秒に増加
     const MAX_DELAY = 30000; // 最大30秒
 
     // UIを「生成中」の状態にします
@@ -14044,22 +14044,10 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         // 仲介役が転送してくれたGeminiの応答から、JSON部分だけを安全に取り出します
         let modelData;
         
-        // プログラム的生成の場合の処理
-        if (data.success && data.generatedBy === 'programmatic') {
-            console.log('🔍 プログラム的生成のレスポンスを処理中...');
-            console.log('🔍 data.success:', data.success);
-            console.log('🔍 data.generatedBy:', data.generatedBy);
-            console.log('🔍 data.message:', data.message);
-            
-            // プログラム的生成の場合は、candidatesからJSONを抽出
-            const jsonText = extractJsonFromResponse(data);
-            modelData = JSON.parse(jsonText);
-        } else {
-            // AI生成の場合の処理
-            console.log('🔍 AI生成のレスポンスを処理中...');
-            const jsonText = extractJsonFromResponse(data);
-            modelData = JSON.parse(jsonText);
-        }
+        // AI生成のレスポンスを処理
+        console.log('🔍 AI生成のレスポンスを処理中...');
+        const jsonText = extractJsonFromResponse(data);
+        modelData = JSON.parse(jsonText);
 
         aiStatus.textContent = '✅ モデルデータを適用しています...';
         aiStatus.style.color = '#28a745';
@@ -14094,12 +14082,8 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         isAIGenerationInProgress = false; // AI生成完了フラグ
 
         const successMessage = mode === 'edit' 
-            ? (data.generatedBy === 'programmatic' 
-                ? 'AI容量制限のため、プログラム的にモデルを編集しました。' 
-                : 'AIによるモデル編集が完了しました。')
-            : (data.generatedBy === 'programmatic' 
-                ? 'AI容量制限のため、プログラム的にモデルを生成しました。' 
-                : 'AIによるモデル生成が完了しました。');
+            ? 'AIによるモデル編集が完了しました。'
+            : 'AIによるモデル生成が完了しました。';
         // AI生成中のアラートは表示しない
         console.log(successMessage + (retryCount > 0 ? ` (${retryCount}回のリトライ後に成功)` : ''));
         
@@ -14167,11 +14151,15 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         }
         
         // 容量超過エラーの場合はリトライを試行
-        if (error.message && error.message.includes('Service tier capacity exceeded') && retryCount < MAX_RETRIES) {
+        if (error.message && (
+            error.message.includes('Service tier capacity exceeded') ||
+            error.message.includes('AI容量制限') ||
+            error.message.includes('容量制限')
+        ) && retryCount < MAX_RETRIES) {
             const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY); // 指数バックオフ（上限あり）
-            console.warn(`🔄 容量超過エラーが発生。${delay/1000}秒後にリトライします... (${retryCount + 1}/${MAX_RETRIES})`);
+            console.warn(`🔄 AI容量制限エラーが発生。${delay/1000}秒後にリトライします... (${retryCount + 1}/${MAX_RETRIES})`);
             
-            aiStatus.textContent = `⏳ 容量超過のため${delay/1000}秒待機中...`;
+            aiStatus.textContent = `⏳ AI容量制限のため${delay/1000}秒待機中... (${retryCount + 1}/${MAX_RETRIES})`;
             aiStatus.style.color = '#ffc107';
             
             // リトライ前に少し待機

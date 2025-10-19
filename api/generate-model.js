@@ -344,10 +344,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         // 構造タイプに応じた重要ルールを追加
         if (structureType === 'beam') {
             simplePrompt += `
-重要: 中間節点は"f"のみ、両端のみ"p"や"x"、地面節点の概念なし`;
+重要: 中間節点は"f"のみ、両端のみ"p"や"x"、y=0の節点に支点を設定しない`;
         } else if (structureType === 'truss') {
             simplePrompt += `
-重要: 左端"p"、右端"r"、中間節点"f"、地面節点の概念なし`;
+重要: 左端"p"、右端"r"、中間節点"f"、y=0の節点に支点を設定しない`;
         } else if (structureType === 'frame') {
             simplePrompt += `
 重要: 地面節点は"x"、上部節点は"f"`;
@@ -370,18 +370,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (structureType === 'beam') {
         // カンチレバー梁の検出
         if (prompt.includes('カンチレバー') || prompt.includes('cantilever')) {
-        prompt += `
-カンチレバー梁: 固定端のみ"x"、他は全て"f"、中間節点に"p"や"x"は禁止`;
+            prompt += `
+カンチレバー梁: 左端のみ"x"、他は全て"f"、y=0の節点に"p"や"r"は禁止`;
         } else if (dimensions.spans > 1) {
             prompt += `
-連続梁: 両端のみ"p"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
+連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
         } else {
             prompt += `
-単純梁: 両端のみ"p"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
+単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
         }
     } else if (structureType === 'truss') {
         prompt += `
-トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
+トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、y=0の節点に"x"は禁止`;
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
@@ -399,10 +399,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // 構造タイプに応じた重要ルールを追加
     if (structureType === 'beam') {
         prompt += `
-重要: 節点番号は存在するもののみ参照、梁構造では地面節点の概念なし`;
+重要: 節点番号は存在するもののみ参照、梁構造ではy=0の節点に支点を設定しない`;
     } else if (structureType === 'truss') {
         prompt += `
-重要: 節点番号は存在するもののみ参照、トラス構造では地面節点の概念なし`;
+重要: 節点番号は存在するもののみ参照、トラス構造ではy=0の節点に支点を設定しない`;
     } else if (structureType === 'frame') {
         prompt += `
 重要: 節点番号は存在するもののみ参照、地面節点は"x"`;
@@ -415,10 +415,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (structureType === 'beam') {
         if (dimensions.spans > 1) {
             prompt += `
-例: 連続梁なら[{"x":0,"y":0,"s":"p"},{"x":6,"y":0,"s":"f"},{"x":14,"y":0,"s":"f"},{"x":20,"y":0,"s":"p"}]`;
+例: 連続梁なら[{"x":0,"y":0,"s":"p"},{"x":6,"y":0,"s":"f"},{"x":14,"y":0,"s":"f"},{"x":20,"y":0,"s":"p"}]（y=0でも支点は両端のみ）`;
         } else {
             prompt += `
-例: 単純梁なら[{"x":0,"y":0,"s":"p"},{"x":12,"y":0,"s":"p"}]`;
+例: 単純梁なら[{"x":0,"y":0,"s":"p"},{"x":12,"y":0,"s":"p"}]（y=0でも支点は両端のみ）`;
         }
     }
 

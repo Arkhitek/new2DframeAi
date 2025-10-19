@@ -64,18 +64,18 @@ export default async function handler(req, res) {
                 console.error(`=== AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} ===`);
                 
                 mistralResponse = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 
-                        'Authorization': `Bearer ${API_KEY}`,
-                        'Content-Type': 'application/json' 
-                    },
-                    body: JSON.stringify(requestBody),
-                });
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${API_KEY}`,
+                'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify(requestBody),
+        });
 
                 data = await mistralResponse.json();
-                console.error('Mistral AIレスポンス受信');
-                console.error('レスポンスステータス:', mistralResponse.status);
-                console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
+        console.error('Mistral AIレスポンス受信');
+        console.error('レスポンスステータス:', mistralResponse.status);
+        console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
 
                 // 成功した場合はループを抜ける
                 if (mistralResponse.ok) {
@@ -101,7 +101,7 @@ export default async function handler(req, res) {
                 }
                 
                 // その他のエラーは即座にスロー
-                throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
+            throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
                 
             } catch (error) {
                 console.error(`AI呼び出し試行 ${retryCount + 1} でエラー:`, error.message);
@@ -132,42 +132,42 @@ export default async function handler(req, res) {
         try {
             let generatedModel = JSON.parse(generatedText);
             
-            // 編集モードの場合、境界条件を強制的に保持
-            if (mode === 'edit' && currentModel) {
-                console.error('=== 編集モード: 境界条件保持処理開始 ===');
-                console.error('ユーザープロンプト:', userPrompt);
-                console.error('現在のモデル情報:', JSON.stringify(currentModel, null, 2));
-                console.error('AI生成モデル:', JSON.stringify(generatedModel, null, 2));
-        
-        const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
-        console.error('境界条件変更意図検出結果:', boundaryChangeIntent);
-        
-        // 第1次修正
-        generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
-        
-        // 第2次修正: 緊急的な境界条件復元
-        generatedModel = emergencyBoundaryConditionFix(currentModel, generatedModel, boundaryChangeIntent);
-        
-        // 第3次修正: 最終的な境界条件強制復元
-        generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
-        
-        // 修正されたモデルでJSONを再生成
+                    // 編集モードの場合、境界条件を強制的に保持
+                    if (mode === 'edit' && currentModel) {
+                        console.error('=== 編集モード: 境界条件保持処理開始 ===');
+                        console.error('ユーザープロンプト:', userPrompt);
+                        console.error('現在のモデル情報:', JSON.stringify(currentModel, null, 2));
+                        console.error('AI生成モデル:', JSON.stringify(generatedModel, null, 2));
+                
+                const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+                console.error('境界条件変更意図検出結果:', boundaryChangeIntent);
+                
+                // 第1次修正
+                generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                
+                // 第2次修正: 緊急的な境界条件復元
+                generatedModel = emergencyBoundaryConditionFix(currentModel, generatedModel, boundaryChangeIntent);
+                
+                // 第3次修正: 最終的な境界条件強制復元
+                generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
+                
+                // 修正されたモデルでJSONを再生成
         finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-        
-                // 最終テスト: 境界条件保持の検証
-                const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
-                console.error('最終テスト結果:', finalTestResult);
-        
-        if (!finalTestResult.success) {
-            console.error('境界条件保持に失敗しました。最終的な強制復元を実行します。');
-            generatedModel = ultimateBoundaryConditionFix(currentModel, generatedModel);
+                
+                        // 最終テスト: 境界条件保持の検証
+                        const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
+                        console.error('最終テスト結果:', finalTestResult);
+                
+                if (!finalTestResult.success) {
+                    console.error('境界条件保持に失敗しました。最終的な強制復元を実行します。');
+                    generatedModel = ultimateBoundaryConditionFix(currentModel, generatedModel);
             finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-            console.log('最終的な強制復元完了');
-        }
-        
-                console.error('=== 編集モード: 境界条件保持処理完了 ===');
-        }
-        
+                    console.log('最終的な強制復元完了');
+                }
+                
+                        console.error('=== 編集モード: 境界条件保持処理完了 ===');
+            }
+            
         // 新規作成・編集両方で節点参照を検証（エラーが発生しても処理を続行）
         try {
             const nodeReferenceValidation = validateNodeReferences(generatedModel);
@@ -208,23 +208,23 @@ export default async function handler(req, res) {
             console.error('エラーの詳細:', structureError.message);
             console.error('エラースタック:', structureError.stack);
             // エラーが発生しても処理を続行
-        }
-        
-        // 編集モードの場合、境界条件の保持を検証
-        if (mode === 'edit' && currentModel) {
-            const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
-            const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
-            if (!validationResult.isValid) {
-                console.warn('境界条件保持の警告:', validationResult.warnings);
-                
-                // フォールバック: 境界条件保持が失敗した場合の最終的な安全網
-                console.log('フォールバック機構を実行: 境界条件を最終的に復元します');
-                generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
-                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                console.log('フォールバック処理完了');
             }
-        }
-    } catch (parseError) {
+            
+            // 編集モードの場合、境界条件の保持を検証
+            if (mode === 'edit' && currentModel) {
+                const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
+                const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
+                if (!validationResult.isValid) {
+                    console.warn('境界条件保持の警告:', validationResult.warnings);
+                    
+                    // フォールバック: 境界条件保持が失敗した場合の最終的な安全網
+                    console.log('フォールバック機構を実行: 境界条件を最終的に復元します');
+                    generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                    console.log('フォールバック処理完了');
+                }
+            }
+        } catch (parseError) {
         console.error('生成されたモデルの解析エラー:', parseError);
         console.error('エラーの詳細:', parseError.message);
         console.error('エラースタック:', parseError.stack);
@@ -703,115 +703,115 @@ function validateNodeReferences(model) {
     try {
         console.error('=== 節点参照検証開始 ===');
         console.error('検証対象モデル:', JSON.stringify(model, null, 2));
-        
-        if (!model.nodes || !Array.isArray(model.nodes)) {
-            errors.push('節点配列が存在しません');
+    
+    if (!model.nodes || !Array.isArray(model.nodes)) {
+        errors.push('節点配列が存在しません');
             console.error('節点配列が存在しません');
-            return { isValid: false, errors: errors };
-        }
-        
-        if (!model.members || !Array.isArray(model.members)) {
-            errors.push('部材配列が存在しません');
+        return { isValid: false, errors: errors };
+    }
+    
+    if (!model.members || !Array.isArray(model.members)) {
+        errors.push('部材配列が存在しません');
             console.error('部材配列が存在しません');
-            return { isValid: false, errors: errors };
-        }
-        
-        const nodeCount = model.nodes.length;
+        return { isValid: false, errors: errors };
+    }
+    
+    const nodeCount = model.nodes.length;
         console.error('節点数:', nodeCount);
         console.error('部材数:', model.members.length);
-        
-        // 各節点の基本的な構造をチェック
-        model.nodes.forEach((node, index) => {
-            if (!node.hasOwnProperty('x') || !node.hasOwnProperty('y') || !node.hasOwnProperty('s')) {
-                errors.push(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
+    
+    // 各節点の基本的な構造をチェック
+    model.nodes.forEach((node, index) => {
+        if (!node.hasOwnProperty('x') || !node.hasOwnProperty('y') || !node.hasOwnProperty('s')) {
+            errors.push(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
                 console.error(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
-            }
-            if (typeof node.x !== 'number' || typeof node.y !== 'number') {
-                errors.push(`節点${index + 1}の座標が数値ではありません`);
+        }
+        if (typeof node.x !== 'number' || typeof node.y !== 'number') {
+            errors.push(`節点${index + 1}の座標が数値ではありません`);
                 console.error(`節点${index + 1}の座標が数値ではありません`);
-            }
-            if (!['f', 'p', 'r', 'x'].includes(node.s)) {
-                errors.push(`節点${index + 1}の境界条件（${node.s}）が無効です`);
+        }
+        if (!['f', 'p', 'r', 'x'].includes(node.s)) {
+            errors.push(`節点${index + 1}の境界条件（${node.s}）が無効です`);
                 console.error(`節点${index + 1}の境界条件（${node.s}）が無効です`);
-            }
-        });
-        
-        // 各部材の節点参照をチェック
-        model.members.forEach((member, index) => {
-            if (!member.hasOwnProperty('i') || !member.hasOwnProperty('j')) {
-                errors.push(`部材${index + 1}に必須プロパティ（i, j）が不足しています`);
+        }
+    });
+    
+    // 各部材の節点参照をチェック
+    model.members.forEach((member, index) => {
+        if (!member.hasOwnProperty('i') || !member.hasOwnProperty('j')) {
+            errors.push(`部材${index + 1}に必須プロパティ（i, j）が不足しています`);
                 console.error(`部材${index + 1}に必須プロパティ（i, j）が不足しています`);
-                return;
-            }
-            
-            const i = member.i;
-            const j = member.j;
-            
-            if (!Number.isInteger(i) || !Number.isInteger(j)) {
-                errors.push(`部材${index + 1}の節点番号（${i}, ${j}）が整数ではありません`);
+            return;
+        }
+        
+        const i = member.i;
+        const j = member.j;
+        
+        if (!Number.isInteger(i) || !Number.isInteger(j)) {
+            errors.push(`部材${index + 1}の節点番号（${i}, ${j}）が整数ではありません`);
                 console.error(`部材${index + 1}の節点番号（${i}, ${j}）が整数ではありません`);
-                return;
-            }
-            
-            if (i < 1 || i > nodeCount) {
-                errors.push(`部材${index + 1}の開始節点番号（${i}）が範囲外です（1-${nodeCount}）`);
+            return;
+        }
+        
+        if (i < 1 || i > nodeCount) {
+            errors.push(`部材${index + 1}の開始節点番号（${i}）が範囲外です（1-${nodeCount}）`);
                 console.error(`部材${index + 1}の開始節点番号（${i}）が範囲外です（1-${nodeCount}）`);
-            }
-            
-            if (j < 1 || j > nodeCount) {
-                errors.push(`部材${index + 1}の終了節点番号（${j}）が範囲外です（1-${nodeCount}）`);
+        }
+        
+        if (j < 1 || j > nodeCount) {
+            errors.push(`部材${index + 1}の終了節点番号（${j}）が範囲外です（1-${nodeCount}）`);
                 console.error(`部材${index + 1}の終了節点番号（${j}）が範囲外です（1-${nodeCount}）`);
-            }
-            
-            if (i === j) {
-                errors.push(`部材${index + 1}の開始節点と終了節点が同じです（${i}）`);
+        }
+        
+        if (i === j) {
+            errors.push(`部材${index + 1}の開始節点と終了節点が同じです（${i}）`);
                 console.error(`部材${index + 1}の開始節点と終了節点が同じです（${i}）`);
-            }
-        });
-        
-        // 節点荷重の参照をチェック
-        if (model.nodeLoads || model.nl) {
-            const nodeLoads = model.nodeLoads || model.nl;
-            if (Array.isArray(nodeLoads)) {
-                nodeLoads.forEach((load, index) => {
-                    const nodeNumber = load.n || load.node;
-                    if (!nodeNumber) {
-                        errors.push(`節点荷重${index + 1}に節点番号が指定されていません`);
+        }
+    });
+    
+    // 節点荷重の参照をチェック
+    if (model.nodeLoads || model.nl) {
+        const nodeLoads = model.nodeLoads || model.nl;
+        if (Array.isArray(nodeLoads)) {
+            nodeLoads.forEach((load, index) => {
+                const nodeNumber = load.n || load.node;
+                if (!nodeNumber) {
+                    errors.push(`節点荷重${index + 1}に節点番号が指定されていません`);
                         console.error(`節点荷重${index + 1}に節点番号が指定されていません`);
-                        return;
-                    }
-                    if (!Number.isInteger(nodeNumber) || nodeNumber < 1 || nodeNumber > nodeCount) {
-                        errors.push(`節点荷重${index + 1}の節点番号（${nodeNumber}）が範囲外です（1-${nodeCount}）`);
+                    return;
+                }
+                if (!Number.isInteger(nodeNumber) || nodeNumber < 1 || nodeNumber > nodeCount) {
+                    errors.push(`節点荷重${index + 1}の節点番号（${nodeNumber}）が範囲外です（1-${nodeCount}）`);
                         console.error(`節点荷重${index + 1}の節点番号（${nodeNumber}）が範囲外です（1-${nodeCount}）`);
-                    }
-                });
-            }
+                }
+            });
         }
-        
-        // 部材荷重の参照をチェック
-        if (model.memberLoads || model.ml) {
-            const memberLoads = model.memberLoads || model.ml;
-            if (Array.isArray(memberLoads)) {
-                memberLoads.forEach((load, index) => {
-                    const memberNumber = load.m || load.member;
-                    if (!memberNumber) {
-                        errors.push(`部材荷重${index + 1}に部材番号が指定されていません`);
+    }
+    
+    // 部材荷重の参照をチェック
+    if (model.memberLoads || model.ml) {
+        const memberLoads = model.memberLoads || model.ml;
+        if (Array.isArray(memberLoads)) {
+            memberLoads.forEach((load, index) => {
+                const memberNumber = load.m || load.member;
+                if (!memberNumber) {
+                    errors.push(`部材荷重${index + 1}に部材番号が指定されていません`);
                         console.error(`部材荷重${index + 1}に部材番号が指定されていません`);
-                        return;
-                    }
-                    if (!Number.isInteger(memberNumber) || memberNumber < 1 || memberNumber > model.members.length) {
-                        errors.push(`部材荷重${index + 1}の部材番号（${memberNumber}）が範囲外です（1-${model.members.length}）`);
+                    return;
+                }
+                if (!Number.isInteger(memberNumber) || memberNumber < 1 || memberNumber > model.members.length) {
+                    errors.push(`部材荷重${index + 1}の部材番号（${memberNumber}）が範囲外です（1-${model.members.length}）`);
                         console.error(`部材荷重${index + 1}の部材番号（${memberNumber}）が範囲外です（1-${model.members.length}）`);
-                    }
-                });
-            }
+                }
+            });
         }
-        
-        // スパン数の検証（ラーメン構造の場合）
+    }
+    
+    // スパン数の検証（ラーメン構造の場合）
         try {
-            const spanValidation = validateSpanCount(model);
-            if (!spanValidation.isValid) {
-                errors.push(...spanValidation.errors);
+    const spanValidation = validateSpanCount(model);
+    if (!spanValidation.isValid) {
+        errors.push(...spanValidation.errors);
                 console.error('スパン数検証エラー:', spanValidation.errors);
             }
         } catch (spanError) {
@@ -824,11 +824,11 @@ function validateNodeReferences(model) {
             errors: errors
         });
         console.error('=== 節点参照検証完了 ===');
-        
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
         
     } catch (error) {
         console.error('validateNodeReferences関数でエラーが発生しました:', error);
@@ -850,44 +850,44 @@ function validateSpanCount(model) {
     try {
         console.error('=== スパン数検証開始 ===');
         console.error('検証対象モデル:', JSON.stringify(model, null, 2));
-        
-        if (!model.nodes || !model.members || model.nodes.length < 4 || model.members.length < 3) {
+    
+    if (!model.nodes || !model.members || model.nodes.length < 4 || model.members.length < 3) {
             console.error('最小限の構造でないため、スパン数検証をスキップ');
-            return { isValid: true, errors: [] }; // 最小限の構造でない場合はスキップ
-        }
-        
-        // Y座標=0の節点（柱脚）の数をカウント
-        const groundNodes = model.nodes.filter(node => node.y === 0);
-        const spanCount = groundNodes.length - 1;
+        return { isValid: true, errors: [] }; // 最小限の構造でない場合はスキップ
+    }
+    
+    // Y座標=0の節点（柱脚）の数をカウント
+    const groundNodes = model.nodes.filter(node => node.y === 0);
+    const spanCount = groundNodes.length - 1;
         
         console.error('柱脚節点数:', groundNodes.length);
         console.error('スパン数:', spanCount);
-        
-        // 各層の節点数をカウント
-        const layerCounts = {};
-        model.nodes.forEach(node => {
-            const layer = node.y;
-            layerCounts[layer] = (layerCounts[layer] || 0) + 1;
-        });
+    
+    // 各層の節点数をカウント
+    const layerCounts = {};
+    model.nodes.forEach(node => {
+        const layer = node.y;
+        layerCounts[layer] = (layerCounts[layer] || 0) + 1;
+    });
         
         console.error('各層の節点数:', layerCounts);
-        
-        // 各層の節点数が一致するかチェック
-        const layerNodeCounts = Object.values(layerCounts);
-        const expectedNodeCount = groundNodes.length;
-        
-        for (const count of layerNodeCounts) {
-            if (count !== expectedNodeCount) {
-                errors.push(`層によって節点数が異なります。柱脚: ${expectedNodeCount}個、他の層: ${count}個`);
+    
+    // 各層の節点数が一致するかチェック
+    const layerNodeCounts = Object.values(layerCounts);
+    const expectedNodeCount = groundNodes.length;
+    
+    for (const count of layerNodeCounts) {
+        if (count !== expectedNodeCount) {
+            errors.push(`層によって節点数が異なります。柱脚: ${expectedNodeCount}個、他の層: ${count}個`);
                 console.error(`層によって節点数が異なります。柱脚: ${expectedNodeCount}個、他の層: ${count}個`);
-                break;
-            }
+            break;
         }
-        
-        // 部材数の検証
-        const expectedColumnCount = expectedNodeCount * layerNodeCounts.length;
-        const expectedBeamCount = spanCount * layerNodeCounts.length;
-        const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
+    }
+    
+    // 部材数の検証
+    const expectedColumnCount = expectedNodeCount * layerNodeCounts.length;
+    const expectedBeamCount = spanCount * layerNodeCounts.length;
+    const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {
             expectedColumnCount,
@@ -895,15 +895,15 @@ function validateSpanCount(model) {
             expectedTotalMembers,
             actualMemberCount: model.members.length
         });
-        
-        if (model.members.length !== expectedTotalMembers) {
-            errors.push(`部材数が不正です。期待値: ${expectedTotalMembers}個、実際: ${model.members.length}個`);
+    
+    if (model.members.length !== expectedTotalMembers) {
+        errors.push(`部材数が不正です。期待値: ${expectedTotalMembers}個、実際: ${model.members.length}個`);
             console.error(`部材数が不正です。期待値: ${expectedTotalMembers}個、実際: ${model.members.length}個`);
-        }
-        
-        // スパン数の検証（一般的なラーメン構造の場合）
-        if (spanCount < 1 || spanCount > 10) {
-            errors.push(`スパン数が異常です: ${spanCount}スパン`);
+    }
+    
+    // スパン数の検証（一般的なラーメン構造の場合）
+    if (spanCount < 1 || spanCount > 10) {
+        errors.push(`スパン数が異常です: ${spanCount}スパン`);
             console.error(`スパン数が異常です: ${spanCount}スパン`);
         }
         
@@ -912,11 +912,11 @@ function validateSpanCount(model) {
             errors: errors
         });
         console.error('=== スパン数検証完了 ===');
-        
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
         
     } catch (error) {
         console.error('validateSpanCount関数でエラーが発生しました:', error);

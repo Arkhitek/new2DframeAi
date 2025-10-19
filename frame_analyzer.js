@@ -17086,16 +17086,27 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
             return result;
         };
         
-        // 構造タイプを検出（梁構造の場合は柱脚境界条件の処理をスキップ）
+        // 構造タイプを検出（梁構造・トラス構造の場合は柱脚境界条件の処理をスキップ）
         const isBeamStructure = naturalLanguageInput.toLowerCase().includes('梁') || 
                                naturalLanguageInput.toLowerCase().includes('beam') ||
                                naturalLanguageInput.toLowerCase().includes('連続') ||
                                naturalLanguageInput.toLowerCase().includes('単純') ||
                                naturalLanguageInput.toLowerCase().includes('カンチレバー');
         
+        const isTrussStructure = naturalLanguageInput.toLowerCase().includes('トラス') ||
+                               naturalLanguageInput.toLowerCase().includes('truss') ||
+                               naturalLanguageInput.toLowerCase().includes('ワーレン') ||
+                               naturalLanguageInput.toLowerCase().includes('warren') ||
+                               naturalLanguageInput.toLowerCase().includes('弦材') ||
+                               naturalLanguageInput.toLowerCase().includes('斜材');
+        
+        const isSpecialStructure = isBeamStructure || isTrussStructure;
+        
         console.log(`🔍 構造タイプ検出:`, {
             naturalLanguageInput: naturalLanguageInput,
-            isBeamStructure: isBeamStructure
+            isBeamStructure: isBeamStructure,
+            isTrussStructure: isTrussStructure,
+            isSpecialStructure: isSpecialStructure
         });
         
         // APIからのデータを、アプリが理解できる形式に変換
@@ -17107,10 +17118,10 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 
                 // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
                 let support;
-                if (isBeamStructure) {
-                    // 梁構造の場合は、AIが生成した境界条件をそのまま使用
+                if (isSpecialStructure) {
+                    // 梁構造・トラス構造の場合は、AIが生成した境界条件をそのまま使用
                     support = originalSupport || 'free';
-                    console.log(`🔍 梁構造節点 ${index + 1}: AI生成の境界条件をそのまま使用: ${support}`);
+                    console.log(`🔍 ${isBeamStructure ? '梁' : 'トラス'}構造節点 ${index + 1}: AI生成の境界条件をそのまま使用: ${support}`);
                 } else if (isFoundationNode && foundationCondition === null) {
                     // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
                     support = originalSupport || 'free';

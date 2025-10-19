@@ -337,9 +337,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (retryCount >= 2) {
         // 3回目以降は極限まで簡潔
         let simplePrompt = `2D構造生成。JSON出力のみ。
-{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
+{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}]}
 境界条件: "f","p","r","x"
-節点番号: 配列順序（1から開始）`;
+節点番号: 配列順序（1から開始）
+荷重: 指示に応じて適切な荷重を生成`;
         
         // 構造タイプに応じた重要ルールを追加
         if (structureType === 'beam') {
@@ -362,37 +363,44 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // 通常のプロンプト
     let prompt = `2D構造モデル生成。JSON出力のみ。
 
-形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-節点番号: 配列順序（1から開始）`;
+節点番号: 配列順序（1から開始）
+荷重: 指示に応じて適切な荷重を生成（集中荷重、等分布荷重、水平荷重など）`;
 
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'beam') {
         // カンチレバー梁の検出
-        if (prompt.includes('カンチレバー') || prompt.includes('cantilever')) {
+        if (userPrompt.includes('カンチレバー') || userPrompt.includes('cantilever')) {
             prompt += `
-カンチレバー梁: 左端のみ"x"、他は全て"f"、y=0の節点に"p"や"r"は禁止`;
+カンチレバー梁: 左端のみ"x"、他は全て"f"、y=0の節点に"p"や"r"は禁止
+荷重: 自由端に集中荷重を生成（例: {"n": 2, "fy": -10}）`;
         } else if (dimensions.spans > 1) {
             prompt += `
-連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
+連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
+荷重: 適切な節点に集中荷重または等分布荷重を生成`;
         } else {
             prompt += `
-単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
+単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
+荷重: 中央部に集中荷重または等分布荷重を生成`;
         }
     } else if (structureType === 'truss') {
         prompt += `
-トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、y=0の節点に"x"は禁止`;
+トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、y=0の節点に"x"は禁止
+荷重: 適切な節点に集中荷重を生成`;
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
             const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
-            const expectedMembers = dimensions.spans * (2 * dimensions.layers + 1);
+            const expectedMembers = dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1);
             
             prompt += `
-ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m`;
-    } else {
-        prompt += `
-ラーメン: 多層多スパン、全柱梁配置`;
+ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m
+荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
+        } else {
+            prompt += `
+ラーメン: 多層多スパン、全柱梁配置
+荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
         }
     }
 
@@ -1277,7 +1285,7 @@ function validateAndFixStructure(model, userPrompt) {
         
         // 期待値の計算
         const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
-        const expectedMembers = dimensions.spans * (2 * dimensions.layers + 1);
+        const expectedMembers = dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1);
         
         console.error('期待値:', {
             layers: dimensions.layers,

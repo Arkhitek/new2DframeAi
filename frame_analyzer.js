@@ -14011,8 +14011,17 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         }
 
         // 仲介役が転送してくれたGeminiの応答から、JSON部分だけを安全に取り出します
-        const jsonText = extractJsonFromResponse(data);
-        const modelData = JSON.parse(jsonText);
+        let modelData;
+        
+        // プログラム的生成の場合の処理
+        if (data.success && data.model && data.generatedBy === 'programmatic') {
+            console.log('🔍 プログラム的生成のレスポンスを処理中...');
+            modelData = data.model;
+        } else {
+            // AI生成の場合の処理
+            const jsonText = extractJsonFromResponse(data);
+            modelData = JSON.parse(jsonText);
+        }
 
         aiStatus.textContent = '✅ モデルデータを適用しています...';
         aiStatus.style.color = '#28a745';
@@ -14044,7 +14053,13 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         hideAIGenerationPopup();
         isAIGenerationInProgress = false; // AI生成完了フラグ
 
-        const successMessage = mode === 'edit' ? 'AIによるモデル編集が完了しました。' : 'AIによるモデル生成が完了しました。';
+        const successMessage = mode === 'edit' 
+            ? (data.generatedBy === 'programmatic' 
+                ? 'AI容量制限のため、プログラム的にモデルを編集しました。' 
+                : 'AIによるモデル編集が完了しました。')
+            : (data.generatedBy === 'programmatic' 
+                ? 'AI容量制限のため、プログラム的にモデルを生成しました。' 
+                : 'AIによるモデル生成が完了しました。');
         // AI生成中のアラートは表示しない
         console.log(successMessage + (retryCount > 0 ? ` (${retryCount}回のリトライ後に成功)` : ''));
         

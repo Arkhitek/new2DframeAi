@@ -1581,23 +1581,33 @@ async function generateModelProgrammatically(userPrompt, mode, currentModel) {
         });
         
         console.error('=== プログラム的生成レスポンス送信開始 ===');
-        const response = {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-            },
-            body: JSON.stringify({
-                success: true,
-                model: generatedModel,
-                message: 'AI容量制限のため、プログラム的に構造を生成しました。',
-                generatedBy: 'programmatic'
-            })
+        
+        // Vercelのサーバーレス関数形式でレスポンスを送信
+        const responseData = {
+            success: true,
+            model: generatedModel,
+            message: 'AI容量制限のため、プログラム的に構造を生成しました。',
+            generatedBy: 'programmatic'
         };
+        
         console.error('=== プログラム的生成レスポンス送信完了 ===');
-        return response;
+        
+        // 通常のAIレスポンス形式に合わせる
+        const responseForFrontend = {
+            candidates: [{
+                content: {
+                    parts: [{
+                        text: JSON.stringify(generatedModel, null, 2)
+                    }]
+                }
+            }],
+            success: true,
+            generatedBy: 'programmatic',
+            message: 'AI容量制限のため、プログラム的に構造を生成しました。'
+        };
+        
+        res.status(200).json(responseForFrontend);
+        return;
         
     } catch (error) {
         console.error('プログラム的生成でエラーが発生しました:', error);
@@ -1606,35 +1616,36 @@ async function generateModelProgrammatically(userPrompt, mode, currentModel) {
         
         console.error('=== エラー時のフォールバックレスポンス送信開始 ===');
         // エラーが発生した場合は、最小限の構造を生成
-        const fallbackResponse = {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-            },
-            body: JSON.stringify({
-                success: true,
-                model: {
-                    nodes: [
-                        {x: 0, y: 0, s: 'x'},
-                        {x: 6, y: 0, s: 'x'},
-                        {x: 0, y: 3.5, s: 'f'},
-                        {x: 6, y: 3.5, s: 'f'}
-                    ],
-                    members: [
-                        {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
-                    ]
-                },
-                message: 'プログラム的生成でエラーが発生しましたが、最小限の構造を生成しました。',
-                generatedBy: 'programmatic'
-            })
+        const fallbackModel = {
+            nodes: [
+                {x: 0, y: 0, s: 'x'},
+                {x: 6, y: 0, s: 'x'},
+                {x: 0, y: 3.5, s: 'f'},
+                {x: 6, y: 3.5, s: 'f'}
+            ],
+            members: [
+                {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
+            ]
         };
+        
+        const fallbackResponseForFrontend = {
+            candidates: [{
+                content: {
+                    parts: [{
+                        text: JSON.stringify(fallbackModel, null, 2)
+                    }]
+                }
+            }],
+            success: true,
+            generatedBy: 'programmatic',
+            message: 'プログラム的生成でエラーが発生しましたが、最小限の構造を生成しました。'
+        };
+        
         console.error('=== エラー時のフォールバックレスポンス送信完了 ===');
-        return fallbackResponse;
+        res.status(200).json(fallbackResponseForFrontend);
+        return;
     }
 }
 

@@ -14045,12 +14045,15 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         let modelData;
         
         // プログラム的生成の場合の処理
-        if (data.success && data.model && data.generatedBy === 'programmatic') {
+        if (data.success && data.generatedBy === 'programmatic') {
             console.log('🔍 プログラム的生成のレスポンスを処理中...');
             console.log('🔍 data.success:', data.success);
-            console.log('🔍 data.model:', data.model);
             console.log('🔍 data.generatedBy:', data.generatedBy);
-            modelData = data.model;
+            console.log('🔍 data.message:', data.message);
+            
+            // プログラム的生成の場合は、candidatesからJSONを抽出
+            const jsonText = extractJsonFromResponse(data);
+            modelData = JSON.parse(jsonText);
         } else {
             // AI生成の場合の処理
             console.log('🔍 AI生成のレスポンスを処理中...');

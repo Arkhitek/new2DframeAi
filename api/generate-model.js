@@ -129,14 +129,27 @@ export default async function handler(req, res) {
             
             // 4層4スパン構造の特別検証と修正
             try {
+                console.error('=== 構造検証開始 ===');
+                console.error('検証前のモデル:', JSON.stringify(generatedModel, null, 2));
+                console.error('検証前のテキスト:', generatedText.substring(0, 500));
+                
                 const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
+                console.error('構造検証結果:', structureValidation);
+                
                 if (!structureValidation.isValid) {
                     console.error('構造検証エラー:', structureValidation.errors);
                     console.error('構造修正を実行します');
+                    console.error('修正前のモデル:', JSON.stringify(generatedModel, null, 2));
                     generatedModel = structureValidation.fixedModel;
+                    console.error('修正後のモデル:', JSON.stringify(generatedModel, null, 2));
                     generatedText = JSON.stringify(generatedModel, null, 2);
+                    console.error('修正後のテキスト:', generatedText.substring(0, 500));
                     console.error('構造修正完了');
+                } else {
+                    console.error('構造検証成功: 修正は不要');
                 }
+                
+                console.error('=== 構造検証完了 ===');
             } catch (structureError) {
                 console.error('構造検証でエラーが発生しました:', structureError);
                 console.error('エラーの詳細:', structureError.message);
@@ -161,6 +174,18 @@ export default async function handler(req, res) {
         } catch (parseError) {
             console.warn('生成されたモデルの解析エラー:', parseError);
             // JSON解析エラーでもレスポンスは返します
+        }
+
+        // 最終的なモデルの状態を確認
+        try {
+            const finalModel = JSON.parse(generatedText);
+            console.error('=== 最終モデル状態確認 ===');
+            console.error('最終節点数:', finalModel.nodes ? finalModel.nodes.length : 'なし');
+            console.error('最終部材数:', finalModel.members ? finalModel.members.length : 'なし');
+            console.error('最終モデル:', JSON.stringify(finalModel, null, 2));
+            console.error('=== 最終モデル状態確認完了 ===');
+        } catch (parseError) {
+            console.error('最終モデルの解析エラー:', parseError);
         }
 
         const responseForFrontend = {
@@ -1049,7 +1074,9 @@ function validateAndFixStructure(model, userPrompt) {
         if (fixedModel.nodes.length !== expectedNodes) {
             errors.push(`節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
             console.error(`節点数修正: ${fixedModel.nodes.length} → ${expectedNodes}`);
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
             console.error('節点数修正後の構造:', {
                 nodeCount: fixedModel.nodes.length,
                 memberCount: fixedModel.members.length
@@ -1061,7 +1088,9 @@ function validateAndFixStructure(model, userPrompt) {
         if (fixedModel.members.length !== expectedMembers) {
             errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
             console.error(`部材数修正: ${fixedModel.members.length} → ${expectedMembers}`);
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
             console.error('部材数修正後の構造:', {
                 nodeCount: fixedModel.nodes.length,
                 memberCount: fixedModel.members.length
@@ -1073,7 +1102,9 @@ function validateAndFixStructure(model, userPrompt) {
         if (!spanCount.isValid) {
             errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
             console.error('スパン数修正を実行');
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
         }
         
         // 4層目の部材配置検証
@@ -1081,7 +1112,9 @@ function validateAndFixStructure(model, userPrompt) {
         if (!topLayerValidation.isValid) {
             errors.push(`4層目の部材配置が不正: ${topLayerValidation.errors.join(', ')}`);
             console.error('4層目の部材配置修正を実行');
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
         }
     } else {
         // 4層4スパン構造の検出に失敗した場合でも、構造が似ている場合は修正を試行
@@ -1105,7 +1138,9 @@ function validateAndFixStructure(model, userPrompt) {
         if ((hasCorrectNodeCount || hasCorrectMemberCount || hasCorrectSpans) && 
             (fixedModel.nodes.length < 25 || fixedModel.members.length < 36)) {
             console.error('4層4スパン構造の特徴に合致するため、修正を実行します');
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
             errors.push('構造の特徴から4層4スパン構造と判定し、修正を実行しました');
         }
     }

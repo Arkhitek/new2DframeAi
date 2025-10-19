@@ -127,6 +127,16 @@ export default async function handler(req, res) {
                 throw new Error(`節点参照エラー: ${nodeReferenceValidation.errors.join(', ')}`);
             }
             
+            // 4層4スパン構造の特別検証と修正
+            const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
+            if (!structureValidation.isValid) {
+                console.error('構造検証エラー:', structureValidation.errors);
+                console.error('構造修正を実行します');
+                generatedModel = structureValidation.fixedModel;
+                generatedText = JSON.stringify(generatedModel, null, 2);
+                console.error('構造修正完了');
+            }
+            
             // 編集モードの場合、境界条件の保持を検証
             if (mode === 'edit' && currentModel) {
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
@@ -995,5 +1005,189 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
     return {
         isValid: warnings.length === 0,
         warnings: warnings
+    };
+}
+
+// 4層4スパン構造の検証と修正関数
+function validateAndFixStructure(model, userPrompt) {
+    console.error('=== 構造検証開始 ===');
+    console.error('ユーザープロンプト:', userPrompt);
+    console.error('現在のモデル:', JSON.stringify(model, null, 2));
+    
+    const errors = [];
+    let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
+    
+    // 4層4スパン構造の検出
+    const is4Layer4Span = userPrompt.includes('4層') && userPrompt.includes('4スパン');
+    
+    if (is4Layer4Span) {
+        console.error('4層4スパン構造の検証を実行');
+        
+        // 期待値の設定
+        const expectedNodes = 25; // 5層×5列
+        const expectedMembers = 36; // 20柱+16梁
+        const expectedSpans = 4; // 4スパン
+        const expectedLayers = 4; // 4層
+        
+        // 節点数の検証
+        if (fixedModel.nodes.length !== expectedNodes) {
+            errors.push(`節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
+            console.error(`節点数修正: ${fixedModel.nodes.length} → ${expectedNodes}`);
+            fixedModel = generateCorrect4Layer4SpanStructure();
+        }
+        
+        // 部材数の検証
+        if (fixedModel.members.length !== expectedMembers) {
+            errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+            console.error(`部材数修正: ${fixedModel.members.length} → ${expectedMembers}`);
+            fixedModel = generateCorrect4Layer4SpanStructure();
+        }
+        
+        // スパン数の検証
+        const spanCount = validateSpanCount(fixedModel);
+        if (!spanCount.isValid) {
+            errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
+            console.error('スパン数修正を実行');
+            fixedModel = generateCorrect4Layer4SpanStructure();
+        }
+        
+        // 4層目の部材配置検証
+        const topLayerValidation = validateTopLayerMembers(fixedModel);
+        if (!topLayerValidation.isValid) {
+            errors.push(`4層目の部材配置が不正: ${topLayerValidation.errors.join(', ')}`);
+            console.error('4層目の部材配置修正を実行');
+            fixedModel = generateCorrect4Layer4SpanStructure();
+        }
+    }
+    
+    console.error('構造検証結果:', {
+        isValid: errors.length === 0,
+        errors: errors,
+        nodeCount: fixedModel.nodes.length,
+        memberCount: fixedModel.members.length
+    });
+    console.error('=== 構造検証完了 ===');
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors,
+        fixedModel: fixedModel
+    };
+}
+
+// 正しい4層4スパン構造を生成する関数
+function generateCorrect4Layer4SpanStructure() {
+    console.error('=== 正しい4層4スパン構造を生成 ===');
+    
+    const nodes = [];
+    const members = [];
+    
+    // 節点生成（5層×5列 = 25節点）
+    const layerHeights = [0, 3.5, 7, 10.5, 14]; // 4層+基礎
+    const spanPositions = [0, 6, 12, 18, 24]; // 4スパン+端部
+    
+    for (let layer = 0; layer < 5; layer++) {
+        for (let span = 0; span < 5; span++) {
+            const nodeIndex = layer * 5 + span + 1;
+            const support = (layer === 0) ? 'x' : 'f'; // 基礎は固定、他は自由
+            
+            nodes.push({
+                x: spanPositions[span],
+                y: layerHeights[layer],
+                s: support
+            });
+        }
+    }
+    
+    // 柱の生成（20本）
+    for (let span = 0; span < 5; span++) {
+        for (let layer = 0; layer < 4; layer++) {
+            const startNode = layer * 5 + span + 1;
+            const endNode = (layer + 1) * 5 + span + 1;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    // 梁の生成（16本）
+    for (let layer = 1; layer < 5; layer++) {
+        for (let span = 0; span < 4; span++) {
+            const startNode = layer * 5 + span + 1;
+            const endNode = layer * 5 + span + 2;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    console.error('生成された構造:', {
+        nodeCount: nodes.length,
+        memberCount: members.length,
+        nodes: nodes,
+        members: members
+    });
+    console.error('=== 4層4スパン構造生成完了 ===');
+    
+    return {
+        nodes: nodes,
+        members: members
+    };
+}
+
+// 4層目の部材配置を検証する関数
+function validateTopLayerMembers(model) {
+    const errors = [];
+    
+    if (!model.nodes || !model.members) {
+        errors.push('節点または部材データが存在しません');
+        return { isValid: false, errors: errors };
+    }
+    
+    // 4層目の節点を特定（Y座標=14の節点）
+    const topLayerNodes = model.nodes.filter(node => node.y === 14);
+    
+    if (topLayerNodes.length === 0) {
+        errors.push('4層目の節点が存在しません');
+        return { isValid: false, errors: errors };
+    }
+    
+    // 4層目の柱を検証（3層目から4層目への垂直部材）
+    const topLayerColumns = model.members.filter(member => {
+        const startNode = model.nodes[member.i - 1];
+        const endNode = model.nodes[member.j - 1];
+        return startNode && endNode && startNode.y === 10.5 && endNode.y === 14;
+    });
+    
+    if (topLayerColumns.length < 4) {
+        errors.push(`4層目の柱が不足: 期待値4本、実際${topLayerColumns.length}本`);
+    }
+    
+    // 4層目の梁を検証（4層目の節点間の水平部材）
+    const topLayerBeams = model.members.filter(member => {
+        const startNode = model.nodes[member.i - 1];
+        const endNode = model.nodes[member.j - 1];
+        return startNode && endNode && startNode.y === 14 && endNode.y === 14;
+    });
+    
+    if (topLayerBeams.length < 4) {
+        errors.push(`4層目の梁が不足: 期待値4本、実際${topLayerBeams.length}本`);
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
     };
 }

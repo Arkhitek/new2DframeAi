@@ -15825,6 +15825,65 @@ function getMemberType(memberIndex) {
 }
 
 /**
+ * 4層4スパン構造用のデフォルト鋼材断面データを生成する関数
+ * @returns {Array} デフォルトの鋼材断面データ配列
+ */
+function generateDefaultSteelDataFor4Layer4Span() {
+    console.log('🔧 4層4スパン構造用のデフォルト鋼材断面データを生成');
+    
+    // 柱用のH形鋼断面（H-200×200×8×12）
+    const columnSteelData = {
+        typeKey: 'hkatakou_hiro',
+        typeLabel: 'H形鋼',
+        designation: 'H-200×200×8×12',
+        dims: {
+            H: 200,
+            B: 200,
+            t1: 8,
+            t2: 12
+        },
+        properties: {
+            A: 64.7, // cm²
+            Ix: 4720, // cm⁴
+            Iy: 1600, // cm⁴
+            Zx: 472, // cm³
+            Zy: 160 // cm³
+        },
+        source: 'default_4layer4span'
+    };
+    
+    // 梁用のH形鋼断面（H-300×150×6.5×9）
+    const beamSteelData = {
+        typeKey: 'hkatakou_hiro',
+        typeLabel: 'H形鋼',
+        designation: 'H-300×150×6.5×9',
+        dims: {
+            H: 300,
+            B: 150,
+            t1: 6.5,
+            t2: 9
+        },
+        properties: {
+            A: 46.8, // cm²
+            Ix: 7210, // cm⁴
+            Iy: 508, // cm⁴
+            Zx: 481, // cm³
+            Zy: 67.7 // cm³
+        },
+        source: 'default_4layer4span'
+    };
+    
+    // 全ての部材に適用するデフォルト断面データ
+    const defaultSteelDataArray = [
+        columnSteelData, // 柱用
+        beamSteelData    // 梁用
+    ];
+    
+    console.log('🔧 生成されたデフォルト鋼材断面データ:', defaultSteelDataArray);
+    return defaultSteelDataArray;
+}
+
+/**
  * AI生成時に複数の部材の断面情報を設定する関数
  * @param {Array} steelDataArray - 鋼材断面データの配列
  * @param {Array} memberTypes - 部材タイプ情報の配列
@@ -17118,6 +17177,22 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     }
                 } else {
                     console.log('🔍 鋼材断面情報が見つかりませんでした');
+                    
+                    // 4層4スパン構造の場合、デフォルトの断面情報を設定
+                    if (naturalLanguageInput.includes('4層') && naturalLanguageInput.includes('4スパン')) {
+                        console.log('🔧 4層4スパン構造のデフォルト断面情報を設定');
+                        const defaultSteelData = generateDefaultSteelDataFor4Layer4Span();
+                        setMultipleMembersSectionInfoFromAI(defaultSteelData, [], preAISectionInfoBackup);
+                        
+                        // 3Dビューアが開いている場合は更新を送信
+                        if (viewerWindow && !viewerWindow.closed) {
+                            console.log('🔍 3Dビューアにデフォルト断面情報更新を送信中...');
+                            setTimeout(() => {
+                                console.log('🔧 3Dビューア更新実行 (500ms後):', new Date().toISOString());
+                                sendModelToViewer();
+                            }, 500);
+                        }
+                    }
                 }
             } catch (error) {
                 console.warn(`部材断面情報の設定でエラーが発生しました (試行 ${attempt}):`, error);

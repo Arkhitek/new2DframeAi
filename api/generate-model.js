@@ -59,7 +59,7 @@ export default async function handler(req, res) {
                 
                 // タイムアウト設定を追加
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+                const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒タイムアウト
                 
                 mistralResponse = await fetch(API_URL, {
             method: 'POST',
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
                 
                 // 容量制限エラーの場合
                 if (isCapacityError && retryCount < maxRetries) {
-                    const waitTime = Math.min(10000 + (retryCount * 3000), 30000); // 10-30秒
+                    const waitTime = Math.min(5000 + (retryCount * 2000), 20000); // 5-20秒
                     console.error(`容量制限エラー: ${waitTime}ms待機後にリトライ`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;
@@ -138,7 +138,7 @@ export default async function handler(req, res) {
                 
                 // 一時的なエラーの場合
                 if (isRetryableError && retryCount < maxRetries) {
-                    const waitTime = Math.min(5000 + (retryCount * 2000), 15000); // 5-15秒
+                    const waitTime = Math.min(3000 + (retryCount * 1000), 10000); // 3-10秒
                     console.error(`一時的エラー: ${waitTime}ms待機後にリトライ`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;

@@ -1426,8 +1426,8 @@ function generateCorrect4Layer4SpanStructure() {
         console.error('梁の生成開始: 5層×4スパン');
         for (let layer = 1; layer <= 5; layer++) {
             for (let span = 0; span < 4; span++) {
-                const startNode = layer * 5 + span + 1;
-                const endNode = layer * 5 + span + 2;
+                const startNode = (layer - 1) * 5 + span + 1; // 修正: layer-1で正しい層のノードを参照
+                const endNode = (layer - 1) * 5 + span + 2;   // 修正: layer-1で正しい層のノードを参照
                 
                 console.error(`梁生成: 層${layer}, スパン${span}, 節点${startNode}->${endNode}`);
                 

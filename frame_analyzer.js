@@ -17104,6 +17104,11 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         // AI生成時に検出された鋼材断面情報を部材テーブルに設定
         // 複数回の試行で確実に設定する
         const attemptSetMemberInfo = async (attempt = 1, maxAttempts = 3) => {
+            // preAISectionInfoBackupが未定義の場合は空配列で初期化
+            if (typeof preAISectionInfoBackup === 'undefined') {
+                console.warn('⚠️ preAISectionInfoBackupが未定義です。空配列で初期化します。');
+                preAISectionInfoBackup = [];
+            }
             try {
                 console.log(`🔍 AI生成後に部材の断面情報を設定開始 (試行 ${attempt}/${maxAttempts})`);
                 console.log(`🔍 attemptSetMemberInfo呼び出し時刻:`, new Date().toISOString());

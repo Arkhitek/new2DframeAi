@@ -17086,6 +17086,18 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
             return result;
         };
         
+        // 構造タイプを検出（梁構造の場合は柱脚境界条件の処理をスキップ）
+        const isBeamStructure = naturalLanguageInput.toLowerCase().includes('梁') || 
+                               naturalLanguageInput.toLowerCase().includes('beam') ||
+                               naturalLanguageInput.toLowerCase().includes('連続') ||
+                               naturalLanguageInput.toLowerCase().includes('単純') ||
+                               naturalLanguageInput.toLowerCase().includes('カンチレバー');
+        
+        console.log(`🔍 構造タイプ検出:`, {
+            naturalLanguageInput: naturalLanguageInput,
+            isBeamStructure: isBeamStructure
+        });
+        
         // APIからのデータを、アプリが理解できる形式に変換
         const state = {
             nodes: modelData.nodes.map((n, index) => {
@@ -17095,7 +17107,11 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 
                 // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
                 let support;
-                if (isFoundationNode && foundationCondition === null) {
+                if (isBeamStructure) {
+                    // 梁構造の場合は、AIが生成した境界条件をそのまま使用
+                    support = originalSupport || 'free';
+                    console.log(`🔍 梁構造節点 ${index + 1}: AI生成の境界条件をそのまま使用: ${support}`);
+                } else if (isFoundationNode && foundationCondition === null) {
                     // 編集モードで境界条件の変更指示がない場合は既存の境界条件を保持
                     support = originalSupport || 'free';
                     console.log(`🔍 柱脚節点 ${index + 1}: 境界条件変更指示がないため既存の境界条件を保持: ${support}`);

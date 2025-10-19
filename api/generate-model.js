@@ -490,11 +490,15 @@ function detectStructureDimensions(userPrompt) {
         const match = prompt.match(pattern);
         console.error(`パターン ${pattern} のマッチ結果:`, match);
         if (match) {
-            const extractedNumber = match[1];
-            layers = parseInt(extractedNumber, 10);
-            console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}`);
-            if (!isNaN(layers)) {
-                break;
+            // 正規表現から数字を抽出
+            const numberMatch = match[0].match(/\d+/);
+            if (numberMatch) {
+                const extractedNumber = numberMatch[0];
+                layers = parseInt(extractedNumber, 10);
+                console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}`);
+                if (!isNaN(layers)) {
+                    break;
+                }
             }
         }
     }
@@ -513,11 +517,15 @@ function detectStructureDimensions(userPrompt) {
         const match = prompt.match(pattern);
         console.error(`スパンパターン ${pattern} のマッチ結果:`, match);
         if (match) {
-            const extractedNumber = match[1];
-            spans = parseInt(extractedNumber, 10);
-            console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}`);
-            if (!isNaN(spans)) {
-                break;
+            // 正規表現から数字を抽出
+            const numberMatch = match[0].match(/\d+/);
+            if (numberMatch) {
+                const extractedNumber = numberMatch[0];
+                spans = parseInt(extractedNumber, 10);
+                console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}`);
+                if (!isNaN(spans)) {
+                    break;
+                }
             }
         }
     }

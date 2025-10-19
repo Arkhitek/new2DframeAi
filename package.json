@@ -1,6 +1,7 @@
 {
   "name": "2d-frame-analyzer",
   "version": "1.0.0",
+  "type": "module",
   "description": "2D構造解析システム with AI Model Generation",
   "main": "index.html",
   "scripts": {

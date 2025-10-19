@@ -1,5 +1,5 @@
 // 外部と通信するための道具をインポートします
-const fetch = require('node-fetch');
+import fetch from 'node-fetch';
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {

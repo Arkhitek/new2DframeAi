@@ -15889,27 +15889,28 @@ function generateDefaultSteelDataFor4Layer4Span() {
  * @param {Array} memberTypes - 部材タイプ情報の配列
  */
 function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = [], preAISectionInfoBackup = null) {
-    console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray, memberTypes);
-    console.log('🔍 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
-    
-    if (!Array.isArray(steelDataArray)) {
-        console.warn('steelDataArrayが配列ではありません');
-        return;
-    }
-    
-    const membersTable = document.getElementById('members-table');
-    if (!membersTable) {
-        console.warn('部材テーブルが見つかりません');
-        return;
-    }
-    
-    const rows = membersTable.querySelectorAll('tbody tr');
-    console.log(`🔍 部材テーブルの行数: ${rows.length}, 検出された鋼材断面数: ${steelDataArray.length}`);
-    
-    if (rows.length === 0) {
-        console.warn('部材テーブルに部材がありません');
-        return;
-    }
+    try {
+        console.log('🔍 AI生成時に複数部材の断面情報を設定:', steelDataArray, memberTypes);
+        console.log('🔍 setMultipleMembersSectionInfoFromAI呼び出し時刻:', new Date().toISOString());
+        
+        if (!Array.isArray(steelDataArray)) {
+            console.warn('steelDataArrayが配列ではありません');
+            return;
+        }
+        
+        const membersTable = document.getElementById('members-table');
+        if (!membersTable) {
+            console.warn('部材テーブルが見つかりません');
+            return;
+        }
+        
+        const rows = membersTable.querySelectorAll('tbody tr');
+        console.log(`🔍 部材テーブルの行数: ${rows.length}, 検出された鋼材断面数: ${steelDataArray.length}`);
+        
+        if (rows.length === 0) {
+            console.warn('部材テーブルに部材がありません');
+            return;
+        }
     
     // 関数開始時の断面情報状態を記録
     console.log('🔍 関数開始時の断面情報状態:');
@@ -16122,6 +16123,11 @@ function setMultipleMembersSectionInfoFromAI(steelDataArray, memberTypes = [], p
             // 部材タイプが指定されていない場合は、何もしない
             console.log('🔍 部材タイプが指定されていないため、断面情報の変更をスキップします');
         }
+    }
+    } catch (error) {
+        console.error('setMultipleMembersSectionInfoFromAI関数でエラーが発生しました:', error);
+        console.error('エラーの詳細:', error.message);
+        console.error('エラースタック:', error.stack);
     }
 }
 

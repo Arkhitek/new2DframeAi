@@ -14045,6 +14045,24 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             }, 1000); // AI生成完了後に送信
         }
 
+        // 自動スケーリングを実行
+        setTimeout(() => {
+            try {
+                console.log('🔍 AI生成完了後、自動スケーリングを実行中...');
+                
+                // 自動スケールボタンをクリックして実行
+                const autoScaleBtn = document.getElementById('auto-scale-btn');
+                if (autoScaleBtn) {
+                    console.log('🔍 自動スケールボタンを発見、クリック実行');
+                    autoScaleBtn.click();
+                } else {
+                    console.log('⚠️ 自動スケールボタンが見つかりません');
+                }
+            } catch (error) {
+                console.error('自動スケーリング実行エラー:', error);
+            }
+        }, 1500); // AI生成完了後、少し遅延して実行
+
     } catch (error) {
         console.error('AIモデル生成エラー:', error);
         

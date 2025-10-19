@@ -350,7 +350,16 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 節点番号: 配列順序（1から開始）`;
 
     // 構造タイプに応じて最小限のルールを追加
-    if (structureType === 'truss') {
+    if (structureType === 'beam') {
+        // スパン数を検出して梁の詳細ルールを追加
+        if (dimensions.spans > 1) {
+            prompt += `
+連続梁: 両端"p"、中間節点"f"、スパン長に応じた節点配置`;
+        } else {
+            prompt += `
+単純梁: 両端"p"、中間節点"f"、スパン長に応じた節点配置`;
+        }
+    } else if (structureType === 'truss') {
         prompt += `
 トラス: 左端"p"、右端"r"、下弦材全接続`;
     } else if (structureType === 'frame') {
@@ -377,14 +386,20 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 function detectStructureType(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
+    // 梁構造のキーワード（最優先）
+    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', '支点', 'ピン支点', '固定支点'];
+    if (beamKeywords.some(keyword => prompt.includes(keyword))) {
+        return 'beam';
+    }
+    
     // トラス構造のキーワード
     const trussKeywords = ['トラス', 'truss', 'ワーレン', 'warren', 'プラット', 'pratt', 'ハウ', 'howe', '斜材', '弦材'];
     if (trussKeywords.some(keyword => prompt.includes(keyword))) {
         return 'truss';
     }
     
-    // ラーメン構造のキーワード
-    const frameKeywords = ['ラーメン', 'フレーム', 'frame', '門型', '多層', 'スパン', '層', '柱', '梁'];
+    // ラーメン構造のキーワード（柱と梁の組み合わせ）
+    const frameKeywords = ['ラーメン', 'フレーム', 'frame', '門型', '多層', '層', '柱'];
     if (frameKeywords.some(keyword => prompt.includes(keyword))) {
         return 'frame';
     }
@@ -1193,10 +1208,25 @@ function validateAndFixStructure(model, userPrompt) {
         const dimensions = detectStructureDimensions(userPrompt);
         console.error('検出された構造次元:', dimensions);
         
-        // ラーメン構造かどうかを確認
+        // 構造タイプを確認
         const structureType = detectStructureType(userPrompt);
+        console.error('構造タイプ:', structureType);
+        
+        // 梁構造の場合は検証をスキップ（AIが正しく生成している）
+        if (structureType === 'beam') {
+            console.error('梁構造のため、構造検証をスキップします');
+            return {
+                isValid: true,
+                errors: [],
+                fixedModel: fixedModel,
+                nodeCount: fixedModel.nodes.length,
+                memberCount: fixedModel.members.length
+            };
+        }
+        
+        // ラーメン構造かどうかを確認
         const isFrameStructure = structureType === 'frame';
-        console.error('構造タイプ:', structureType, 'ラーメン構造:', isFrameStructure);
+        console.error('ラーメン構造:', isFrameStructure);
     
     // ラーメン構造の場合のみ検証・修正を実行
     if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {

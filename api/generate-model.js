@@ -53,23 +53,69 @@ export default async function handler(req, res) {
             response_format: { "type": "json_object" }
         };
 
-        const mistralResponse = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json' 
-            },
-            body: JSON.stringify(requestBody),
-        });
+        // リトライ機能付きAI呼び出し
+        let mistralResponse;
+        let data;
+        let retryCount = 0;
+        const maxRetries = 2;
+        
+        while (retryCount <= maxRetries) {
+            try {
+                console.error(`=== AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} ===`);
+                
+                mistralResponse = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json' 
+                    },
+                    body: JSON.stringify(requestBody),
+                });
 
-        const data = await mistralResponse.json();
-        console.error('Mistral AIレスポンス受信');
-        console.error('レスポンスステータス:', mistralResponse.status);
-        console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
+                data = await mistralResponse.json();
+                console.error('Mistral AIレスポンス受信');
+                console.error('レスポンスステータス:', mistralResponse.status);
+                console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
 
-        if (!mistralResponse.ok) {
-            console.error('Mistral AI Error:', data);
-            throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                // 成功した場合はループを抜ける
+                if (mistralResponse.ok) {
+                    break;
+                }
+                
+                // 容量制限エラーの場合
+                if (mistralResponse.status === 429 && data.code === '3505') {
+                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1})`);
+                    
+                    if (retryCount < maxRetries) {
+                        // リトライ前に待機
+                        const waitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
+                        console.error(`${waitTime}ms待機後にリトライします`);
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                        retryCount++;
+                        continue;
+                    } else {
+                        // 最大リトライ回数に達した場合はプログラム的生成にフォールバック
+                        console.error('=== 最大リトライ回数に達しました: プログラム的生成にフォールバック ===');
+                        return await generateModelProgrammatically(userPrompt, mode, currentModel);
+                    }
+                }
+                
+                // その他のエラーは即座にスロー
+                throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                
+            } catch (error) {
+                console.error(`AI呼び出し試行 ${retryCount + 1} でエラー:`, error.message);
+                
+                if (retryCount < maxRetries) {
+                    const waitTime = Math.pow(2, retryCount) * 1000;
+                    console.error(`${waitTime}ms待機後にリトライします`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    retryCount++;
+                    continue;
+                } else {
+                    throw error;
+                }
+            }
         }
 
         if (!data.choices || !data.choices[0] || !data.choices[0].message.content) {
@@ -1315,4 +1361,212 @@ function validateTopLayerMembers(model) {
             errors: ['検証処理でエラーが発生しました']
         };
     }
+}
+
+// AI容量制限エラー時のプログラム的生成機能
+async function generateModelProgrammatically(userPrompt, mode, currentModel) {
+    console.error('=== プログラム的生成開始 ===');
+    console.error('ユーザープロンプト:', userPrompt);
+    
+    try {
+        // プロンプトから構造タイプと次元を検出
+        const structureType = detectStructureType(userPrompt);
+        const dimensions = detectStructureDimensions(userPrompt);
+        
+        console.error('検出された構造タイプ:', structureType);
+        console.error('検出された次元:', dimensions);
+        
+        let generatedModel;
+        
+        // 4層4スパンラーメン構造の特別処理
+        if (structureType === 'frame' && dimensions.layers === 4 && dimensions.spans === 4) {
+            console.error('4層4スパンラーメン構造をプログラム的に生成');
+            generatedModel = generateCorrect4Layer4SpanStructure();
+        }
+        // 5層4スパンラーメン構造の特別処理
+        else if (structureType === 'frame' && dimensions.layers === 5 && dimensions.spans === 4) {
+            console.error('5層4スパンラーメン構造をプログラム的に生成');
+            generatedModel = generateCorrect5Layer4SpanStructure();
+        }
+        // その他の構造は基本的な生成
+        else {
+            console.error('基本的な構造をプログラム的に生成');
+            generatedModel = generateBasicStructure(userPrompt, dimensions);
+        }
+        
+        console.error('プログラム的生成完了:', {
+            nodeCount: generatedModel.nodes.length,
+            memberCount: generatedModel.members.length
+        });
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
+            body: JSON.stringify({
+                success: true,
+                model: generatedModel,
+                message: 'AI容量制限のため、プログラム的に構造を生成しました。',
+                generatedBy: 'programmatic'
+            })
+        };
+        
+    } catch (error) {
+        console.error('プログラム的生成でエラーが発生しました:', error);
+        console.error('エラーの詳細:', error.message);
+        console.error('エラースタック:', error.stack);
+        
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
+            body: JSON.stringify({
+                success: false,
+                error: 'プログラム的生成でエラーが発生しました: ' + error.message
+            })
+        };
+    }
+}
+
+// 5層4スパンラーメン構造の生成
+function generateCorrect5Layer4SpanStructure() {
+    console.error('=== 5層4スパンラーメン構造生成開始 ===');
+    
+    const nodes = [];
+    const members = [];
+    
+    // 節点の生成（30個：6層×5列）
+    for (let layer = 0; layer < 6; layer++) {
+        for (let span = 0; span < 5; span++) {
+            const nodeId = layer * 5 + span + 1;
+            nodes.push({
+                id: nodeId,
+                x: span * 6,
+                y: layer * 3.5,
+                boundaryConditions: layer === 0 ? 'fixed' : 'free'
+            });
+        }
+    }
+    
+    // 柱の生成（20本：4列×5層）
+    for (let span = 0; span < 4; span++) {
+        for (let layer = 0; layer < 5; layer++) {
+            const startNode = layer * 5 + span + 1;
+            const endNode = (layer + 1) * 5 + span + 1;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    // 梁の生成（25本：5層×5列）
+    for (let layer = 1; layer < 6; layer++) {
+        for (let span = 0; span < 4; span++) {
+            const startNode = layer * 5 + span + 1;
+            const endNode = layer * 5 + span + 2;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    console.error('5層4スパン構造生成完了:', {
+        nodeCount: nodes.length,
+        memberCount: members.length,
+        columnCount: 20,
+        beamCount: 25
+    });
+    
+    return { nodes, members };
+}
+
+// 基本的な構造生成
+function generateBasicStructure(userPrompt, dimensions) {
+    console.error('=== 基本構造生成開始 ===');
+    console.error('次元情報:', dimensions);
+    
+    const nodes = [];
+    const members = [];
+    
+    // デフォルト値の設定
+    const layers = dimensions.layers || 2;
+    const spans = dimensions.spans || 2;
+    const storyHeight = 3.5;
+    const spanLength = 6.0;
+    
+    // 節点の生成
+    for (let layer = 0; layer <= layers; layer++) {
+        for (let span = 0; span <= spans; span++) {
+            const nodeId = layer * (spans + 1) + span + 1;
+            nodes.push({
+                id: nodeId,
+                x: span * spanLength,
+                y: layer * storyHeight,
+                boundaryConditions: layer === 0 ? 'fixed' : 'free'
+            });
+        }
+    }
+    
+    // 柱の生成
+    for (let span = 0; span <= spans; span++) {
+        for (let layer = 0; layer < layers; layer++) {
+            const startNode = layer * (spans + 1) + span + 1;
+            const endNode = (layer + 1) * (spans + 1) + span + 1;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    // 梁の生成
+    for (let layer = 1; layer <= layers; layer++) {
+        for (let span = 0; span < spans; span++) {
+            const startNode = layer * (spans + 1) + span + 1;
+            const endNode = layer * (spans + 1) + span + 2;
+            
+            members.push({
+                i: startNode,
+                j: endNode,
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+    }
+    
+    console.error('基本構造生成完了:', {
+        nodeCount: nodes.length,
+        memberCount: members.length,
+        layers: layers,
+        spans: spans
+    });
+    
+    return { nodes, members };
 }

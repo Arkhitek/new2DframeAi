@@ -13980,9 +13980,9 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         // タイムアウト制御
         const timeoutController = new AbortController();
         const timeoutId = setTimeout(() => {
-            console.error('🔍 fetchタイムアウト（30秒）');
+            console.error('🔍 fetchタイムアウト（60秒）');
             timeoutController.abort();
-        }, 30000); // 30秒タイムアウト
+        }, 60000); // 60秒タイムアウト
         
         // AbortControllerを結合
         const combinedController = new AbortController();
@@ -14155,8 +14155,8 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         
         // タイムアウトエラーの処理
         if (error.name === 'AbortError' && error.message.includes('timeout')) {
-            console.error('🔍 リクエストがタイムアウトしました');
-            aiStatus.textContent = '⏰ リクエストがタイムアウトしました。しばらく待ってから再試行してください。';
+            console.error('🔍 リクエストがタイムアウトしました（60秒）');
+            aiStatus.textContent = '⏰ リクエストがタイムアウトしました（60秒）。AI容量制限により処理に時間がかかっています。しばらく待ってから再試行してください。';
             aiStatus.style.color = '#dc3545';
             hideAIGenerationPopup();
             isAIGenerationInProgress = false;

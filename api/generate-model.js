@@ -28,7 +28,7 @@ export default async function handler(req, res) {
         
         const API_URL = 'https://api.mistral.ai/v1/chat/completions';
         
-        const systemPrompt = createSystemPromptForBackend(mode, currentModel, userPrompt);
+        const systemPrompt = createSystemPromptForBackend(mode, currentModel, userPrompt, retryCount);
         
         // 追加編集モードの場合は現在のモデル情報を含めてプロンプトを作成
         let userMessage = userPrompt;
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
         let mistralResponse;
         let data;
         let retryCount = 0;
-        const maxRetries = 3; // リトライ回数を3回に最適化
+        const maxRetries = 5; // リトライ回数を5回に増加
         
         while (retryCount <= maxRetries) {
             try {
@@ -127,7 +127,7 @@ export default async function handler(req, res) {
                 
                 // 容量制限エラーの場合
                 if (isCapacityError && retryCount < maxRetries) {
-                    const waitTime = Math.min(5000 + (retryCount * 2000), 15000); // 5-15秒
+                    const waitTime = Math.min(10000 + (retryCount * 3000), 30000); // 10-30秒
                     console.error(`容量制限エラー: ${waitTime}ms待機後にリトライ`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;
@@ -136,7 +136,7 @@ export default async function handler(req, res) {
                 
                 // 一時的なエラーの場合
                 if (isRetryableError && retryCount < maxRetries) {
-                    const waitTime = Math.min(2000 + (retryCount * 1000), 8000); // 2-8秒
+                    const waitTime = Math.min(5000 + (retryCount * 2000), 15000); // 5-15秒
                     console.error(`一時的エラー: ${waitTime}ms待機後にリトライ`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;
@@ -219,10 +219,10 @@ export default async function handler(req, res) {
             }
         } catch (structureError) {
             console.error('構造検証エラー:', structureError.message);
-        }
-        
-        // 編集モードの場合、境界条件の保持を検証
-        if (mode === 'edit' && currentModel) {
+            }
+            
+            // 編集モードの場合、境界条件の保持を検証
+            if (mode === 'edit' && currentModel) {
             try {
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
                 const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
@@ -233,8 +233,8 @@ export default async function handler(req, res) {
                 }
             } catch (boundaryError) {
                 console.error('境界条件検証エラー:', boundaryError.message);
+                }
             }
-        }
         } catch (parseError) {
         console.error('生成されたモデルの解析エラー:', parseError);
         console.error('エラーの詳細:', parseError.message);
@@ -326,23 +326,31 @@ export default async function handler(req, res) {
     }
 }
 
-function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '') {
+function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '', retryCount = 0) {
     // ユーザープロンプトから構造タイプと次元を検出
     const structureType = detectStructureType(userPrompt);
     const dimensions = detectStructureDimensions(userPrompt);
     
-    // プロンプトサイズを最小限に抑える
-    let prompt = `2Dフレーム構造解析モデルを生成してください。
+    // リトライ回数に応じてプロンプトを簡潔化
+    if (retryCount >= 2) {
+        // 3回目以降は極限まで簡潔
+        return `2D構造生成。JSON出力のみ。
+{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
+境界条件: "f","p","r","x"
+節点番号: 配列順序（1から開始）`;
+    }
+    
+    // 通常のプロンプト
+    let prompt = `2D構造モデル生成。JSON出力のみ。
 
-**出力**: JSONデータのみ（説明不要）
-**形式**: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
-**境界条件**: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-**節点番号**: 配列順序（1から開始）`;
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
+境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
+節点番号: 配列順序（1から開始）`;
 
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'truss') {
         prompt += `
-**トラス**: 左端"p"、右端"r"、下弦材全接続`;
+トラス: 左端"p"、右端"r"、下弦材全接続`;
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
@@ -350,15 +358,15 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
             const expectedMembers = dimensions.spans * (2 * dimensions.layers + 1);
             
             prompt += `
-**ラーメン(${dimensions.layers}層${dimensions.spans}スパン)**: 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m`;
+ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m`;
     } else {
         prompt += `
-**ラーメン**: 多層多スパン、全柱梁配置`;
+ラーメン: 多層多スパン、全柱梁配置`;
         }
     }
 
     prompt += `
-**重要**: 節点番号は存在するもののみ参照、地面節点は"x"`;
+重要: 節点番号は存在するもののみ参照、地面節点は"x"`;
 
     return prompt;
 }

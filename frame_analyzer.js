@@ -13975,6 +13975,23 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         console.error('🔍 サーバーサイドAPI呼び出し開始:');
         console.error('🔍 API_URL:', API_URL);
         console.error('🔍 リクエストボディ:', JSON.stringify(requestBody, null, 2));
+        console.error('🔍 fetch開始時刻:', new Date().toISOString());
+        
+        // タイムアウト制御
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => {
+            console.error('🔍 fetchタイムアウト（30秒）');
+            timeoutController.abort();
+        }, 30000); // 30秒タイムアウト
+        
+        // AbortControllerを結合
+        const combinedController = new AbortController();
+        aiGenerationAbortController.signal.addEventListener('abort', () => {
+            combinedController.abort();
+        });
+        timeoutController.signal.addEventListener('abort', () => {
+            combinedController.abort();
+        });
         
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -13982,8 +13999,11 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
-            signal: aiGenerationAbortController.signal
+            signal: combinedController.signal
         });
+        
+        clearTimeout(timeoutId);
+        console.error('🔍 fetch完了時刻:', new Date().toISOString());
 
         console.error('🔍 サーバーレスポンス受信:');
         console.error('🔍 レスポンスステータス:', response.status);
@@ -13991,10 +14011,19 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
         console.error('🔍 レスポンスヘッダー:', response.headers);
 
         // 仲介役からの返答を受け取ります
-        const data = await response.json();
-        console.error('🔍 レスポンスデータ:', JSON.stringify(data, null, 2));
-        console.error('🔍 レスポンスデータの型:', typeof data);
-        console.error('🔍 レスポンスデータのキー:', Object.keys(data));
+        console.error('🔍 JSON解析開始時刻:', new Date().toISOString());
+        let data;
+        try {
+            data = await response.json();
+            console.error('🔍 JSON解析完了時刻:', new Date().toISOString());
+            console.error('🔍 レスポンスデータ:', JSON.stringify(data, null, 2));
+            console.error('🔍 レスポンスデータの型:', typeof data);
+            console.error('🔍 レスポンスデータのキー:', Object.keys(data));
+        } catch (jsonError) {
+            console.error('🔍 JSON解析エラー:', jsonError);
+            console.error('🔍 レスポンステキスト:', await response.text());
+            throw new Error('レスポンスのJSON解析に失敗しました: ' + jsonError.message);
+        }
 
         // 返答に問題があった場合のエラー処理
         if (!response.ok) {
@@ -14121,6 +14150,16 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             if (aiStatus) {
                 aiStatus.style.display = 'none';
             }
+            return;
+        }
+        
+        // タイムアウトエラーの処理
+        if (error.name === 'AbortError' && error.message.includes('timeout')) {
+            console.error('🔍 リクエストがタイムアウトしました');
+            aiStatus.textContent = '⏰ リクエストがタイムアウトしました。しばらく待ってから再試行してください。';
+            aiStatus.style.color = '#dc3545';
+            hideAIGenerationPopup();
+            isAIGenerationInProgress = false;
             return;
         }
         

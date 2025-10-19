@@ -3,28 +3,20 @@ import fetch from 'node-fetch';
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {
-    // 強制的にログを出力（Vercelのログ問題を回避）
     console.error('=== AIモデル生成API開始 ===');
-    console.error('リクエストメソッド:', req.method);
-    console.error('リクエストヘッダー:', JSON.stringify(req.headers));
-    console.error('リクエストボディサイズ:', req.body ? JSON.stringify(req.body).length : 0);
     
     if (req.method !== 'POST') {
-        console.log('メソッドエラー: POST以外のリクエスト');
+        console.error('メソッドエラー: POST以外のリクエスト');
         res.status(405).json({ error: 'Method Not Allowed' });
         return;
     }
 
     try {
         const { prompt: userPrompt, mode = 'new', currentModel } = req.body;
-        console.error('リクエストボディ解析:');
-        console.error('- ユーザープロンプト:', userPrompt);
-        console.error('- モード:', mode);
-        console.error('- 現在のモデル:', currentModel ? '存在' : 'なし');
-        console.error('- 現在のモデル詳細:', currentModel ? JSON.stringify(currentModel, null, 2) : 'なし');
+        console.error('リクエスト解析: プロンプト=', userPrompt?.substring(0, 50) + '...', 'モード=', mode);
         
         if (!userPrompt) {
-            console.log('エラー: 指示内容が空');
+            console.error('エラー: 指示内容が空');
             res.status(400).json({ error: '指示内容が空です。' });
             return;
         }
@@ -53,15 +45,19 @@ export default async function handler(req, res) {
             response_format: { "type": "json_object" }
         };
 
-        // リトライ機能付きAI呼び出し
+        // 最適化されたリトライ機能付きAI呼び出し
         let mistralResponse;
         let data;
         let retryCount = 0;
-        const maxRetries = 5; // 再トライ回数を5回に増加
+        const maxRetries = 3; // リトライ回数を3回に最適化
         
         while (retryCount <= maxRetries) {
             try {
-                console.error(`=== AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} ===`);
+                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1}`);
+                
+                // タイムアウト設定を追加
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
                 
                 mistralResponse = await fetch(API_URL, {
             method: 'POST',
@@ -70,27 +66,22 @@ export default async function handler(req, res) {
                 'Content-Type': 'application/json' 
             },
             body: JSON.stringify(requestBody),
-        });
-
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
                 data = await mistralResponse.json();
-        console.error('Mistral AIレスポンス受信');
-        console.error('レスポンスステータス:', mistralResponse.status);
-        console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
+                console.error('AIレスポンス受信: ステータス=', mistralResponse.status);
 
                 // 成功した場合はループを抜ける
                 if (mistralResponse.ok) {
-                    if (retryCount > 0) {
-                        console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目の試行で成功)`);
-                    } else {
-                        console.error('✅ AI呼び出し成功 (初回で成功)');
-                    }
+                    console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目)`);
                     break;
                 }
                 
                 // 容量制限エラーの場合
                 if (mistralResponse.status === 429 && data.code === '3505') {
                     console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
-                    console.error('エラー詳細:', data);
                     
                     if (retryCount < maxRetries) {
                         // リトライ前に待機（より長い待機時間）
@@ -114,77 +105,90 @@ export default async function handler(req, res) {
                 
             } catch (error) {
                 console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} でエラー:`, error.message);
-                console.error('エラータイプ:', error.constructor.name);
                 
-                // ネットワークエラーや一時的なエラーの場合は再トライ
-                if (retryCount < maxRetries && (
+                // エラータイプの簡潔な分類
+                const isRetryableError = (
+                    error.name === 'AbortError' || // タイムアウト
                     error.name === 'TypeError' || // ネットワークエラー
-                    error.message.includes('fetch') || // fetch関連エラー
-                    error.message.includes('timeout') || // タイムアウトエラー
-                    error.message.includes('network') // ネットワークエラー
-                )) {
-                    const baseWaitTime = 2000; // 基本2秒
-                    const exponentialWaitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
-                    const waitTime = Math.min(baseWaitTime + exponentialWaitTime, 15000); // 最大15秒
-                    
-                    console.error(`一時的なエラーのため ${waitTime}ms 待機後にリトライします (${retryCount + 1}/${maxRetries}回目)`);
+                    error.message.includes('fetch') ||
+                    error.message.includes('timeout') ||
+                    error.message.includes('network') ||
+                    error.message.includes('ECONNRESET') ||
+                    error.message.includes('ENOTFOUND') ||
+                    error.message.includes('ETIMEDOUT')
+                );
+                
+                const isCapacityError = (
+                    error.message.includes('Service tier capacity exceeded') ||
+                    error.message.includes('AI容量制限') ||
+                    error.message.includes('容量制限') ||
+                    error.message.includes('rate limit')
+                );
+                
+                // 容量制限エラーの場合
+                if (isCapacityError && retryCount < maxRetries) {
+                    const waitTime = Math.min(5000 + (retryCount * 2000), 15000); // 5-15秒
+                    console.error(`容量制限エラー: ${waitTime}ms待機後にリトライ`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    retryCount++;
+                    continue;
+                }
+                
+                // 一時的なエラーの場合
+                if (isRetryableError && retryCount < maxRetries) {
+                    const waitTime = Math.min(2000 + (retryCount * 1000), 8000); // 2-8秒
+                    console.error(`一時的エラー: ${waitTime}ms待機後にリトライ`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     retryCount++;
                     continue;
                 } else {
-                    throw error;
+                    // 再試行不可能なエラーまたは最大試行回数に達した場合
+                    const errorMessage = isCapacityError 
+                        ? `AI容量制限により、モデル生成に失敗しました。${maxRetries + 1}回の試行を行いましたが、容量制限が継続しています。しばらく待ってから再試行してください。`
+                        : `AI呼び出しでエラーが発生しました: ${error.message}`;
+                    
+                    throw new Error(errorMessage);
                 }
             }
         }
 
         if (!data.choices || !data.choices[0] || !data.choices[0].message.content) {
-             console.error('Mistral AIから予期しない形式のレスポンス:', data);
-             throw new Error("Mistral AIから予期しない形式のレスポンスがありました。");
+             console.error('AIから予期しない形式のレスポンス');
+             throw new Error("AIから予期しない形式のレスポンスがありました。");
         }
+        
         const generatedText = data.choices[0].message.content;
-        console.error('AI生成テキスト受信:', generatedText.substring(0, 200) + '...');
-        console.error('AI生成テキスト全体:', generatedText);
+        console.error('AI生成テキスト受信:', generatedText.substring(0, 100) + '...');
 
         // 生成されたモデルの検証と修正
-        let finalGeneratedText = generatedText; // 修正可能な変数として宣言
+        let finalGeneratedText = generatedText;
         
         try {
             let generatedModel = JSON.parse(generatedText);
             
-                    // 編集モードの場合、境界条件を強制的に保持
+            // 編集モードの場合、境界条件を保持
                     if (mode === 'edit' && currentModel) {
-                        console.error('=== 編集モード: 境界条件保持処理開始 ===');
-                        console.error('ユーザープロンプト:', userPrompt);
-                        console.error('現在のモデル情報:', JSON.stringify(currentModel, null, 2));
-                        console.error('AI生成モデル:', JSON.stringify(generatedModel, null, 2));
+                console.error('編集モード: 境界条件保持処理');
                 
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
-                console.error('境界条件変更意図検出結果:', boundaryChangeIntent);
                 
-                // 第1次修正
+                // 境界条件保持処理
                 generatedModel = forceBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
-                
-                // 第2次修正: 緊急的な境界条件復元
                 generatedModel = emergencyBoundaryConditionFix(currentModel, generatedModel, boundaryChangeIntent);
-                
-                // 第3次修正: 最終的な境界条件強制復元
                 generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
                 
                 // 修正されたモデルでJSONを再生成
-        finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
                 
-                        // 最終テスト: 境界条件保持の検証
+                // 最終テスト
                         const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
-                        console.error('最終テスト結果:', finalTestResult);
-                
                 if (!finalTestResult.success) {
-                    console.error('境界条件保持に失敗しました。最終的な強制復元を実行します。');
+                    console.error('境界条件保持に失敗: 最終復元を実行');
                     generatedModel = ultimateBoundaryConditionFix(currentModel, generatedModel);
-            finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                    console.log('最終的な強制復元完了');
+                    finalGeneratedText = JSON.stringify(generatedModel, null, 2);
                 }
                 
-                        console.error('=== 編集モード: 境界条件保持処理完了 ===');
+                console.error('編集モード: 境界条件保持処理完了');
             }
             
         // 新規作成・編集両方で節点参照を検証（エラーが発生しても処理を続行）
@@ -199,50 +203,38 @@ export default async function handler(req, res) {
             // エラーが発生しても処理を続行
         }
         
-        // 4層4スパン構造の特別検証と修正
+        // 構造検証と修正
         try {
-            console.error('=== 構造検証開始 ===');
-            console.error('検証前のモデル:', JSON.stringify(generatedModel, null, 2));
-            console.error('検証前のテキスト:', finalGeneratedText.substring(0, 500));
+            console.error('構造検証開始');
             
             const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
-            console.error('構造検証結果:', structureValidation);
             
             if (!structureValidation.isValid) {
                 console.error('構造検証エラー:', structureValidation.errors);
-                console.error('構造修正を実行します');
-                console.error('修正前のモデル:', JSON.stringify(generatedModel, null, 2));
                 generatedModel = structureValidation.fixedModel;
-                console.error('修正後のモデル:', JSON.stringify(generatedModel, null, 2));
                 finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                console.error('修正後のテキスト:', finalGeneratedText.substring(0, 500));
                 console.error('構造修正完了');
             } else {
-                console.error('構造検証成功: 修正は不要');
+                console.error('構造検証成功');
             }
-            
-            console.error('=== 構造検証完了 ===');
         } catch (structureError) {
-            console.error('構造検証でエラーが発生しました:', structureError);
-            console.error('エラーの詳細:', structureError.message);
-            console.error('エラースタック:', structureError.stack);
-            // エラーが発生しても処理を続行
-            }
-            
-            // 編集モードの場合、境界条件の保持を検証
-            if (mode === 'edit' && currentModel) {
+            console.error('構造検証エラー:', structureError.message);
+        }
+        
+        // 編集モードの場合、境界条件の保持を検証
+        if (mode === 'edit' && currentModel) {
+            try {
                 const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
                 const validationResult = validateBoundaryConditions(currentModel, generatedModel, boundaryChangeIntent);
                 if (!validationResult.isValid) {
                     console.warn('境界条件保持の警告:', validationResult.warnings);
-                    
-                    // フォールバック: 境界条件保持が失敗した場合の最終的な安全網
-                    console.log('フォールバック機構を実行: 境界条件を最終的に復元します');
                     generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
-                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                    console.log('フォールバック処理完了');
+                    finalGeneratedText = JSON.stringify(generatedModel, null, 2);
                 }
+            } catch (boundaryError) {
+                console.error('境界条件検証エラー:', boundaryError.message);
             }
+        }
         } catch (parseError) {
         console.error('生成されたモデルの解析エラー:', parseError);
         console.error('エラーの詳細:', parseError.message);
@@ -296,13 +288,9 @@ export default async function handler(req, res) {
         // 最終的なモデルの状態を確認
         try {
             const finalModel = JSON.parse(finalGeneratedText);
-            console.error('=== 最終モデル状態確認 ===');
-            console.error('最終節点数:', finalModel.nodes ? finalModel.nodes.length : 'なし');
-            console.error('最終部材数:', finalModel.members ? finalModel.members.length : 'なし');
-            console.error('最終モデル:', JSON.stringify(finalModel, null, 2));
-            console.error('=== 最終モデル状態確認完了 ===');
+            console.error('最終モデル: 節点=', finalModel.nodes?.length || 0, '部材=', finalModel.members?.length || 0);
         } catch (parseError) {
-            console.error('最終モデルの解析エラー:', parseError);
+            console.error('最終モデルの解析エラー:', parseError.message);
         }
 
         const responseForFrontend = {
@@ -315,11 +303,7 @@ export default async function handler(req, res) {
             }]
         };
 
-        console.error('フロントエンドへのレスポンス送信:');
-        console.error('レスポンスサイズ:', JSON.stringify(responseForFrontend).length);
-        console.error('生成されたテキストサイズ:', finalGeneratedText.length);
-        console.error('生成されたテキスト（最初の500文字）:', finalGeneratedText.substring(0, 500));
-
+        console.error('レスポンス送信: サイズ=', JSON.stringify(responseForFrontend).length);
         res.status(200).json(responseForFrontend);
 
     } catch (error) {
@@ -343,106 +327,38 @@ export default async function handler(req, res) {
 }
 
 function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '') {
-    // ユーザープロンプトから構造タイプを検出
+    // ユーザープロンプトから構造タイプと次元を検出
     const structureType = detectStructureType(userPrompt);
+    const dimensions = detectStructureDimensions(userPrompt);
     
-    let prompt = `あなたは2Dフレーム構造解析モデルを生成する専門のアシスタントです。
+    // プロンプトサイズを最小限に抑える
+    let prompt = `2Dフレーム構造解析モデルを生成してください。
 
-**重要**: 編集モードの場合、既存の節点の境界条件（s）を絶対に変更しないでください。`;
-
-    if (mode === 'edit') {
-        prompt += `
-現在のモデル情報を基に、ユーザーの編集指示に従ってモデルを更新してください。
-既存の構造を保持しつつ、指示された変更のみを適用してください。
-
-**絶対に守ってください**: 既存の節点の境界条件（s）は絶対に変更しないでください。
-座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です。`;
-    } else {
-        prompt += `
-ユーザーからの自然言語による指示に基づいて、新しい構造モデルを作成してください。`;
-    }
-
-    prompt += `
-以下のJSON形式で構造モデルデータを出力してください。
-JSONデータのみを出力し、前後の説明やマークダウンの\`\`\`json ... \`\`\`は含めないでください。
-
-**JSONデータ構造:**
-- nodes: 節点配列 [{"x": 座標X, "y": 座標Y, "s": 境界条件}]
-- members: 部材配列 [{"i": 始点節点番号, "j": 終点節点番号, "E": ヤング係数, "I": 断面二次モーメント, "A": 断面積, "Z": 断面係数}]
-
+**出力**: JSONデータのみ（説明不要）
+**形式**: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
 **境界条件**: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-**節点番号**: 配列の順序で決まる（1から開始）
-**部材の節点参照**: 必ず存在する節点番号のみを参照`;
+**節点番号**: 配列順序（1から開始）`;
 
-    // 構造タイプに応じて例を追加
+    // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'truss') {
         prompt += `
-
-**トラス構造の例（スパン15m、高さ3m）:**
-- 7節点、11部材（上弦3本+下弦4本+斜材6本）
-- 支点: 左端ピン（"p"）、右端ローラー（"r"）
-- 全ての接合条件をピン接合（"pinned"）に設定
-- 下弦材は必ず全ての下部節点間を接続（欠落させない）`;
+**トラス**: 左端"p"、右端"r"、下弦材全接続`;
     } else if (structureType === 'frame') {
-        // ラーメン構造の一般的なルール
-        prompt += `
-
-**ラーメン構造の基本ルール:**
-- 多層多スパン構造を正確に生成してください
-- 層数とスパン数はユーザーの指示に従ってください
-- 全ての柱と梁を適切に配置してください
-
-**節点配置のルール:**
-- N層構造 = (N+1)層の節点が必要（地面を含む）
-- Mスパン構造 = (M+1)列の節点が必要
-- 節点総数 = (N+1) × (M+1)
-
-**部材配置のルール:**
-- 柱の数 = Mスパン × N層
-- 梁の数 = Mスパン × (N+1)層（各層に梁を配置）
-- 部材総数 = M × N + M × (N+1) = M × (2N+1)
-
-**座標設定のルール:**
-- X座標: 0, スパン長, 2×スパン長, ..., M×スパン長
-- Y座標: 0, 階高, 2×階高, ..., N×階高
-
-**例（3層2スパン、スパン6m、階高3.5m）:**
-- 節点: 12個（4層×3列）
-- 部材: 15個（6柱+9梁）
-- X座標: 0, 6, 12m
-- Y座標: 0, 3.5, 7, 10.5m`;
-        
-        prompt += `
-**重要**: ラーメン構造では接合条件を"rigid"（デフォルト）に設定してください。`;
+        // 層数・スパン数が検出された場合のみ詳細ルールを追加
+        if (dimensions.layers > 0 && dimensions.spans > 0) {
+            const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
+            const expectedMembers = dimensions.spans * (2 * dimensions.layers + 1);
+            
+            prompt += `
+**ラーメン(${dimensions.layers}層${dimensions.spans}スパン)**: 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m`;
     } else {
         prompt += `
-
-**基本的な構造の例:**
-- 2節点、1部材の単純梁
-- 両端を固定支点（"x"）に設定`;
+**ラーメン**: 多層多スパン、全柱梁配置`;
+        }
     }
 
     prompt += `
-
-**重要なルール:**
-- 節点番号は配列の順序で決まります（1から開始）
-- 部材のiとjは必ず存在する節点番号を参照してください
-- 存在しない節点番号を参照することは絶対に禁止です
-- 断面性能値が不明な場合は一般的な鋼材断面の値を仮定してください
-- 座標系は右方向がX軸正、上方向がY軸正です
-
-**境界条件の一般的な設定ルール:**
-- 地面に接する節点（Y座標=0）: 通常は固定支点（"x"）またはピン支点（"p"）
-- 中間節点: 通常は自由（"f"）
-- 支点の種類: "x"（固定）、"p"（ピン）、"r"（ローラー）、"f"（自由）
-
-**多層多スパン構造の特別ルール:**
-- 必ず全ての柱と梁を配置してください
-- 柱の配置: 各層で同じX座標に垂直に配置
-- 梁の配置: 各層で柱間を水平に接続
-- 部材数の確認: 節点数と部材数が計算式と一致することを確認
-- 節点番号の連続性: 1から順番に番号を付けてください
-- ユーザーの指示する層数とスパン数を正確に反映してください`;
+**重要**: 節点番号は存在するもののみ参照、地面節点は"x"`;
 
     return prompt;
 }

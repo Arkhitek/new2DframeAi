@@ -28,6 +28,9 @@ export default async function handler(req, res) {
         
         const API_URL = 'https://api.mistral.ai/v1/chat/completions';
         
+        // retryCount変数を先に定義
+        let retryCount = 0;
+        
         const systemPrompt = createSystemPromptForBackend(mode, currentModel, userPrompt, retryCount);
         
         // 追加編集モードの場合は現在のモデル情報を含めてプロンプトを作成
@@ -48,7 +51,6 @@ export default async function handler(req, res) {
         // 最適化されたリトライ機能付きAI呼び出し
         let mistralResponse;
         let data;
-        let retryCount = 0;
         const maxRetries = 5; // リトライ回数を5回に増加
         
         while (retryCount <= maxRetries) {

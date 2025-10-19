@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {
-    console.error('=== AIモデル生成API開始 ===');
+    console.error('AIモデル生成API開始');
     
     if (req.method !== 'POST') {
         console.error('メソッドエラー: POST以外のリクエスト');

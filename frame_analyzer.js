@@ -13858,8 +13858,8 @@ function safeAlert(message) {
 // AI生成中はconfirmを非表示にする関数
 function safeConfirm(message) {
     if (isAIGenerationInProgress) {
-        console.log('AI生成中: confirmをスキップしました -', message);
-        return false; // デフォルトでfalseを返す
+        console.log('AI生成中: confirmをスキップして自動でtrueを返します -', message);
+        return true; // AI生成中は自動でtrueを返してモデルを適用
     }
     return confirm(message);
 }

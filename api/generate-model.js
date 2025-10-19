@@ -96,7 +96,7 @@ export default async function handler(req, res) {
                     } else {
                         // 最大リトライ回数に達した場合はプログラム的生成にフォールバック
                         console.error('=== 最大リトライ回数に達しました: プログラム的生成にフォールバック ===');
-                        return await generateModelProgrammatically(userPrompt, mode, currentModel);
+                        return await generateModelProgrammatically(userPrompt, mode, currentModel, res);
                     }
                 }
                 
@@ -1541,7 +1541,7 @@ function validateTopLayerMembers(model) {
 }
 
 // AI容量制限エラー時のプログラム的生成機能
-async function generateModelProgrammatically(userPrompt, mode, currentModel) {
+async function generateModelProgrammatically(userPrompt, mode, currentModel, res) {
     console.error('=== プログラム的生成開始 ===');
     console.error('ユーザープロンプト:', userPrompt);
     

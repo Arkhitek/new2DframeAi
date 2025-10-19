@@ -336,10 +336,27 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // リトライ回数に応じてプロンプトを簡潔化
     if (retryCount >= 2) {
         // 3回目以降は極限まで簡潔
-        return `2D構造生成。JSON出力のみ。
+        let simplePrompt = `2D構造生成。JSON出力のみ。
 {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}]}
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）`;
+        
+        // 構造タイプに応じた重要ルールを追加
+        if (structureType === 'beam') {
+            simplePrompt += `
+重要: 中間節点は"f"のみ、両端のみ"p"や"x"、地面節点の概念なし`;
+        } else if (structureType === 'truss') {
+            simplePrompt += `
+重要: 左端"p"、右端"r"、中間節点"f"、地面節点の概念なし`;
+        } else if (structureType === 'frame') {
+            simplePrompt += `
+重要: 地面節点は"x"、上部節点は"f"`;
+        } else {
+            simplePrompt += `
+重要: 中間節点は"f"のみ、両端のみ"p"や"x"`;
+        }
+        
+        return simplePrompt;
     }
     
     // 通常のプロンプト
@@ -353,18 +370,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (structureType === 'beam') {
         // カンチレバー梁の検出
         if (prompt.includes('カンチレバー') || prompt.includes('cantilever')) {
-            prompt += `
-カンチレバー梁: 固定端"x"、自由端"f"、中間節点"f"`;
+        prompt += `
+カンチレバー梁: 固定端のみ"x"、他は全て"f"、中間節点に"p"や"x"は禁止`;
         } else if (dimensions.spans > 1) {
             prompt += `
-連続梁: 両端"p"、中間節点"f"、スパン長に応じた節点配置`;
+連続梁: 両端のみ"p"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
         } else {
             prompt += `
-単純梁: 両端"p"、中間節点"f"、スパン長に応じた節点配置`;
+単純梁: 両端のみ"p"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
         }
     } else if (structureType === 'truss') {
         prompt += `
-トラス: 左端"p"、右端"r"、中間節点"f"、下弦材全接続`;
+トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、中間節点に"p"や"x"は禁止`;
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
@@ -379,8 +396,31 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         }
     }
 
-    prompt += `
-重要: 節点番号は存在するもののみ参照、地面節点は"x"、中間節点は"f"（構造タイプに応じて適切に設定）`;
+    // 構造タイプに応じた重要ルールを追加
+    if (structureType === 'beam') {
+        prompt += `
+重要: 節点番号は存在するもののみ参照、梁構造では地面節点の概念なし`;
+    } else if (structureType === 'truss') {
+        prompt += `
+重要: 節点番号は存在するもののみ参照、トラス構造では地面節点の概念なし`;
+    } else if (structureType === 'frame') {
+        prompt += `
+重要: 節点番号は存在するもののみ参照、地面節点は"x"`;
+    } else {
+        prompt += `
+重要: 節点番号は存在するもののみ参照`;
+    }
+    
+    // 具体的な例を追加（梁構造のみ）
+    if (structureType === 'beam') {
+        if (dimensions.spans > 1) {
+            prompt += `
+例: 連続梁なら[{"x":0,"y":0,"s":"p"},{"x":6,"y":0,"s":"f"},{"x":14,"y":0,"s":"f"},{"x":20,"y":0,"s":"p"}]`;
+        } else {
+            prompt += `
+例: 単純梁なら[{"x":0,"y":0,"s":"p"},{"x":12,"y":0,"s":"p"}]`;
+        }
+    }
 
     return prompt;
 }

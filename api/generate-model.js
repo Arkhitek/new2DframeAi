@@ -1065,56 +1065,51 @@ function validateAndFixStructure(model, userPrompt) {
         
         // 期待値の設定
         const expectedNodes = 25; // 5層×5列
-        const expectedMembers = 36; // 20柱+16梁
+        const expectedMembers = 36; // 16柱+20梁
         const expectedSpans = 4; // 4スパン
         const expectedLayers = 4; // 4層
+        
+        // 構造の検証
+        let needsCorrection = false;
         
         // 節点数の検証
         console.error(`節点数検証: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
         if (fixedModel.nodes.length !== expectedNodes) {
             errors.push(`節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
-            console.error(`節点数修正: ${fixedModel.nodes.length} → ${expectedNodes}`);
-            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrect4Layer4SpanStructure();
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
-            console.error('節点数修正後の構造:', {
-                nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length
-            });
+            needsCorrection = true;
         }
         
         // 部材数の検証
         console.error(`部材数検証: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
         if (fixedModel.members.length !== expectedMembers) {
             errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
-            console.error(`部材数修正: ${fixedModel.members.length} → ${expectedMembers}`);
-            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrect4Layer4SpanStructure();
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
-            console.error('部材数修正後の構造:', {
-                nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length
-            });
+            needsCorrection = true;
         }
         
         // スパン数の検証
         const spanCount = validateSpanCount(fixedModel);
         if (!spanCount.isValid) {
             errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
-            console.error('スパン数修正を実行');
-            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrect4Layer4SpanStructure();
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
+            needsCorrection = true;
         }
         
         // 4層目の部材配置検証
         const topLayerValidation = validateTopLayerMembers(fixedModel);
         if (!topLayerValidation.isValid) {
             errors.push(`4層目の部材配置が不正: ${topLayerValidation.errors.join(', ')}`);
-            console.error('4層目の部材配置修正を実行');
+            needsCorrection = true;
+        }
+        
+        // 修正が必要な場合は一度だけ実行
+        if (needsCorrection) {
+            console.error('構造修正を実行します');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             fixedModel = generateCorrect4Layer4SpanStructure();
             console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
+            console.error('修正後の構造:', {
+                nodeCount: fixedModel.nodes.length,
+                memberCount: fixedModel.members.length
+            });
         }
     } else {
         // 4層4スパン構造の検出に失敗した場合でも、構造が似ている場合は修正を試行
@@ -1197,8 +1192,8 @@ function generateCorrect4Layer4SpanStructure() {
             }
         }
         
-        // 柱の生成（20本）
-        for (let span = 0; span < 5; span++) {
+        // 柱の生成（16本：4列×4層）
+        for (let span = 0; span < 4; span++) {
             for (let layer = 0; layer < 4; layer++) {
                 const startNode = layer * 5 + span + 1;
                 const endNode = (layer + 1) * 5 + span + 1;
@@ -1214,7 +1209,7 @@ function generateCorrect4Layer4SpanStructure() {
             }
         }
         
-        // 梁の生成（16本）
+        // 梁の生成（20本：4層×5列）
         for (let layer = 1; layer < 5; layer++) {
             for (let span = 0; span < 4; span++) {
                 const startNode = layer * 5 + span + 1;

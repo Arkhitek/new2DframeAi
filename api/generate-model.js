@@ -481,8 +481,14 @@ function detectStructureDimensions(userPrompt) {
         /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
     ];
     
+    console.error('層数検出デバッグ:', {
+        prompt: prompt,
+        patterns: layerPatterns.map(p => p.toString())
+    });
+    
     for (const pattern of layerPatterns) {
         const match = prompt.match(pattern);
+        console.error(`パターン ${pattern} のマッチ結果:`, match);
         if (match) {
             const extractedNumber = match[1];
             layers = parseInt(extractedNumber, 10);
@@ -505,6 +511,7 @@ function detectStructureDimensions(userPrompt) {
     
     for (const pattern of spanPatterns) {
         const match = prompt.match(pattern);
+        console.error(`スパンパターン ${pattern} のマッチ結果:`, match);
         if (match) {
             const extractedNumber = match[1];
             spans = parseInt(extractedNumber, 10);
@@ -1409,7 +1416,7 @@ function generateCorrect4Layer4SpanStructure() {
         
         // 梁の生成（20本：5層×4スパン）
         console.error('梁の生成開始: 5層×4スパン');
-        for (let layer = 1; layer < 5; layer++) {
+        for (let layer = 1; layer <= 5; layer++) {
             for (let span = 0; span < 4; span++) {
                 const startNode = layer * 5 + span + 1;
                 const endNode = layer * 5 + span + 2;
@@ -1430,7 +1437,8 @@ function generateCorrect4Layer4SpanStructure() {
         console.error('部材生成詳細:', {
             columnCount: 16,
             beamCount: 20,
-            totalMembers: members.length
+            totalMembers: members.length,
+            expectedTotal: 36
         });
         
         console.error('生成された構造:', {

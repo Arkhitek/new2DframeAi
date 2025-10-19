@@ -94,9 +94,9 @@ export default async function handler(req, res) {
                         retryCount++;
                         continue;
                     } else {
-                        // 最大リトライ回数に達した場合はプログラム的生成にフォールバック
-                        console.error('=== 最大リトライ回数に達しました: プログラム的生成にフォールバック ===');
-                        return await generateModelProgrammatically(userPrompt, mode, currentModel, res);
+                        // 最大リトライ回数に達した場合はエラーを返す
+                        console.error('=== 最大リトライ回数に達しました: AI生成を諦めます ===');
+                        throw new Error('AI容量制限により、モデル生成に失敗しました。しばらく待ってから再試行してください。');
                     }
                 }
                 
@@ -1537,115 +1537,6 @@ function validateTopLayerMembers(model) {
             isValid: false,
             errors: ['検証処理でエラーが発生しました']
         };
-    }
-}
-
-// AI容量制限エラー時のプログラム的生成機能
-async function generateModelProgrammatically(userPrompt, mode, currentModel, res) {
-    console.error('=== プログラム的生成開始 ===');
-    console.error('ユーザープロンプト:', userPrompt);
-    
-    try {
-        // プロンプトから構造タイプと次元を検出
-        const structureType = detectStructureType(userPrompt);
-        const dimensions = detectStructureDimensions(userPrompt);
-        
-        console.error('検出された構造タイプ:', structureType);
-        console.error('検出された次元:', dimensions);
-        
-        let generatedModel;
-        
-        // 4層4スパンラーメン構造の特別処理（より柔軟な検出）
-        if (structureType === 'frame' && 
-            ((dimensions.layers === 4 && dimensions.spans === 4) || 
-             userPrompt.includes('4層') && userPrompt.includes('4スパン'))) {
-            console.error('4層4スパンラーメン構造をプログラム的に生成');
-            generatedModel = generateCorrect4Layer4SpanStructure();
-        }
-        // 5層4スパンラーメン構造の特別処理
-        else if (structureType === 'frame' && 
-                 ((dimensions.layers === 5 && dimensions.spans === 4) ||
-                  userPrompt.includes('5層') && userPrompt.includes('4スパン'))) {
-            console.error('5層4スパンラーメン構造をプログラム的に生成');
-            generatedModel = generateCorrect5Layer4SpanStructure();
-        }
-        // その他の構造は基本的な生成
-        else {
-            console.error('基本的な構造をプログラム的に生成');
-            generatedModel = generateBasicStructure(userPrompt, dimensions);
-        }
-        
-        console.error('プログラム的生成完了:', {
-            nodeCount: generatedModel.nodes.length,
-            memberCount: generatedModel.members.length
-        });
-        
-        console.error('=== プログラム的生成レスポンス送信開始 ===');
-        
-        // Vercelのサーバーレス関数形式でレスポンスを送信
-        const responseData = {
-            success: true,
-            model: generatedModel,
-            message: 'AI容量制限のため、プログラム的に構造を生成しました。',
-            generatedBy: 'programmatic'
-        };
-        
-        console.error('=== プログラム的生成レスポンス送信完了 ===');
-        
-        // 通常のAIレスポンス形式に合わせる
-        const responseForFrontend = {
-            candidates: [{
-                content: {
-                    parts: [{
-                        text: JSON.stringify(generatedModel, null, 2)
-                    }]
-                }
-            }],
-            success: true,
-            generatedBy: 'programmatic',
-            message: 'AI容量制限のため、プログラム的に構造を生成しました。'
-        };
-        
-        res.status(200).json(responseForFrontend);
-        return;
-        
-    } catch (error) {
-        console.error('プログラム的生成でエラーが発生しました:', error);
-        console.error('エラーの詳細:', error.message);
-        console.error('エラースタック:', error.stack);
-        
-        console.error('=== エラー時のフォールバックレスポンス送信開始 ===');
-        // エラーが発生した場合は、最小限の構造を生成
-        const fallbackModel = {
-            nodes: [
-                {x: 0, y: 0, s: 'x'},
-                {x: 6, y: 0, s: 'x'},
-                {x: 0, y: 3.5, s: 'f'},
-                {x: 6, y: 3.5, s: 'f'}
-            ],
-            members: [
-                {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
-            ]
-        };
-        
-        const fallbackResponseForFrontend = {
-            candidates: [{
-                content: {
-                    parts: [{
-                        text: JSON.stringify(fallbackModel, null, 2)
-                    }]
-                }
-            }],
-            success: true,
-            generatedBy: 'programmatic',
-            message: 'プログラム的生成でエラーが発生しましたが、最小限の構造を生成しました。'
-        };
-        
-        console.error('=== エラー時のフォールバックレスポンス送信完了 ===');
-        res.status(200).json(fallbackResponseForFrontend);
-        return;
     }
 }
 

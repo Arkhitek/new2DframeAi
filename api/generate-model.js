@@ -470,35 +470,41 @@ function detectStructureType(userPrompt) {
 function detectStructureDimensions(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
-    // 層数の検出
+    // 層数の検出（より柔軟な検出）
     let layers = 1;
     const layerPatterns = [
         /(\d+)層/g,
         /(\d+)階/g,
         /(\d+)story/g,
-        /(\d+)floor/g
+        /(\d+)floor/g,
+        /(\d+)\s*層/g,  // 数字と層の間にスペースがある場合
+        /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
     ];
     
     for (const pattern of layerPatterns) {
         const match = prompt.match(pattern);
         if (match) {
             layers = parseInt(match[1]);
+            console.error(`層数検出: "${match[0]}" -> ${layers}`);
             break;
         }
     }
     
-    // スパン数の検出
+    // スパン数の検出（より柔軟な検出）
     let spans = 1;
     const spanPatterns = [
         /(\d+)スパン/g,
         /(\d+)span/g,
-        /(\d+)間/g
+        /(\d+)間/g,
+        /(\d+)\s*スパン/g,  // 数字とスパンの間にスペースがある場合
+        /(\d+)\s*span/g     // 数字とspanの間にスペースがある場合
     ];
     
     for (const pattern of spanPatterns) {
         const match = prompt.match(pattern);
         if (match) {
             spans = parseInt(match[1]);
+            console.error(`スパン数検出: "${match[0]}" -> ${spans}`);
             break;
         }
     }
@@ -513,6 +519,8 @@ function detectStructureDimensions(userPrompt) {
             spans = 4;
         }
     }
+    
+    console.error(`最終検出結果: layers=${layers}, spans=${spans}`);
     
     return {
         layers: Math.max(1, layers),
@@ -1516,13 +1524,17 @@ async function generateModelProgrammatically(userPrompt, mode, currentModel) {
         
         let generatedModel;
         
-        // 4層4スパンラーメン構造の特別処理
-        if (structureType === 'frame' && dimensions.layers === 4 && dimensions.spans === 4) {
+        // 4層4スパンラーメン構造の特別処理（より柔軟な検出）
+        if (structureType === 'frame' && 
+            ((dimensions.layers === 4 && dimensions.spans === 4) || 
+             userPrompt.includes('4層') && userPrompt.includes('4スパン'))) {
             console.error('4層4スパンラーメン構造をプログラム的に生成');
             generatedModel = generateCorrect4Layer4SpanStructure();
         }
         // 5層4スパンラーメン構造の特別処理
-        else if (structureType === 'frame' && dimensions.layers === 5 && dimensions.spans === 4) {
+        else if (structureType === 'frame' && 
+                 ((dimensions.layers === 5 && dimensions.spans === 4) ||
+                  userPrompt.includes('5層') && userPrompt.includes('4スパン'))) {
             console.error('5層4スパンラーメン構造をプログラム的に生成');
             generatedModel = generateCorrect5Layer4SpanStructure();
         }

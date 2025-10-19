@@ -484,9 +484,12 @@ function detectStructureDimensions(userPrompt) {
     for (const pattern of layerPatterns) {
         const match = prompt.match(pattern);
         if (match) {
-            layers = parseInt(match[1]);
-            console.error(`層数検出: "${match[0]}" -> ${layers}`);
-            break;
+            const extractedNumber = match[1];
+            layers = parseInt(extractedNumber, 10);
+            console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}`);
+            if (!isNaN(layers)) {
+                break;
+            }
         }
     }
     
@@ -503,9 +506,12 @@ function detectStructureDimensions(userPrompt) {
     for (const pattern of spanPatterns) {
         const match = prompt.match(pattern);
         if (match) {
-            spans = parseInt(match[1]);
-            console.error(`スパン数検出: "${match[0]}" -> ${spans}`);
-            break;
+            const extractedNumber = match[1];
+            spans = parseInt(extractedNumber, 10);
+            console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}`);
+            if (!isNaN(spans)) {
+                break;
+            }
         }
     }
     
@@ -1402,10 +1408,13 @@ function generateCorrect4Layer4SpanStructure() {
         }
         
         // 梁の生成（20本：5層×4スパン）
+        console.error('梁の生成開始: 5層×4スパン');
         for (let layer = 1; layer < 5; layer++) {
             for (let span = 0; span < 4; span++) {
                 const startNode = layer * 5 + span + 1;
                 const endNode = layer * 5 + span + 2;
+                
+                console.error(`梁生成: 層${layer}, スパン${span}, 節点${startNode}->${endNode}`);
                 
                 members.push({
                     i: startNode,
@@ -1417,6 +1426,12 @@ function generateCorrect4Layer4SpanStructure() {
                 });
             }
         }
+        
+        console.error('部材生成詳細:', {
+            columnCount: 16,
+            beamCount: 20,
+            totalMembers: members.length
+        });
         
         console.error('生成された構造:', {
             nodeCount: nodes.length,

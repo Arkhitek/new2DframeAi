@@ -127,6 +127,8 @@ export default async function handler(req, res) {
         console.error('AI生成テキスト全体:', generatedText);
 
         // 生成されたモデルの検証と修正
+        let finalGeneratedText = generatedText; // 修正可能な変数として宣言
+        
         try {
             let generatedModel = JSON.parse(generatedText);
             
@@ -150,7 +152,7 @@ export default async function handler(req, res) {
         generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
         
         // 修正されたモデルでJSONを再生成
-        generatedText = JSON.stringify(generatedModel, null, 2);
+        finalGeneratedText = JSON.stringify(generatedModel, null, 2);
         
                 // 最終テスト: 境界条件保持の検証
                 const finalTestResult = testBoundaryConditionPreservation(currentModel, generatedModel, boundaryChangeIntent);
@@ -159,7 +161,7 @@ export default async function handler(req, res) {
         if (!finalTestResult.success) {
             console.error('境界条件保持に失敗しました。最終的な強制復元を実行します。');
             generatedModel = ultimateBoundaryConditionFix(currentModel, generatedModel);
-            generatedText = JSON.stringify(generatedModel, null, 2);
+            finalGeneratedText = JSON.stringify(generatedModel, null, 2);
             console.log('最終的な強制復元完了');
         }
         
@@ -182,7 +184,7 @@ export default async function handler(req, res) {
         try {
             console.error('=== 構造検証開始 ===');
             console.error('検証前のモデル:', JSON.stringify(generatedModel, null, 2));
-            console.error('検証前のテキスト:', generatedText.substring(0, 500));
+            console.error('検証前のテキスト:', finalGeneratedText.substring(0, 500));
             
             const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
             console.error('構造検証結果:', structureValidation);
@@ -193,8 +195,8 @@ export default async function handler(req, res) {
                 console.error('修正前のモデル:', JSON.stringify(generatedModel, null, 2));
                 generatedModel = structureValidation.fixedModel;
                 console.error('修正後のモデル:', JSON.stringify(generatedModel, null, 2));
-                generatedText = JSON.stringify(generatedModel, null, 2);
-                console.error('修正後のテキスト:', generatedText.substring(0, 500));
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                console.error('修正後のテキスト:', finalGeneratedText.substring(0, 500));
                 console.error('構造修正完了');
             } else {
                 console.error('構造検証成功: 修正は不要');
@@ -218,7 +220,7 @@ export default async function handler(req, res) {
                 // フォールバック: 境界条件保持が失敗した場合の最終的な安全網
                 console.log('フォールバック機構を実行: 境界条件を最終的に復元します');
                 generatedModel = finalBoundaryConditionRestore(currentModel, generatedModel, boundaryChangeIntent);
-                generatedText = JSON.stringify(generatedModel, null, 2);
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
                 console.log('フォールバック処理完了');
             }
         }
@@ -251,7 +253,7 @@ export default async function handler(req, res) {
                 programmaticModel = generateBasicStructure(userPrompt, dimensions);
             }
             
-            generatedText = JSON.stringify(programmaticModel, null, 2);
+            finalGeneratedText = JSON.stringify(programmaticModel, null, 2);
             console.error('プログラム的生成完了:', {
                 nodeCount: programmaticModel.nodes.length,
                 memberCount: programmaticModel.members.length
@@ -260,7 +262,7 @@ export default async function handler(req, res) {
         } catch (programmaticError) {
             console.error('プログラム的生成でもエラーが発生しました:', programmaticError);
             // 最終的なフォールバックとして、最小限の構造を生成
-            generatedText = JSON.stringify({
+            finalGeneratedText = JSON.stringify({
                 nodes: [
                     {x: 0, y: 0, s: 'x'},
                     {x: 6, y: 0, s: 'x'},
@@ -278,7 +280,7 @@ export default async function handler(req, res) {
 
         // 最終的なモデルの状態を確認
         try {
-            const finalModel = JSON.parse(generatedText);
+            const finalModel = JSON.parse(finalGeneratedText);
             console.error('=== 最終モデル状態確認 ===');
             console.error('最終節点数:', finalModel.nodes ? finalModel.nodes.length : 'なし');
             console.error('最終部材数:', finalModel.members ? finalModel.members.length : 'なし');
@@ -292,7 +294,7 @@ export default async function handler(req, res) {
             candidates: [{
                 content: {
                     parts: [{
-                        text: generatedText
+                        text: finalGeneratedText
                     }]
                 }
             }]
@@ -300,8 +302,8 @@ export default async function handler(req, res) {
 
         console.error('フロントエンドへのレスポンス送信:');
         console.error('レスポンスサイズ:', JSON.stringify(responseForFrontend).length);
-        console.error('生成されたテキストサイズ:', generatedText.length);
-        console.error('生成されたテキスト（最初の500文字）:', generatedText.substring(0, 500));
+        console.error('生成されたテキストサイズ:', finalGeneratedText.length);
+        console.error('生成されたテキスト（最初の500文字）:', finalGeneratedText.substring(0, 500));
 
         res.status(200).json(responseForFrontend);
 
@@ -1391,7 +1393,7 @@ function generateCorrect4Layer4SpanStructure() {
             }
         }
         
-        // 梁の生成（20本：4層×5列）
+        // 梁の生成（20本：5層×4スパン）
         for (let layer = 1; layer < 5; layer++) {
             for (let span = 0; span < 4; span++) {
                 const startNode = layer * 5 + span + 1;

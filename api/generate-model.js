@@ -351,8 +351,11 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'beam') {
-        // スパン数を検出して梁の詳細ルールを追加
-        if (dimensions.spans > 1) {
+        // カンチレバー梁の検出
+        if (prompt.includes('カンチレバー') || prompt.includes('cantilever')) {
+            prompt += `
+カンチレバー梁: 固定端"x"、自由端"f"、中間節点"f"`;
+        } else if (dimensions.spans > 1) {
             prompt += `
 連続梁: 両端"p"、中間節点"f"、スパン長に応じた節点配置`;
         } else {
@@ -361,7 +364,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         }
     } else if (structureType === 'truss') {
         prompt += `
-トラス: 左端"p"、右端"r"、下弦材全接続`;
+トラス: 左端"p"、右端"r"、中間節点"f"、下弦材全接続`;
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
@@ -377,7 +380,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     }
 
     prompt += `
-重要: 節点番号は存在するもののみ参照、地面節点は"x"`;
+重要: 節点番号は存在するもののみ参照、地面節点は"x"、中間節点は"f"（構造タイプに応じて適切に設定）`;
 
     return prompt;
 }
@@ -387,7 +390,7 @@ function detectStructureType(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
     // 梁構造のキーワード（最優先）
-    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', '支点', 'ピン支点', '固定支点'];
+    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', '支点', 'ピン支点', '固定支点', 'カンチレバー', 'cantilever'];
     if (beamKeywords.some(keyword => prompt.includes(keyword))) {
         return 'beam';
     }

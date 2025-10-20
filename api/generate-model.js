@@ -395,10 +395,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
             const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
-            const expectedMembers = dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1);
+            const expectedColumns = (dimensions.spans + 1) * dimensions.layers;
+            const expectedBeams = dimensions.spans * (dimensions.layers + 1);
+            const expectedMembers = expectedColumns + expectedBeams;
             
             prompt += `
-ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個、座標X=0,6,12...m、Y=0,3.5,7...m
+ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
+座標: X=0,6,12...m、Y=0,3.5,7...m
+境界条件: 地面節点は"x"、上部節点は"f"
 荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
         } else {
             prompt += `
@@ -446,7 +450,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 function detectStructureType(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
-    // 梁構造のキーワード（最優先）
+    // ラーメン構造のキーワード（最優先）
+    const frameKeywords = ['ラーメン', 'フレーム', 'frame', '門型', '多層', '層', '柱', '階'];
+    if (frameKeywords.some(keyword => prompt.includes(keyword))) {
+        return 'frame';
+    }
+    
+    // 梁構造のキーワード
     const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', '支点', 'ピン支点', '固定支点', 'カンチレバー', 'cantilever'];
     if (beamKeywords.some(keyword => prompt.includes(keyword))) {
         return 'beam';
@@ -456,12 +466,6 @@ function detectStructureType(userPrompt) {
     const trussKeywords = ['トラス', 'truss', 'ワーレン', 'warren', 'プラット', 'pratt', 'ハウ', 'howe', '斜材', '弦材'];
     if (trussKeywords.some(keyword => prompt.includes(keyword))) {
         return 'truss';
-    }
-    
-    // ラーメン構造のキーワード（柱と梁の組み合わせ）
-    const frameKeywords = ['ラーメン', 'フレーム', 'frame', '門型', '多層', '層', '柱'];
-    if (frameKeywords.some(keyword => prompt.includes(keyword))) {
-        return 'frame';
     }
     
     return 'basic';
@@ -885,10 +889,10 @@ function validateSpanCount(model) {
         }
     }
     
-    // 部材数の検証
-    const expectedColumnCount = spanCount * (layerNodeCounts.length - 1); // 柱はスパン数×層数-1
-    const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数
-    const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
+        // 部材数の検証
+        const expectedColumnCount = (spanCount + 1) * (layerNodeCounts.length - 1); // 柱は(スパン数+1)×(層数-1)
+        const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数
+        const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {
             expectedColumnCount,

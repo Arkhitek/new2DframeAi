@@ -219,6 +219,23 @@ export default async function handler(req, res) {
             } else {
                 console.error('構造検証成功');
             }
+            
+            // 部材重複検出・修正
+            try {
+                console.error('部材重複検証開始');
+                const overlapValidation = validateAndFixMemberOverlap(generatedModel);
+                
+                if (!overlapValidation.isValid) {
+                    console.error('部材重複エラー:', overlapValidation.errors);
+                    generatedModel = overlapValidation.fixedModel;
+                    finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                    console.error('部材重複修正完了');
+                } else {
+                    console.error('部材重複検証成功');
+                }
+            } catch (overlapError) {
+                console.error('部材重複検証エラー:', overlapError.message);
+            }
         } catch (structureError) {
             console.error('構造検証エラー:', structureError.message);
             }
@@ -352,6 +369,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
         }
         
+        simplePrompt += `
+重要: 同じ節点間には1本の部材のみ配置（重複禁止）`;
+        
         // 構造タイプに応じた重要ルールを追加
         if (structureType === 'beam') {
             simplePrompt += `
@@ -361,7 +381,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 重要: 左端"p"、右端"r"、中間節点"f"、y=0の節点に支点を設定しない`;
         } else if (structureType === 'frame') {
             simplePrompt += `
-重要: 地面節点は"x"、上部節点は"f"`;
+重要: 地面節点は"x"、上部節点は"f"、y=0の地面には梁材（水平材）を配置しない`;
         } else {
             simplePrompt += `
 重要: 中間節点は"f"のみ、両端のみ"p"や"x"`;
@@ -422,13 +442,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         if (dimensions.layers > 0 && dimensions.spans > 0) {
             const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
             const expectedColumns = (dimensions.spans + 1) * dimensions.layers;
-            const expectedBeams = dimensions.spans * (dimensions.layers + 1);
+            const expectedBeams = dimensions.spans * dimensions.layers; // y=0の地面には梁材なし
             const expectedMembers = expectedColumns + expectedBeams;
             
             prompt += `
 ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
 座標: X=0,6,12...m、Y=0,3.5,7...m
-境界条件: 地面節点は"x"、上部節点は"f"`;
+境界条件: 地面節点は"x"、上部節点は"f"
+部材配置: y=0の地面には梁材（水平材）を配置しない`;
             if (loadIntent.hasLoadIntent) {
                 prompt += `
 荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
@@ -473,7 +494,8 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     
     // 全構造タイプに共通の例を追加
     prompt += `
-重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）`;
+重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
+部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）`;
 
     return prompt;
 }
@@ -951,7 +973,7 @@ function validateSpanCount(model) {
     
         // 部材数の検証
         const expectedColumnCount = (spanCount + 1) * (layerNodeCounts.length - 1); // 柱は(スパン数+1)×(層数-1)
-        const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数
+        const expectedBeamCount = spanCount * (layerNodeCounts.length - 1); // 梁はスパン数×(層数-1)（y=0の地面には梁材なし）
         const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {
@@ -1471,8 +1493,8 @@ function generateCorrectFrameStructure(layers, spans) {
         }
         
         // 梁の生成
-        console.error(`梁の生成開始: ${spans}スパン×${layers + 1}層`);
-        for (let layer = 0; layer <= layers; layer++) {
+        console.error(`梁の生成開始: ${spans}スパン×${layers}層（y=0の地面には梁材なし）`);
+        for (let layer = 1; layer <= layers; layer++) { // layer=1から開始（y=0をスキップ）
             for (let span = 0; span < spans; span++) {
                 const startNode = layer * (spans + 1) + span + 1;
                 const endNode = layer * (spans + 1) + span + 2;
@@ -1530,4 +1552,102 @@ function generateBasicStructure(userPrompt, dimensions) {
     const spans = dimensions.spans || 2;
     
     return generateCorrectFrameStructure(layers, spans);
+}
+
+// 部材重複検出・修正関数
+function validateAndFixMemberOverlap(model) {
+    try {
+        console.error('=== 部材重複検証開始 ===');
+        console.error('検証対象モデル:', JSON.stringify(model, null, 2));
+        
+        const errors = [];
+        let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
+        
+        if (!fixedModel.members || !Array.isArray(fixedModel.members)) {
+            console.error('部材配列が存在しません');
+            return { isValid: true, errors: [], fixedModel: fixedModel };
+        }
+        
+        // 重複部材を検出
+        const memberMap = new Map();
+        const duplicateMembers = [];
+        
+        fixedModel.members.forEach((member, index) => {
+            if (!member.i || !member.j) {
+                errors.push(`部材${index + 1}に節点番号が設定されていません`);
+                return;
+            }
+            
+            // 部材のキーを作成（小さい番号を先に）
+            const key = member.i < member.j ? `${member.i}-${member.j}` : `${member.j}-${member.i}`;
+            
+            if (memberMap.has(key)) {
+                duplicateMembers.push({
+                    index: index,
+                    member: member,
+                    duplicateWith: memberMap.get(key)
+                });
+                errors.push(`部材${index + 1}が部材${memberMap.get(key).index + 1}と重複しています（節点${member.i}-${member.j}）`);
+            } else {
+                memberMap.set(key, { index: index, member: member });
+            }
+        });
+        
+        // 重複部材を除去
+        if (duplicateMembers.length > 0) {
+            console.error(`重複部材を検出: ${duplicateMembers.length}個`);
+            
+            // 重複部材のインデックスを降順でソート（後ろから削除）
+            const indicesToRemove = duplicateMembers.map(d => d.index).sort((a, b) => b - a);
+            
+            indicesToRemove.forEach(index => {
+                console.error(`重複部材${index + 1}を削除: 節点${fixedModel.members[index].i}-${fixedModel.members[index].j}`);
+                fixedModel.members.splice(index, 1);
+            });
+            
+            console.error(`重複部材削除完了: ${indicesToRemove.length}個の部材を削除`);
+        }
+        
+        // 部材荷重の参照も修正
+        if (fixedModel.memberLoads && Array.isArray(fixedModel.memberLoads)) {
+            // 削除された部材の荷重を除去
+            const validMemberIndices = new Set(fixedModel.members.map((_, index) => index + 1));
+            
+            fixedModel.memberLoads = fixedModel.memberLoads.filter(load => {
+                const memberIndex = load.m || load.member;
+                if (validMemberIndices.has(memberIndex)) {
+                    return true;
+                } else {
+                    console.error(`無効な部材荷重を削除: 部材${memberIndex}`);
+                    return false;
+                }
+            });
+        }
+        
+        console.error('部材重複検証結果:', {
+            isValid: errors.length === 0,
+            errors: errors,
+            originalMemberCount: model.members.length,
+            fixedMemberCount: fixedModel.members.length
+        });
+        console.error('=== 部材重複検証完了 ===');
+        
+        return {
+            isValid: errors.length === 0,
+            errors: errors,
+            fixedModel: fixedModel
+        };
+        
+    } catch (error) {
+        console.error('validateAndFixMemberOverlap関数でエラーが発生しました:', error);
+        console.error('エラーの詳細:', error.message);
+        console.error('エラースタック:', error.stack);
+        
+        // エラーが発生した場合は、元のモデルをそのまま返す
+        return {
+            isValid: true,
+            errors: [],
+            fixedModel: model
+        };
+    }
 }

@@ -1,8 +1,18 @@
-// 外部と通信するための道具をインポートします
-import fetch from 'node-fetch';
+// Node.js 18+ ではグローバルの fetch を使用します（追加の依存不要）
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {
+    // CORSヘッダーを設定
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // OPTIONSリクエストの処理
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+    
     console.error('AIモデル生成API開始');
     
     if (req.method !== 'POST') {
@@ -408,11 +418,25 @@ export default async function handler(req, res) {
             bodySize: req.body ? JSON.stringify(req.body).length : 0
         });
         
-        res.status(500).json({ 
-            error: error.message,
-            timestamp: new Date().toISOString(),
-            requestId: req.headers['x-request-id'] || 'unknown'
+        // 環境変数の確認
+        console.error('環境変数確認:', {
+            hasMistralKey: !!process.env.MISTRAL_API_KEY,
+            nodeVersion: process.version,
+            platform: process.platform
         });
+        
+        // エラーレスポンスを安全に送信
+        try {
+            res.status(500).json({ 
+                error: error.message,
+                timestamp: new Date().toISOString(),
+                requestId: req.headers['x-request-id'] || 'unknown',
+                nodeVersion: process.version
+            });
+        } catch (responseError) {
+            console.error('レスポンス送信エラー:', responseError.message);
+            // レスポンスが既に送信されている場合は何もしない
+        }
     }
 }
 

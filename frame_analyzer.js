@@ -16554,8 +16554,8 @@ function getNewModeExamples() {
             text: '高さ3m、スパン15mのワーレントラス。上下弦材と斜材で構成。'
         },
         {
-            title: 'カンチレバー',
-            text: '長さ5mのカンチレバー梁。固定端は剛接合、自由端は荷重を作用。'
+            title: 'キャンチレバー（片持ち梁）',
+            text: '長さ5mのキャンチレバー（片持ち梁）。固定端は剛接合、自由端は荷重を作用。'
         },
         {
             title: '2層フレーム',
@@ -17148,7 +17148,8 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                                naturalLanguageInput.toLowerCase().includes('beam') ||
                                naturalLanguageInput.toLowerCase().includes('連続') ||
                                naturalLanguageInput.toLowerCase().includes('単純') ||
-                               naturalLanguageInput.toLowerCase().includes('カンチレバー');
+                               naturalLanguageInput.toLowerCase().includes('キャンチレバー') ||
+                               naturalLanguageInput.toLowerCase().includes('片持ち梁');
         
         const isTrussStructure = naturalLanguageInput.toLowerCase().includes('トラス') ||
                                naturalLanguageInput.toLowerCase().includes('truss') ||

@@ -273,9 +273,12 @@ export default async function handler(req, res) {
             if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
                 console.error(`${dimensions.layers}層${dimensions.spans}スパンラーメン構造をプログラム的に生成`);
                 programmaticModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
-            } else if (structureType === 'truss' && dimensions.layers > 0 && dimensions.spans > 0) {
-                console.error(`${dimensions.layers}層${dimensions.spans}スパントラス構造をプログラム的に生成`);
-                programmaticModel = generateCorrectTrussStructure(dimensions.layers, dimensions.spans, userPrompt);
+            } else if (structureType === 'truss') {
+                // トラス構造の場合は、高さとスパン長を直接検出して生成
+                const height = extractHeightFromPrompt(userPrompt);
+                const spanLength = extractSpanLengthFromPrompt(userPrompt);
+                console.error(`トラス構造をプログラム的に生成: 高さ=${height}m, スパン長=${spanLength}m`);
+                programmaticModel = generateCorrectTrussStructure(height, spanLength, userPrompt);
             } else {
                 console.error('基本的な構造をプログラム的に生成');
                 programmaticModel = generateBasicStructure(userPrompt, dimensions);
@@ -605,12 +608,16 @@ function detectStructureDimensions(userPrompt) {
         const match = prompt.match(pattern);
         console.error(`高さパターン ${pattern} のマッチ結果:`, match);
         if (match) {
-            const height = parseFloat(match[1]);
-            console.error(`高さ検出: "${match[0]}" -> 高さ: ${height}m`);
-            if (!isNaN(height)) {
-                // トラス構造では高さを層数として扱う（簡易的な対応）
-                layers = Math.max(layers, Math.ceil(height / 3.0)); // 3mごとに1層として計算
-                break;
+            // マッチした文字列から数字を抽出
+            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
+            if (numberMatch) {
+                const height = parseFloat(numberMatch[0]);
+                console.error(`高さ検出: "${match[0]}" -> 抽出された数字: "${numberMatch[0]}" -> 高さ: ${height}m`);
+                if (!isNaN(height)) {
+                    // トラス構造では高さを層数として扱う（簡易的な対応）
+                    layers = Math.max(layers, Math.ceil(height / 3.0)); // 3mごとに1層として計算
+                    break;
+                }
             }
         }
     }
@@ -655,12 +662,16 @@ function detectStructureDimensions(userPrompt) {
         const match = prompt.match(pattern);
         console.error(`スパン長パターン ${pattern} のマッチ結果:`, match);
         if (match) {
-            const spanLength = parseFloat(match[1]);
-            console.error(`スパン長検出: "${match[0]}" -> スパン長: ${spanLength}m`);
-            if (!isNaN(spanLength)) {
-                // トラス構造ではスパン長からスパン数を推定（簡易的な対応）
-                spans = Math.max(spans, Math.ceil(spanLength / 3.0)); // 3mごとに1スパンとして計算
-                break;
+            // マッチした文字列から数字を抽出
+            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
+            if (numberMatch) {
+                const spanLength = parseFloat(numberMatch[0]);
+                console.error(`スパン長検出: "${match[0]}" -> 抽出された数字: "${numberMatch[0]}" -> スパン長: ${spanLength}m`);
+                if (!isNaN(spanLength)) {
+                    // トラス構造ではスパン長からスパン数を推定（簡易的な対応）
+                    spans = Math.max(spans, Math.ceil(spanLength / 3.0)); // 3mごとに1スパンとして計算
+                    break;
+                }
             }
         }
     }
@@ -1610,6 +1621,58 @@ function generateCorrect5Layer4SpanStructure() {
     return generateCorrectFrameStructure(5, 4);
 }
 
+// プロンプトから高さを直接抽出する関数
+function extractHeightFromPrompt(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    const heightPatterns = [
+        /高さ(\d+(?:\.\d+)?)m/g,
+        /height\s*(\d+(?:\.\d+)?)m/g,
+        /(\d+(?:\.\d+)?)m.*高さ/g,
+        /(\d+(?:\.\d+)?)m.*height/g
+    ];
+    
+    for (const pattern of heightPatterns) {
+        const match = prompt.match(pattern);
+        if (match) {
+            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
+            if (numberMatch) {
+                const height = parseFloat(numberMatch[0]);
+                if (!isNaN(height)) {
+                    return height;
+                }
+            }
+        }
+    }
+    
+    return 3.0; // デフォルト値
+}
+
+// プロンプトからスパン長を直接抽出する関数
+function extractSpanLengthFromPrompt(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    const spanLengthPatterns = [
+        /スパン(\d+(?:\.\d+)?)m/g,
+        /span\s*(\d+(?:\.\d+)?)m/g,
+        /(\d+(?:\.\d+)?)m.*スパン/g,
+        /(\d+(?:\.\d+)?)m.*span/g
+    ];
+    
+    for (const pattern of spanLengthPatterns) {
+        const match = prompt.match(pattern);
+        if (match) {
+            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
+            if (numberMatch) {
+                const spanLength = parseFloat(numberMatch[0]);
+                if (!isNaN(spanLength)) {
+                    return spanLength;
+                }
+            }
+        }
+    }
+    
+    return 15.0; // デフォルト値
+}
+
 // ワーレントラス構造生成関数
 function generateCorrectTrussStructure(height, spanLength, userPrompt) {
     try {
@@ -1635,6 +1698,9 @@ function generateCorrectTrussStructure(height, spanLength, userPrompt) {
             nodes.push({ x: i, y: height, s: 'f' });
             topNodes.push(nodeIndex);
         }
+        
+        console.error(`下弦材節点: [${bottomNodes.join(', ')}]`);
+        console.error(`上弦材節点: [${topNodes.join(', ')}]`);
         
         // 下弦材の部材
         for (let i = 0; i < bottomNodes.length - 1; i++) {

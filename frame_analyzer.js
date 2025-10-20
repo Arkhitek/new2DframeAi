@@ -5502,8 +5502,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // 次に外部荷重による集中荷重を赤色で描画
+        console.log(`🔍 外部荷重描画チェック: showExternalLoads=${showExternalLoads}, nodeLoads数=${nodeLoads.length}`);
         if (showExternalLoads) {
             nodeLoads.forEach(load => { 
+                console.log(`🔍 外部荷重処理: 節点${load.nodeIndex + 1}, px=${load.px}, py=${load.py}, mz=${load.mz}`);
                 if (load.px === 0 && load.py === 0 && load.mz === 0) return; 
                 const node = nodes[load.nodeIndex]; 
                 const pos = transform(node.x, node.y); 

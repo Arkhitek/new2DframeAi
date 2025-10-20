@@ -972,8 +972,8 @@ function validateSpanCount(model) {
     }
     
         // 部材数の検証
-        const expectedColumnCount = (spanCount + 1) * (layerNodeCounts.length - 1); // 柱は(スパン数+1)×(層数-1)
-        const expectedBeamCount = spanCount * (layerNodeCounts.length - 1); // 梁はスパン数×(層数-1)（y=0の地面には梁材なし）
+        const expectedColumnCount = (spanCount + 1) * layerNodeCounts.length; // 柱は(スパン数+1)×層数
+        const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数（y=0の地面には梁材なし）
         const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {
@@ -1417,11 +1417,31 @@ function validateAndFixStructure(model, userPrompt) {
         if (needsCorrection) {
             console.error('構造修正を実行します');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            fixedModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
+            
+            // 既存の荷重データを保存
+            const originalNodeLoads = fixedModel.nodeLoads || [];
+            const originalMemberLoads = fixedModel.memberLoads || [];
+            console.error('既存の荷重データを保存:', {
+                nodeLoads: originalNodeLoads.length,
+                memberLoads: originalMemberLoads.length
+            });
+            
+            // 構造を再生成
+            const correctedStructure = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
+            
+            // 荷重データを保持して構造を修正
+            fixedModel = {
+                ...correctedStructure,
+                nodeLoads: originalNodeLoads,
+                memberLoads: originalMemberLoads
+            };
+            
             console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
             console.error('修正後の構造:', {
                 nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length
+                memberCount: fixedModel.members.length,
+                nodeLoads: fixedModel.nodeLoads.length,
+                memberLoads: fixedModel.memberLoads.length
             });
             errors.push(`${dimensions.layers}層${dimensions.spans}スパン構造の修正を実行しました`);
         }
@@ -1466,8 +1486,8 @@ function generateCorrectFrameStructure(layers, spans) {
         console.error(`節点の生成開始: ${layers + 1}層×${spans + 1}列`);
         for (let layer = 0; layer <= layers; layer++) {
             for (let span = 0; span <= spans; span++) {
-                const x = span * 6; // スパン長6m
-                const y = layer * 3.5; // 階高3.5m
+                const x = span * 7; // スパン長7m（ログから確認）
+                const y = layer * 3.2; // 階高3.2m（ログから確認）
                 const s = layer === 0 ? 'x' : 'f'; // 地面は固定、その他は自由
                 
                 nodes.push({ x, y, s });

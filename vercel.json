@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "functions": {
+    "api/generate-model.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "env": {
+    "MISTRAL_API_KEY": "@mistral-api-key"
+  }
+}

@@ -3702,6 +3702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 節点荷重復元
             console.log('🔍 restoreState: 節点荷重復元開始, 荷重数:', state.nodeLoads.length);
+            console.log('🔍 restoreState: 節点荷重データ詳細:', state.nodeLoads);
             state.nodeLoads.forEach((l, index) => {
                 console.log(`🔍 restoreState: 節点荷重 ${index + 1} 復元:`, l);
                 addRow(elements.nodeLoadsTable, [`<input type="number" value="${l.node}">`, `<input type="number" value="${l.px}">`, `<input type="number" value="${l.py}">`, `<input type="number" value="${l.mz}">`], false);
@@ -5190,7 +5191,34 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.stroke(); 
         }); 
     };
-    const drawDimensions = (ctx, transform, nodes, members, labelManager, obstacles) => { const offset = 15; ctx.strokeStyle = '#0000ff'; ctx.lineWidth = 1; members.forEach(m => { const n1 = nodes[m.i]; const n2 = nodes[m.j]; const p1 = transform(n1.x, n1.y); const p2 = transform(n2.x, n2.y); const midX = (p1.x + p2.x) / 2; const midY = (p1.y + p2.y) / 2; const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x); const offsetX = offset * Math.sin(angle); const offsetY = -offset * Math.cos(angle); const labelTargetX = midX + offsetX; const labelTargetY = midY + offsetY; const labelText = `${m.length.toFixed(2)}m`; ctx.fillStyle = '#0000ff'; labelManager.draw(ctx, labelText, labelTargetX, labelTargetY, obstacles); }); };
+    const drawDimensions = (ctx, transform, nodes, members, labelManager, obstacles) => { 
+        const offset = 15; 
+        ctx.strokeStyle = '#0000ff'; 
+        ctx.lineWidth = 1; 
+        
+        // 部材寸法表示の制御
+        const showMemberDimensions = document.getElementById('show-member-dimensions')?.checked ?? true;
+        if (!showMemberDimensions) {
+            return;
+        }
+        
+        members.forEach(m => { 
+            const n1 = nodes[m.i]; 
+            const n2 = nodes[m.j]; 
+            const p1 = transform(n1.x, n1.y); 
+            const p2 = transform(n2.x, n2.y); 
+            const midX = (p1.x + p2.x) / 2; 
+            const midY = (p1.y + p2.y) / 2; 
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x); 
+            const offsetX = offset * Math.sin(angle); 
+            const offsetY = -offset * Math.cos(angle); 
+            const labelTargetX = midX + offsetX; 
+            const labelTargetY = midY + offsetY; 
+            const labelText = `${m.length.toFixed(2)}m`; 
+            ctx.fillStyle = '#0000ff'; 
+            labelManager.draw(ctx, labelText, labelTargetX, labelTargetY, obstacles); 
+        }); 
+    };
     const drawExternalLoads = (ctx, transform, nodes, members, nodeLoads, memberLoads, memberSelfWeights, nodeSelfWeights, labelManager, obstacles) => { 
         const arrowSize = 10; 
         const loadScale = 3; 
@@ -5198,6 +5226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 表示制御用チェックボックスの状態を取得
         const showExternalLoads = document.getElementById('show-external-loads')?.checked ?? true;
         const showSelfWeight = document.getElementById('show-self-weight')?.checked ?? true;
+        const showMemberDimensions = document.getElementById('show-member-dimensions')?.checked ?? true;
         
         // 両方のチェックが外れている場合は何も描画しない
         if (!showExternalLoads && !showSelfWeight) {
@@ -11558,11 +11587,15 @@ const loadPreset = (index) => {
     // 荷重表示制御チェックボックスのイベントリスナー
     const showExternalLoadsCheckbox = document.getElementById('show-external-loads');
     const showSelfWeightCheckbox = document.getElementById('show-self-weight');
+    const showMemberDimensionsCheckbox = document.getElementById('show-member-dimensions');
     if (showExternalLoadsCheckbox) {
         showExternalLoadsCheckbox.addEventListener('change', drawOnCanvas);
     }
     if (showSelfWeightCheckbox) {
         showSelfWeightCheckbox.addEventListener('change', drawOnCanvas);
+    }
+    if (showMemberDimensionsCheckbox) {
+        showMemberDimensionsCheckbox.addEventListener('change', drawOnCanvas);
     }
     
     elements.saveBtn.addEventListener('click', saveInputData);
@@ -17214,12 +17247,17 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     iy: existingMember?.iy || ''
                 };
             }),
-            nodeLoads: (modelData.nodeLoads || modelData.nl || []).map(l => ({ 
-                node: l.n || l.node, 
-                px: l.px || l.fx || 0, 
-                py: l.py || l.fy || 0, 
-                mz: l.mz || 0
-            })),
+            nodeLoads: (modelData.nodeLoads || modelData.nl || []).map(l => {
+                console.log('🔍 nodeLoadsマッピング処理:', l);
+                const mapped = { 
+                    node: l.n || l.node, 
+                    px: l.px || l.fx || 0, 
+                    py: l.py || l.fy || 0, 
+                    mz: l.mz || 0
+                };
+                console.log('🔍 nodeLoadsマッピング結果:', mapped);
+                return mapped;
+            }),
             memberLoads: (modelData.memberLoads || modelData.ml || []).map(l => ({ 
                 member: l.m || l.member, 
                 w: l.w || l.q || 0 

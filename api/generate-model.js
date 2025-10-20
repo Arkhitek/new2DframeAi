@@ -1,5 +1,4 @@
-// 外部と通信するための道具をインポートします
-import fetch from 'node-fetch';
+// Node.js 18+ ではグローバルの fetch を使用します（追加の依存不要）
 
 // Vercelのサーバーレス関数のエントリーポイント
 export default async function handler(req, res) {

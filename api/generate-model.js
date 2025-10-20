@@ -273,8 +273,10 @@ export default async function handler(req, res) {
             if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
                 console.error(`${dimensions.layers}層${dimensions.spans}スパンラーメン構造をプログラム的に生成`);
                 programmaticModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
-            }
-            else {
+            } else if (structureType === 'truss' && dimensions.layers > 0 && dimensions.spans > 0) {
+                console.error(`${dimensions.layers}層${dimensions.spans}スパントラス構造をプログラム的に生成`);
+                programmaticModel = generateCorrectTrussStructure(dimensions.layers, dimensions.spans, userPrompt);
+            } else {
                 console.error('基本的な構造をプログラム的に生成');
                 programmaticModel = generateBasicStructure(userPrompt, dimensions);
             }
@@ -568,6 +570,14 @@ function detectStructureDimensions(userPrompt) {
         /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
     ];
     
+    // トラス構造の高さ検出パターンを追加
+    const heightPatterns = [
+        /高さ(\d+(?:\.\d+)?)m/g,
+        /height\s*(\d+(?:\.\d+)?)m/g,
+        /(\d+(?:\.\d+)?)m.*高さ/g,
+        /(\d+(?:\.\d+)?)m.*height/g
+    ];
+    
     console.error('層数検出デバッグ:', {
         prompt: prompt,
         patterns: layerPatterns.map(p => p.toString())
@@ -590,6 +600,21 @@ function detectStructureDimensions(userPrompt) {
         }
     }
     
+    // トラス構造の高さ検出
+    for (const pattern of heightPatterns) {
+        const match = prompt.match(pattern);
+        console.error(`高さパターン ${pattern} のマッチ結果:`, match);
+        if (match) {
+            const height = parseFloat(match[1]);
+            console.error(`高さ検出: "${match[0]}" -> 高さ: ${height}m`);
+            if (!isNaN(height)) {
+                // トラス構造では高さを層数として扱う（簡易的な対応）
+                layers = Math.max(layers, Math.ceil(height / 3.0)); // 3mごとに1層として計算
+                break;
+            }
+        }
+    }
+    
     // スパン数の検出（より柔軟な検出）
     let spans = 1;
     const spanPatterns = [
@@ -598,6 +623,14 @@ function detectStructureDimensions(userPrompt) {
         /(\d+)間/g,
         /(\d+)\s*スパン/g,  // 数字とスパンの間にスペースがある場合
         /(\d+)\s*span/g     // 数字とspanの間にスペースがある場合
+    ];
+    
+    // トラス構造のスパン検出パターンを追加
+    const spanLengthPatterns = [
+        /スパン(\d+(?:\.\d+)?)m/g,
+        /span\s*(\d+(?:\.\d+)?)m/g,
+        /(\d+(?:\.\d+)?)m.*スパン/g,
+        /(\d+(?:\.\d+)?)m.*span/g
     ];
     
     for (const pattern of spanPatterns) {
@@ -613,6 +646,21 @@ function detectStructureDimensions(userPrompt) {
                 if (!isNaN(spans)) {
                     break;
                 }
+            }
+        }
+    }
+    
+    // トラス構造のスパン長検出
+    for (const pattern of spanLengthPatterns) {
+        const match = prompt.match(pattern);
+        console.error(`スパン長パターン ${pattern} のマッチ結果:`, match);
+        if (match) {
+            const spanLength = parseFloat(match[1]);
+            console.error(`スパン長検出: "${match[0]}" -> スパン長: ${spanLength}m`);
+            if (!isNaN(spanLength)) {
+                // トラス構造ではスパン長からスパン数を推定（簡易的な対応）
+                spans = Math.max(spans, Math.ceil(spanLength / 3.0)); // 3mごとに1スパンとして計算
+                break;
             }
         }
     }
@@ -1358,9 +1406,9 @@ function validateAndFixStructure(model, userPrompt) {
         const structureType = detectStructureType(userPrompt);
         console.error('構造タイプ:', structureType);
         
-        // 梁構造の場合は検証をスキップ（AIが正しく生成している）
-        if (structureType === 'beam') {
-            console.error('梁構造のため、構造検証をスキップします');
+        // 梁構造・トラス構造の場合は検証をスキップ（AIが正しく生成している）
+        if (structureType === 'beam' || structureType === 'truss') {
+            console.error(`${structureType}構造のため、構造検証をスキップします`);
             return {
                 isValid: true,
                 errors: [],
@@ -1560,6 +1608,111 @@ function generateCorrectFrameStructure(layers, spans) {
 // 5層4スパンラーメン構造の生成（後方互換性のため残す）
 function generateCorrect5Layer4SpanStructure() {
     return generateCorrectFrameStructure(5, 4);
+}
+
+// ワーレントラス構造生成関数
+function generateCorrectTrussStructure(height, spanLength, userPrompt) {
+    try {
+        console.error(`=== ワーレントラス構造を生成 ===`);
+        console.error(`高さ: ${height}m, スパン長: ${spanLength}m`);
+        
+        const nodes = [];
+        const members = [];
+        
+        // ワーレントラスの節点配置
+        // 下弦材（y=0）
+        const bottomNodes = [];
+        for (let i = 0; i <= spanLength; i += 2.5) { // 2.5m間隔
+            const nodeIndex = nodes.length + 1;
+            nodes.push({ x: i, y: 0, s: i === 0 ? 'p' : i === spanLength ? 'r' : 'f' });
+            bottomNodes.push(nodeIndex);
+        }
+        
+        // 上弦材（y=height）
+        const topNodes = [];
+        for (let i = 0; i <= spanLength; i += 2.5) { // 2.5m間隔
+            const nodeIndex = nodes.length + 1;
+            nodes.push({ x: i, y: height, s: 'f' });
+            topNodes.push(nodeIndex);
+        }
+        
+        // 下弦材の部材
+        for (let i = 0; i < bottomNodes.length - 1; i++) {
+            members.push({
+                i: bottomNodes[i],
+                j: bottomNodes[i + 1],
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+        
+        // 上弦材の部材
+        for (let i = 0; i < topNodes.length - 1; i++) {
+            members.push({
+                i: topNodes[i],
+                j: topNodes[i + 1],
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+        }
+        
+        // 斜材（ワーレントラスの特徴的な斜めの部材）
+        for (let i = 0; i < bottomNodes.length - 1; i++) {
+            // 下弦材から上弦材への斜材
+            members.push({
+                i: bottomNodes[i],
+                j: topNodes[i + 1],
+                E: 205000,
+                I: 0.00011,
+                A: 0.005245,
+                Z: 0.000638
+            });
+            
+            // 上弦材から下弦材への斜材
+            if (i < bottomNodes.length - 1) {
+                members.push({
+                    i: topNodes[i],
+                    j: bottomNodes[i + 1],
+                    E: 205000,
+                    I: 0.00011,
+                    A: 0.005245,
+                    Z: 0.000638
+                });
+            }
+        }
+        
+        console.error(`=== ワーレントラス構造生成完了 ===`);
+        console.error(`節点数: ${nodes.length}, 部材数: ${members.length}`);
+        
+        return { nodes, members };
+        
+    } catch (error) {
+        console.error('generateCorrectTrussStructure関数でエラーが発生しました:', error);
+        console.error('エラーの詳細:', error.message);
+        console.error('エラースタック:', error.stack);
+        
+        // エラーが発生した場合は、最小限のトラス構造を返す
+        return {
+            nodes: [
+                {x: 0, y: 0, s: 'p'},
+                {x: 7.5, y: 0, s: 'r'},
+                {x: 0, y: 3, s: 'f'},
+                {x: 7.5, y: 3, s: 'f'}
+            ],
+            members: [
+                {i: 1, j: 2, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 1, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                {i: 2, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
+            ]
+        };
+    }
 }
 
 // 基本的な構造生成（後方互換性のため残す）

@@ -3643,6 +3643,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             console.log(`🔧 restoreState: 部材${index + 1}の既存断面情報を使用:`, sectionInfoToApply);
                         } else if (m.sectionInfo) {
                             console.log(`🔧 restoreState: 部材${index + 1}の新しい断面情報を使用:`, m.sectionInfo);
+                        } else {
+                            // AI生成部材など、断面情報がない場合はデフォルト断面情報を作成
+                            const I_m4 = parseFloat(m.I) || 0;
+                            const A_m2 = parseFloat(m.A) || 0;
+                            sectionInfoToApply = {
+                                typeKey: 'estimated',
+                                label: '推定断面（円形）',
+                                rawDims: {
+                                    D: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10, // Aから直径を計算（mm）
+                                    D_scaled: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10
+                                },
+                                dimensions: [
+                                    { name: 'D', value: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10, unit: 'mm' }
+                                ],
+                                dimensionSummary: `D=${(Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10).toFixed(1)}mm`
+                            };
+                            console.log(`🔧 restoreState: 部材${index + 1}にデフォルト断面情報を設定:`, sectionInfoToApply);
                         }
                         
                         if (sectionInfoToApply && typeof window.setRowSectionInfo === 'function') {
@@ -4705,7 +4722,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn(`節点荷重 ${i+1} の節点番号が不正です (節点番号: ${n + 1}, 最大節点数: ${nodes.length})。この荷重はスキップされます。`);
                 return null; // 無効な荷重は null を返す
             }
-            return { nodeIndex:n, px:parseFloat(r.cells[1].querySelector('input').value)||0, py:parseFloat(r.cells[2].querySelector('input').value)||0, mz:parseFloat(r.cells[3].querySelector('input').value)||0 }; 
+            const px = parseFloat(r.cells[1].querySelector('input').value) || 0;
+            const py = parseFloat(r.cells[2].querySelector('input').value) || 0;
+            const mz = parseFloat(r.cells[3].querySelector('input').value) || 0;
+            console.log(`🔍 parseInputs: 節点荷重 ${i+1} 読み取り: 節点${n+1}, px=${px}, py=${py}, mz=${mz}`);
+            return { nodeIndex:n, px:px, py:py, mz:mz }; 
         }).filter(load => load !== null); // null の荷重を除外
         const memberLoads = Array.from(elements.memberLoadsTable.rows).map((r, i) => { 
             const m = parseInt(r.cells[0].querySelector('input').value) - 1; 
@@ -5492,6 +5513,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fillStyle = '#ff4500';
             
             if(load.px !== 0){ 
+                console.log(`🔍 水平荷重描画: 節点${load.nodeIndex + 1}, px=${load.px}, pos=(${pos.x}, ${pos.y})`);
                 const dir = Math.sign(load.px); 
                 ctx.beginPath(); 
                 ctx.moveTo(pos.x - arrowSize * loadScale * dir, pos.y); 

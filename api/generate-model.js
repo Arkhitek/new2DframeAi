@@ -332,6 +332,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // ユーザープロンプトから構造タイプと次元を検出
     const structureType = detectStructureType(userPrompt);
     const dimensions = detectStructureDimensions(userPrompt);
+    const loadIntent = detectLoadIntent(userPrompt);
     
     // リトライ回数に応じてプロンプトを簡潔化
     if (retryCount >= 2) {
@@ -340,8 +341,16 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
-部材番号: 配列順序（1から開始）
+部材番号: 配列順序（1から開始）`;
+
+        // 荷重指示の有無に基づいて条件分岐
+        if (loadIntent.hasLoadIntent) {
+            simplePrompt += `
 荷重: 指示に応じて適切な荷重を生成（等分布荷重はプラスの値で下向き）`;
+        } else {
+            simplePrompt += `
+荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
+        }
         
         // 構造タイプに応じた重要ルールを追加
         if (structureType === 'beam') {
@@ -367,9 +376,17 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
 節点番号: 配列順序（1から開始）
-部材番号: 配列順序（1から開始）
+部材番号: 配列順序（1から開始）`;
+
+    // 荷重指示の有無に基づいて条件分岐
+    if (loadIntent.hasLoadIntent) {
+        prompt += `
 荷重: 指示に応じて適切な荷重を生成（集中荷重、等分布荷重、水平荷重など）
 等分布荷重: 特に指示がない場合はプラスの値（下向き）で生成`;
+    } else {
+        prompt += `
+荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
+    }
 
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'beam') {
@@ -380,17 +397,26 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 荷重: 自由端に集中荷重を生成（例: {"n": 2, "fy": -10}）`;
         } else if (dimensions.spans > 1) {
             prompt += `
-連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
+連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
+            if (loadIntent.hasLoadIntent) {
+                prompt += `
 荷重: 適切な節点に集中荷重または等分布荷重を生成（等分布荷重はプラスの値で下向き）`;
+            }
         } else {
             prompt += `
-単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
+単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止`;
+            if (loadIntent.hasLoadIntent) {
+                prompt += `
 荷重: 中央部に集中荷重または等分布荷重を生成（等分布荷重はプラスの値で下向き）`;
+            }
         }
     } else if (structureType === 'truss') {
         prompt += `
-トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、y=0の節点に"x"は禁止
+トラス: 左端のみ"p"、右端のみ"r"、中間節点は全て"f"、y=0の節点に"x"は禁止`;
+        if (loadIntent.hasLoadIntent) {
+            prompt += `
 荷重: 適切な節点に集中荷重を生成`;
+        }
     } else if (structureType === 'frame') {
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
         if (dimensions.layers > 0 && dimensions.spans > 0) {
@@ -402,12 +428,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
             prompt += `
 ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
 座標: X=0,6,12...m、Y=0,3.5,7...m
-境界条件: 地面節点は"x"、上部節点は"f"
+境界条件: 地面節点は"x"、上部節点は"f"`;
+            if (loadIntent.hasLoadIntent) {
+                prompt += `
 荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
+            }
         } else {
             prompt += `
-ラーメン: 多層多スパン、全柱梁配置
+ラーメン: 多層多スパン、全柱梁配置`;
+            if (loadIntent.hasLoadIntent) {
+                prompt += `
 荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
+            }
         }
     }
 
@@ -469,6 +501,34 @@ function detectStructureType(userPrompt) {
     }
     
     return 'basic';
+}
+
+// 荷重指示を検出する関数
+function detectLoadIntent(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    
+    // 荷重関連のキーワード
+    const loadKeywords = [
+        '荷重', 'load', '集中荷重', '等分布荷重', '分布荷重', '水平荷重', '鉛直荷重',
+        '外力', '力', 'kN', 'kgf', 'tf', 'トン', 'キロ', '重量', '重さ',
+        '風荷重', '地震荷重', '積載荷重', '固定荷重', '活荷重', '雪荷重',
+        '作用', '加える', 'かける', '適用', '設定'
+    ];
+    
+    // 荷重の種類を特定
+    const nodeLoadKeywords = ['集中荷重', '点荷重', '節点荷重', '外力'];
+    const memberLoadKeywords = ['等分布荷重', '分布荷重', '部材荷重', '梁荷重'];
+    
+    const hasLoadKeyword = loadKeywords.some(keyword => prompt.includes(keyword));
+    const hasNodeLoadKeyword = nodeLoadKeywords.some(keyword => prompt.includes(keyword));
+    const hasMemberLoadKeyword = memberLoadKeywords.some(keyword => prompt.includes(keyword));
+    
+    return {
+        hasLoadIntent: hasLoadKeyword,
+        hasNodeLoadIntent: hasNodeLoadKeyword,
+        hasMemberLoadIntent: hasMemberLoadKeyword,
+        loadType: hasNodeLoadKeyword ? 'node' : hasMemberLoadKeyword ? 'member' : 'both'
+    };
 }
 
 // 構造の層数とスパン数を検出する関数

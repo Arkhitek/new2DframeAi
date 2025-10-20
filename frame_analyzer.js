@@ -17220,8 +17220,9 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                 py: l.py || l.fy || 0, 
                 mz: l.mz || 0
             })),
-            memberLoads: (modelData.ml || []).map(l => ({ 
-                member: l.m, w: l.w || 0 
+            memberLoads: (modelData.memberLoads || modelData.ml || []).map(l => ({ 
+                member: l.m || l.member, 
+                w: l.w || l.q || 0 
             }))
         };
         

@@ -337,10 +337,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (retryCount >= 2) {
         // 3回目以降は極限まで簡潔
         let simplePrompt = `2D構造生成。JSON出力のみ。
-{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}]}
+{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
-荷重: 指示に応じて適切な荷重を生成`;
+荷重: 指示に応じて適切な荷重を生成（等分布荷重はプラスの値で下向き）`;
         
         // 構造タイプに応じた重要ルールを追加
         if (structureType === 'beam') {
@@ -366,7 +366,8 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
 節点番号: 配列順序（1から開始）
-荷重: 指示に応じて適切な荷重を生成（集中荷重、等分布荷重、水平荷重など）`;
+荷重: 指示に応じて適切な荷重を生成（集中荷重、等分布荷重、水平荷重など）
+等分布荷重: 特に指示がない場合はプラスの値（下向き）で生成`;
 
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'beam') {
@@ -378,11 +379,11 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         } else if (dimensions.spans > 1) {
             prompt += `
 連続梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
-荷重: 適切な節点に集中荷重または等分布荷重を生成`;
+荷重: 適切な節点に集中荷重または等分布荷重を生成（等分布荷重はプラスの値で下向き）`;
         } else {
             prompt += `
 単純梁: 両端のみ"p"、中間節点は全て"f"、y=0の節点に"x"や"r"は禁止
-荷重: 中央部に集中荷重または等分布荷重を生成`;
+荷重: 中央部に集中荷重または等分布荷重を生成（等分布荷重はプラスの値で下向き）`;
         }
     } else if (structureType === 'truss') {
         prompt += `

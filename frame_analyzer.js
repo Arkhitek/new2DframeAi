@@ -17214,8 +17214,11 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                     iy: existingMember?.iy || ''
                 };
             }),
-            nodeLoads: (modelData.nl || []).map(l => ({ 
-                node: l.n, px: l.px || 0, py: l.py || 0, mz: l.mz || 0 
+            nodeLoads: (modelData.nodeLoads || modelData.nl || []).map(l => ({ 
+                node: l.n || l.node, 
+                px: l.px || l.fx || 0, 
+                py: l.py || l.fy || 0, 
+                mz: l.mz || 0
             })),
             memberLoads: (modelData.ml || []).map(l => ({ 
                 member: l.m, w: l.w || 0 

@@ -213,15 +213,27 @@ export default async function handler(req, res) {
             
             if (!structureValidation.isValid) {
                 console.error('構造検証エラー:', structureValidation.errors);
-                generatedModel = structureValidation.fixedModel;
-                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                console.error('構造修正完了');
+                
+                // AIに修正点を指摘した再指示を行う
+                const correctionPrompt = createStructureCorrectionPrompt(userPrompt, generatedModel, structureValidation.errors, detectedStructureType);
+                console.error('構造修正プロンプト:', correctionPrompt);
+                
+                // 修正プロンプトでAIを再呼び出し
+                const correctedResponse = await callAIWithCorrectionPrompt(correctionPrompt, retryCount);
+                if (correctedResponse) {
+                    generatedModel = correctedResponse;
+                    finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                    console.error('構造AI修正完了');
+                } else {
+                    console.error('構造AI修正に失敗、元のモデルを使用');
+                }
             } else {
                 console.error('構造検証成功');
             }
             
             // トラス構造の場合は追加の検証・修正を実行
-            if (structureType === 'truss') {
+            const detectedStructureType = detectStructureType(userPrompt);
+            if (detectedStructureType === 'truss') {
                 console.error('トラス構造の追加検証を実行');
                 const trussValidation = validateAndFixTrussStructure(generatedModel, userPrompt);
                 
@@ -296,33 +308,21 @@ export default async function handler(req, res) {
             
             let programmaticModel;
             
-            if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
-                console.error(`${dimensions.layers}層${dimensions.spans}スパンラーメン構造をプログラム的に生成`);
-                programmaticModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
-            } else if (structureType === 'truss') {
-                // トラス構造の場合は、AI生成を優先し、プログラム的生成は行わない
-                console.error(`トラス構造のため、プログラム的生成をスキップします`);
-                // AI生成に失敗した場合は、最小限のトラス構造を返す
-                programmaticModel = {
-                    nodes: [
-                        {x: 0, y: 0, s: 'p'},
-                        {x: 7.5, y: 0, s: 'r'},
-                        {x: 0, y: 3, s: 'f'},
-                        {x: 7.5, y: 3, s: 'f'}
-                    ],
-                    members: [
-                        {i: 1, j: 2, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 1, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                        {i: 2, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
-                    ]
-                };
-            } else {
-                console.error('基本的な構造をプログラム的に生成');
-                programmaticModel = generateBasicStructure(userPrompt, dimensions);
-            }
+            // プログラム的生成は行わず、最小限の構造を返す
+            console.error('AI生成に失敗したため、最小限の構造を返します');
+            programmaticModel = {
+                nodes: [
+                    {x: 0, y: 0, s: 'x'},
+                    {x: 6, y: 0, s: 'x'},
+                    {x: 0, y: 3.5, s: 'f'},
+                    {x: 6, y: 3.5, s: 'f'}
+                ],
+                members: [
+                    {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                    {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                    {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
+                ]
+            };
             
             finalGeneratedText = JSON.stringify(programmaticModel, null, 2);
             console.error('プログラム的生成完了:', {
@@ -423,7 +423,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 重要: 中間節点は"f"のみ、両端のみ"p"や"x"、y=0の節点に支点を設定しない`;
         } else if (structureType === 'truss') {
             simplePrompt += `
-重要: 左端"p"、右端"r"、中間節点"f"、y=0の節点に支点を設定しない`;
+重要: 下弦材の左端（x=0,y=0）は"p"、下弦材の右端（x=${spanLength},y=0）は"r"、その他は"f"、上弦材には支点を配置しない`;
         } else if (structureType === 'frame') {
             simplePrompt += `
 重要: 地面節点は"x"、上部節点は"f"、y=0の地面には梁材（水平材）を配置しない`;
@@ -483,7 +483,8 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         prompt += `
 ワーレントラス構造: 高さ${height}m、スパン長${spanLength}m
 節点配置: 下弦材（y=0）と上弦材（y=${height}）に節点を配置
-境界条件: 左端（x=0）は"p"、右端（x=${spanLength}）は"r"、その他は"f"
+境界条件: 下弦材の左端（x=0,y=0）は"p"、下弦材の右端（x=${spanLength},y=0）は"r"、その他は"f"
+重要: 支点は必ずy=0の下弦材に配置し、y=${height}の上弦材には支点を配置しない
 部材配置: 下弦材・上弦材・斜材を適切に配置（ワーレントラスの特徴的な斜めの部材を含む）`;
         
         if (loadIntent.hasLoadIntent) {
@@ -1471,24 +1472,14 @@ function validateAndFixStructure(model, userPrompt) {
         const structureType = detectStructureType(userPrompt);
         console.error('構造タイプ:', structureType);
         
-        // 梁構造・トラス構造の場合は検証をスキップ（AIが正しく生成している）
-        if (structureType === 'beam' || structureType === 'truss') {
-            console.error(`${structureType}構造のため、構造検証をスキップします`);
-            return {
-                isValid: true,
-                errors: [],
-                fixedModel: fixedModel,
-                nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length
-            };
-        }
+        // 全ての構造タイプで検証を実行
         
         // ラーメン構造かどうかを確認
         const isFrameStructure = structureType === 'frame';
         console.error('ラーメン構造:', isFrameStructure);
     
-    // ラーメン構造の場合のみ検証・修正を実行
-    if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {
+    // 構造タイプに応じた検証を実行
+    if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
         console.error(`${dimensions.layers}層${dimensions.spans}スパン構造の検証を実行`);
         
         // 期待値の計算
@@ -1526,37 +1517,57 @@ function validateAndFixStructure(model, userPrompt) {
             needsCorrection = true;
         }
         
-        // 修正が必要な場合はプログラム的に生成
+        // 修正が必要な場合は、AIに修正指示を行う
         if (needsCorrection) {
-            console.error('構造修正を実行します');
-            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
-            
-            // 既存の荷重データを保存
-            const originalNodeLoads = fixedModel.nodeLoads || [];
-            const originalMemberLoads = fixedModel.memberLoads || [];
-            console.error('既存の荷重データを保存:', {
-                nodeLoads: originalNodeLoads.length,
-                memberLoads: originalMemberLoads.length
-            });
-            
-            // 構造を再生成
-            const correctedStructure = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
-            
-            // 荷重データを保持して構造を修正
-            fixedModel = {
-                ...correctedStructure,
-                nodeLoads: originalNodeLoads,
-                memberLoads: originalMemberLoads
-            };
-            
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
-            console.error('修正後の構造:', {
-                nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length,
-                nodeLoads: fixedModel.nodeLoads.length,
-                memberLoads: fixedModel.memberLoads.length
-            });
-            errors.push(`${dimensions.layers}層${dimensions.spans}スパン構造の修正を実行しました`);
+            console.error('構造に問題が検出されました。AIに修正指示を行います');
+            errors.push('構造の修正が必要です');
+        }
+    } else if (structureType === 'beam') {
+        console.error('梁構造の検証を実行');
+        
+        // 梁構造の基本検証
+        if (fixedModel.nodes.length < 2) {
+            errors.push(`梁構造の節点が不足: ${fixedModel.nodes.length}個（最低2個必要）`);
+            needsCorrection = true;
+        }
+        
+        if (fixedModel.members.length < 1) {
+            errors.push(`梁構造の部材が不足: ${fixedModel.members.length}個（最低1個必要）`);
+            needsCorrection = true;
+        }
+        
+        // 境界条件の検証
+        const groundNodes = fixedModel.nodes.filter(node => node.y === 0);
+        const groundSupports = groundNodes.filter(node => node.s === 'p' || node.s === 'r' || node.s === 'x');
+        
+        if (groundSupports.length > 0) {
+            errors.push(`梁構造でy=0の節点に支点が配置されています。梁構造ではy=0の節点に支点を配置しないでください`);
+            needsCorrection = true;
+        }
+        
+        // 修正が必要な場合は、AIに修正指示を行う
+        if (needsCorrection) {
+            console.error('梁構造に問題が検出されました。AIに修正指示を行います');
+            errors.push('梁構造の修正が必要です');
+        }
+    } else if (structureType === 'truss') {
+        console.error('トラス構造の検証を実行');
+        
+        // トラス構造の基本検証
+        if (fixedModel.nodes.length < 4) {
+            errors.push(`トラス構造の節点が不足: ${fixedModel.nodes.length}個（最低4個必要）`);
+            needsCorrection = true;
+        }
+        
+        if (fixedModel.members.length < 3) {
+            errors.push(`トラス構造の部材が不足: ${fixedModel.members.length}個（最低3個必要）`);
+            needsCorrection = true;
+        }
+        
+        // 修正が必要な場合は、AIに修正指示を行う
+        if (needsCorrection) {
+            console.error('トラス構造に問題が検出されました。AIに修正指示を行います');
+            errors.push('トラス構造の修正が必要です');
         }
     }
     
@@ -1847,6 +1858,67 @@ function generateBasicStructure(userPrompt, dimensions) {
     return generateCorrectFrameStructure(layers, spans);
 }
 
+// 一般的な構造修正プロンプトを作成する関数
+function createStructureCorrectionPrompt(originalPrompt, currentModel, errors, structureType) {
+    let correctionPrompt = `${structureType}構造の修正指示:
+
+元の指示: ${originalPrompt}
+
+現在の生成結果に以下の問題があります:
+${errors.map(error => `- ${error}`).join('\n')}
+
+修正要求:`;
+
+    if (structureType === 'frame') {
+        const dimensions = detectStructureDimensions(originalPrompt);
+        correctionPrompt += `
+1. ${dimensions.layers}層${dimensions.spans}スパンのラーメン構造を生成してください
+2. 節点数: ${(dimensions.layers + 1) * (dimensions.spans + 1)}個
+3. 部材数: ${dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1)}個（柱${(dimensions.spans + 1) * dimensions.layers}本+梁${dimensions.spans * dimensions.layers}本）
+4. 境界条件: 地面節点（y=0）は"x"、上部節点は"f"
+5. 部材配置: y=0の地面には梁材（水平材）を配置しない
+6. 座標: X=0,7,14...m、Y=0,3.2,6.4...m`;
+    } else if (structureType === 'beam') {
+        const dimensions = detectStructureDimensions(originalPrompt);
+        if (originalPrompt.includes('キャンチレバー') || originalPrompt.includes('片持ち梁')) {
+            correctionPrompt += `
+1. キャンチレバー（片持ち梁）構造を生成してください
+2. 左端のみ"x"、他は全て"f"
+3. y=0の節点に"p"や"r"は禁止
+4. 荷重: 自由端に集中荷重を生成`;
+        } else if (dimensions.spans > 1) {
+            correctionPrompt += `
+1. 連続梁構造を生成してください
+2. 両端のみ"p"、中間節点は全て"f"
+3. y=0の節点に"x"や"r"は禁止`;
+        } else {
+            correctionPrompt += `
+1. 単純梁構造を生成してください
+2. 両端のみ"p"、中間節点は全て"f"
+3. y=0の節点に"x"や"r"は禁止`;
+        }
+    } else if (structureType === 'truss') {
+        const height = extractHeightFromPrompt(originalPrompt);
+        const spanLength = extractSpanLengthFromPrompt(originalPrompt);
+        correctionPrompt += `
+1. 高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
+2. 下弦材（y=0）に適切な数の節点を配置してください（最低2個以上）
+3. 上弦材（y=${height}）に適切な数の節点を配置してください（最低2個以上）
+4. 境界条件: 下弦材の左端（x=0,y=0）は"p"、下弦材の右端（x=${spanLength},y=0）は"r"、その他は"f"
+5. 重要: 支点は必ずy=0の下弦材に配置し、y=${height}の上弦材には支点を配置しない
+6. 部材配置: 下弦材・上弦材・斜材を適切に配置してください`;
+    }
+
+    correctionPrompt += `
+
+重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
+部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）
+
+JSON形式で出力してください。`;
+
+    return correctionPrompt;
+}
+
 // トラス構造の修正プロンプトを作成する関数
 function createTrussCorrectionPrompt(originalPrompt, currentModel, errors) {
     const height = extractHeightFromPrompt(originalPrompt);
@@ -1863,8 +1935,9 @@ ${errors.map(error => `- ${error}`).join('\n')}
 1. 高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
 2. 下弦材（y=0）に適切な数の節点を配置してください（最低2個以上）
 3. 上弦材（y=${height}）に適切な数の節点を配置してください（最低2個以上）
-4. 境界条件: 左端（x=0）は"p"、右端（x=${spanLength}）は"r"、その他は"f"
-5. 部材配置: 下弦材・上弦材・斜材を適切に配置してください
+4. 境界条件: 下弦材の左端（x=0,y=0）は"p"、下弦材の右端（x=${spanLength},y=0）は"r"、その他は"f"
+5. 重要: 支点は必ずy=0の下弦材に配置し、y=${height}の上弦材には支点を配置しない
+6. 部材配置: 下弦材・上弦材・斜材を適切に配置してください
 
 例: 高さ3m、スパン15mのワーレントラスなら
 節点: [{"x":0,"y":0,"s":"p"},{"x":7.5,"y":0,"s":"f"},{"x":15,"y":0,"s":"r"},{"x":0,"y":3,"s":"f"},{"x":7.5,"y":3,"s":"f"},{"x":15,"y":3,"s":"f"}]
@@ -1990,17 +2063,33 @@ function validateAndFixTrussStructure(model, userPrompt) {
             needsCorrection = true;
         }
         
-        // 境界条件の検証
+        // 境界条件の検証（支点はy=0の下弦材に配置）
         const leftNode = fixedModel.nodes.find(node => node.x === 0 && node.y === 0);
         const rightNode = fixedModel.nodes.find(node => node.x === spanLength && node.y === 0);
         
-        if (leftNode && leftNode.s !== 'p') {
-            errors.push(`左端節点の境界条件が不正: ${leftNode.s}（"p"である必要）`);
+        if (!leftNode) {
+            errors.push(`下弦材の左端節点（x=0,y=0）が見つかりません`);
+            needsCorrection = true;
+        } else if (leftNode.s !== 'p') {
+            errors.push(`下弦材の左端節点の境界条件が不正: ${leftNode.s}（"p"である必要）`);
             needsCorrection = true;
         }
         
-        if (rightNode && rightNode.s !== 'r') {
-            errors.push(`右端節点の境界条件が不正: ${rightNode.s}（"r"である必要）`);
+        if (!rightNode) {
+            errors.push(`下弦材の右端節点（x=${spanLength},y=0）が見つかりません`);
+            needsCorrection = true;
+        } else if (rightNode.s !== 'r') {
+            errors.push(`下弦材の右端節点の境界条件が不正: ${rightNode.s}（"r"である必要）`);
+            needsCorrection = true;
+        }
+        
+        // 上弦材に支点が配置されていないかチェック
+        const topNodesWithSupport = fixedModel.nodes.filter(node => 
+            node.y === height && (node.s === 'p' || node.s === 'r' || node.s === 'x')
+        );
+        
+        if (topNodesWithSupport.length > 0) {
+            errors.push(`上弦材（y=${height}）に支点が配置されています。支点は下弦材（y=0）のみに配置してください`);
             needsCorrection = true;
         }
         

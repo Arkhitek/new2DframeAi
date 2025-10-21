@@ -1733,7 +1733,11 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
         const originalNode = originalModel.nodes[i];
         const generatedNode = generatedModel.nodes[i];
         
-        if (originalNode.s !== generatedNode.s) {
+        // 境界条件を正規化して比較
+        const normalizedOriginal = normalizeBoundaryCondition(originalNode.s);
+        const normalizedGenerated = normalizeBoundaryCondition(generatedNode.s);
+        
+        if (normalizedOriginal !== normalizedGenerated) {
             // 境界条件変更の意図があった場合は警告レベルを下げる
             if (boundaryChangeIntent && boundaryChangeIntent.detected) {
                 console.log(`節点${i + 1}の境界条件が意図的に変更されました: ${originalNode.s} → ${generatedNode.s}`);
@@ -1751,7 +1755,10 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
     // 境界条件変更の意図があったが、実際に変更されていない場合の警告
     if (boundaryChangeIntent && boundaryChangeIntent.detected) {
         const hasBoundaryChange = originalModel.nodes.some((node, index) => {
-            return generatedModel.nodes[index] && node.s !== generatedModel.nodes[index].s;
+            if (!generatedModel.nodes[index]) return false;
+            const normalizedOriginal = normalizeBoundaryCondition(node.s);
+            const normalizedGenerated = normalizeBoundaryCondition(generatedModel.nodes[index].s);
+            return normalizedOriginal !== normalizedGenerated;
         });
         
         if (!hasBoundaryChange) {

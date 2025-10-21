@@ -31,6 +31,10 @@ export default async function handler(req, res) {
         // retryCount変数を先に定義
         let retryCount = 0;
         
+        // 構造の次元を事前に検出（検証時に再利用）
+        const detectedDimensions = detectStructureDimensions(userPrompt, mode === 'edit' ? currentModel : null);
+        console.error('事前検出した構造次元:', detectedDimensions);
+        
         const systemPrompt = createSystemPromptForBackend(mode, currentModel, userPrompt, retryCount);
         
         // 追加編集モードの場合は現在のモデル情報を含めてプロンプトを作成
@@ -211,7 +215,12 @@ export default async function handler(req, res) {
         try {
             console.error('構造検証開始');
             
-            const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
+            const structureValidation = validateAndFixStructure(
+                generatedModel, 
+                userPrompt, 
+                mode === 'edit' ? currentModel : null,
+                detectedDimensions
+            );
             
             if (!structureValidation.isValid) {
                 console.error('構造検証エラー:', structureValidation.errors);
@@ -277,7 +286,12 @@ export default async function handler(req, res) {
                 }
             } else if (detectedStructureType === 'frame') {
                 // フレーム構造の検証でAI修正が必要な場合
-                const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
+                const structureValidation = validateAndFixStructure(
+                    generatedModel, 
+                    userPrompt,
+                    mode === 'edit' ? currentModel : null,
+                    detectedDimensions
+                );
                 if (!structureValidation.isValid && structureValidation.needsAICorrection) {
                     console.error('門型ラーメン検証エラー:', structureValidation.errors);
                     
@@ -1872,7 +1886,7 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
 }
 
 // 多層多スパン構造の検証と修正関数
-function validateAndFixStructure(model, userPrompt) {
+function validateAndFixStructure(model, userPrompt, originalModel = null, detectedDimensions = null) {
     try {
         console.error('=== 構造検証開始 ===');
         console.error('ユーザープロンプト:', userPrompt);
@@ -1881,8 +1895,9 @@ function validateAndFixStructure(model, userPrompt) {
         const errors = [];
         let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
         
-        // 構造の次元を検出（現在のモデルを渡して、必要に応じてモデルから検出）
-        const dimensions = detectStructureDimensions(userPrompt, model);
+        // 構造の次元を検出
+        // 既に検出済みの次元があればそれを使用、なければプロンプトとoriginalModelから検出
+        const dimensions = detectedDimensions || detectStructureDimensions(userPrompt, originalModel);
         console.error('検出された構造次元:', dimensions);
         
         // 構造タイプを確認
@@ -1995,12 +2010,13 @@ function validateAndFixStructure(model, userPrompt) {
             console.error('構造修正を実行します');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             
-            // 既存の荷重データを保存
-            const originalNodeLoads = fixedModel.nodeLoads || [];
-            const originalMemberLoads = fixedModel.memberLoads || [];
+            // 既存の荷重データを保存（元のモデルから取得）
+            const originalNodeLoads = (originalModel && originalModel.nodeLoads) || fixedModel.nodeLoads || [];
+            const originalMemberLoads = (originalModel && originalModel.memberLoads) || fixedModel.memberLoads || [];
             console.error('既存の荷重データを保存:', {
                 nodeLoads: originalNodeLoads.length,
-                memberLoads: originalMemberLoads.length
+                memberLoads: originalMemberLoads.length,
+                source: originalModel ? '元のモデル' : '生成されたモデル'
             });
             
             // 構造を再生成

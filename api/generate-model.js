@@ -1200,6 +1200,11 @@ function createEditPrompt(userPrompt, currentModel) {
     // 境界条件変更の意図を検出
     const boundaryChangeIntent = detectBoundaryChangeIntent(userPrompt);
     
+    // スパン追加・層追加の検出
+    const isSpanAddition = userPrompt.match(/(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/) || 
+                          userPrompt.match(/(右側|左側|横).*スパン/);
+    const isLayerAddition = userPrompt.match(/(\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築)/);
+    
     let editPrompt = `編集指示: ${userPrompt}\n\n`;
     
     if (boundaryChangeIntent.detected) {
@@ -1227,12 +1232,46 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `\n`;
         
         editPrompt += `**重要**: 上記の境界条件(${currentModel.nodes.map(n => n.s).join(', ')})を必ず保持してください\n\n`;
+        
+        // スパン追加・層追加の場合の追加指示
+        if (isSpanAddition || isLayerAddition) {
+            const uniqueX = [...new Set(currentModel.nodes.map(n => n.x))].sort((a, b) => a - b);
+            const uniqueY = [...new Set(currentModel.nodes.map(n => n.y))].sort((a, b) => a - b);
+            
+            editPrompt += `**【重要】既存の座標を保持してください**:\n`;
+            editPrompt += `- 既存のX座標: ${uniqueX.join(', ')} m\n`;
+            editPrompt += `- 既存のY座標: ${uniqueY.join(', ')} m\n`;
+            
+            if (isSpanAddition) {
+                const maxX = Math.max(...uniqueX);
+                const spanLength = uniqueX.length >= 2 ? (uniqueX[1] - uniqueX[0]) : 6;
+                editPrompt += `\n**スパン追加モード**:\n`;
+                editPrompt += `- 既存の全ての節点座標（上記の${currentModel.nodes.length}個の節点）はそのまま維持してください\n`;
+                editPrompt += `- 新しいスパンは既存の最大X座標（${maxX} m）の右側に追加してください\n`;
+                editPrompt += `- スパン長は${spanLength} m（既存のスパン長と同じ）を使用してください\n`;
+                editPrompt += `- 既存のY座標（${uniqueY.join(', ')} m）の各位置に新しい節点を追加してください\n`;
+                editPrompt += `- 重複する座標の節点を作成しないでください\n\n`;
+            } else if (isLayerAddition) {
+                const maxY = Math.max(...uniqueY);
+                const storyHeight = uniqueY.length >= 2 ? (uniqueY[1] - uniqueY[0]) : 3.5;
+                editPrompt += `\n**層追加モード**:\n`;
+                editPrompt += `- 既存の全ての節点座標（上記の${currentModel.nodes.length}個の節点）はそのまま維持してください\n`;
+                editPrompt += `- 新しい層は既存の最大Y座標（${maxY} m）の上に追加してください\n`;
+                editPrompt += `- 階高は${storyHeight} m（既存の階高と同じ）を使用してください\n`;
+                editPrompt += `- 既存のX座標（${uniqueX.join(', ')} m）の各位置に新しい節点を追加してください\n`;
+                editPrompt += `- 重複する座標の節点を作成しないでください\n\n`;
+            }
+        }
     }
     
     if (currentModel && currentModel.members && currentModel.members.length > 0) {
         editPrompt += `現在の部材情報:\n`;
         currentModel.members.forEach((member, index) => {
-            editPrompt += `部材${index + 1}: 節点${member.i} → 節点${member.j}\n`;
+            editPrompt += `部材${index + 1}: 節点${member.i} → 節点${member.j}`;
+            if (member.name) {
+                editPrompt += ` (${member.name})`;
+            }
+            editPrompt += `\n`;
         });
         editPrompt += `\n`;
     }
@@ -1244,14 +1283,18 @@ function createEditPrompt(userPrompt, currentModel) {
         if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
             editPrompt += `集中荷重:\n`;
             currentModel.nodeLoads.forEach((load, index) => {
-                editPrompt += `  節点${load.n}: fx=${load.fx || 0}, fy=${load.fy || 0}\n`;
+                const node = currentModel.nodes[load.n - 1];
+                editPrompt += `  節点${load.n}(${node.x}, ${node.y}): px=${load.px || 0}, py=${load.py || 0}\n`;
             });
         }
         
         if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
             editPrompt += `等分布荷重:\n`;
             currentModel.memberLoads.forEach((load, index) => {
-                editPrompt += `  部材${load.m}: q=${load.q}\n`;
+                const member = currentModel.members[load.m - 1];
+                const startNode = currentModel.nodes[member.i - 1];
+                const endNode = currentModel.nodes[member.j - 1];
+                editPrompt += `  部材${load.m}[節点(${startNode.x},${startNode.y})→節点(${endNode.x},${endNode.y})]: w=${load.w}\n`;
             });
         }
         
@@ -1264,6 +1307,7 @@ function createEditPrompt(userPrompt, currentModel) {
     editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
     editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
     editPrompt += `- 既存の荷重データ（nodeLoads, memberLoads）を必ず保持してください\n`;
+    editPrompt += `- 同じ座標に複数の節点を作成しないでください（重複節点禁止）\n`;
     
     return editPrompt;
 }
@@ -2130,7 +2174,7 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
         console.error('ユーザープロンプト:', userPrompt);
         console.error('現在のモデル:', JSON.stringify(model, null, 2));
         
-        const errors = [];
+        let errors = [];
         let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
         
         // 構造の次元を検出
@@ -2771,6 +2815,10 @@ JSON形式で出力してください。`;
     const expectedBeams = dimensions.layers * dimensions.spans;
     const expectedMembers = expectedColumns + expectedBeams;
     
+    // スパン追加・層追加の検出
+    const isSpanAddition = originalPrompt.match(/(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/);
+    const isLayerAddition = originalPrompt.match(/(\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築)/);
+    
     let correctionPrompt = `ラーメン構造の修正指示:
 
 元の指示: ${originalPrompt}
@@ -2787,6 +2835,42 @@ ${errors.map(error => `- ${error}`).join('\n')}
    - 柱: 各柱通りに下から上へ連続的に配置
    - 梁: 各層で水平方向に配置
    - 重要: y=0の地面には梁材（水平材）を配置しない`;
+    
+    // 元のモデルがある場合（編集モード）、既存の座標情報を追加
+    if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        // 既存のモデルの座標情報を抽出
+        const uniqueX = [...new Set(currentModel.nodes.map(n => n.x))].sort((a, b) => a - b);
+        const uniqueY = [...new Set(currentModel.nodes.map(n => n.y))].sort((a, b) => a - b);
+        
+        correctionPrompt += `
+
+【重要】既存のモデルから拡張する場合の制約:
+既存の節点座標:
+- X座標: ${uniqueX.join(', ')} m
+- Y座標: ${uniqueY.join(', ')} m`;
+        
+        if (isSpanAddition) {
+            correctionPrompt += `
+- スパン追加モード: 既存のY座標（${uniqueY.join(', ')} m）を維持し、既存の最大X座標（${Math.max(...uniqueX)} m）の右側に新しいスパンを追加
+- 既存の節点位置は変更しないこと`;
+        } else if (isLayerAddition) {
+            correctionPrompt += `
+- 層追加モード: 既存のX座標（${uniqueX.join(', ')} m）を維持し、既存の最大Y座標（${Math.max(...uniqueY)} m）の上に新しい層を追加
+- 既存の節点位置は変更しないこと`;
+        }
+        
+        // スパン長と階高を元のモデルから計算
+        if (uniqueX.length >= 2) {
+            const spanLength = uniqueX[1] - uniqueX[0];
+            correctionPrompt += `
+- スパン長: ${spanLength} m（既存のモデルと同じ）`;
+        }
+        if (uniqueY.length >= 2) {
+            const storyHeight = uniqueY[1] - uniqueY[0];
+            correctionPrompt += `
+- 階高: ${storyHeight} m（既存のモデルと同じ）`;
+        }
+    }
    
     // 3層2スパンの具体例を追加
     if (dimensions.layers === 3 && dimensions.spans === 2) {

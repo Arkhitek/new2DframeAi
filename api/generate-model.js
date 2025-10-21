@@ -1742,6 +1742,17 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         memberLoads: hasOriginalMemberLoads ? originalModel.memberLoads.length : 0
     });
     
+    if (hasOriginalMemberLoads) {
+        console.error('元のモデルの等分布荷重詳細:', originalModel.memberLoads.map(load => {
+            const member = originalModel.members[load.m - 1];
+            return {
+                m: load.m,
+                w: load.w,
+                connection: member ? `節点${member.i}→${member.j}` : '不明'
+            };
+        }));
+    }
+    
     console.error('生成されたモデルの荷重:', {
         nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
         memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
@@ -1846,6 +1857,20 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
             });
             
             console.error(`等分布荷重を保持: ${preservedModel.memberLoads.length}/${originalModel.memberLoads.length}個`);
+            
+            if (preservedModel.memberLoads.length > 0) {
+                console.error('最終的な等分布荷重配置:', preservedModel.memberLoads.map(load => {
+                    const member = preservedModel.members[load.m - 1];
+                    const startNode = member ? preservedModel.nodes[member.i - 1] : null;
+                    const endNode = member ? preservedModel.nodes[member.j - 1] : null;
+                    return {
+                        m: load.m,
+                        w: load.w,
+                        connection: member ? `節点${member.i}(${startNode?.x},${startNode?.y})→節点${member.j}(${endNode?.x},${endNode?.y})` : '不明',
+                        name: member?.name || '(なし)'
+                    };
+                }));
+            }
         }
         
         // 部材のname（断面名）の保持（部材接続でマッピング）
@@ -1855,6 +1880,12 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         
         if (!hasMaterialChangeIntent) {
             console.error('部材断面名（name）のマッピング開始（材料変更の指示なし）');
+            console.error('元のモデルの部材数:', originalModel.members.length);
+            console.error('元のモデルの最初の3部材:', originalModel.members.slice(0, 3).map(m => ({
+                i: m.i,
+                j: m.j,
+                name: m.name || '(なし)'
+            })));
             let memberNameMappingCount = 0;
             
             originalModel.members.forEach((originalMember, index) => {
@@ -2393,12 +2424,17 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
             }
         }
         
-        // スパン数の検証（緩和）
+        // スパン数の検証（編集での追加が明示されている場合は厳格）
         const spanCount = validateSpanCount(fixedModel);
         if (!spanCount.isValid) {
-            // スパン数検証のエラーは警告のみにする（編集モードでは構造が正しければOK）
-            console.error(`警告: スパン数検証で問題が検出されました: ${spanCount.errors.join(', ')}`);
-            // needsCorrection = true; // コメントアウト: スパン数検証エラーでは修正を要求しない
+            const isAdditionEdit = /(\d+\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築))|((右側|左側|横).*スパン)|((\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築))/i.test(userPrompt);
+            if (isAdditionEdit) {
+                errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
+                needsCorrection = true;
+            } else {
+                // 編集意図が曖昧な場合は警告
+                console.error(`警告: スパン数検証で問題が検出されました: ${spanCount.errors.join(', ')}`);
+            }
         }
         
         // 修正が必要な場合はAIに修正指示を送る

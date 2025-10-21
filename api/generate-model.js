@@ -834,8 +834,58 @@ function detectLoadIntent(userPrompt) {
 }
 
 // 構造の層数とスパン数を検出する関数
-function detectStructureDimensions(userPrompt) {
+// 現在のモデルから層数とスパン数を検出する関数
+function detectDimensionsFromModel(model) {
+    if (!model || !model.nodes || model.nodes.length === 0) {
+        return { layers: 1, spans: 1 };
+    }
+    
+    // Y座標をグループ化して層数を検出
+    const yCoordinates = [...new Set(model.nodes.map(node => node.y))].sort((a, b) => a - b);
+    const layers = yCoordinates.length - 1; // 地面を除いた層数
+    
+    // 各Y座標での節点数からスパン数を検出
+    const nodesByY = {};
+    model.nodes.forEach(node => {
+        const y = node.y;
+        if (!nodesByY[y]) {
+            nodesByY[y] = [];
+        }
+        nodesByY[y].push(node);
+    });
+    
+    // 最も多い節点数を持つ層からスパン数を計算（節点数 - 1 = スパン数）
+    const nodeCounts = Object.values(nodesByY).map(nodes => nodes.length);
+    const maxNodeCount = Math.max(...nodeCounts);
+    const spans = maxNodeCount - 1;
+    
+    console.error('モデルから構造次元を検出:', {
+        yCoordinates,
+        layers,
+        maxNodeCount,
+        spans
+    });
+    
+    return {
+        layers: Math.max(1, layers),
+        spans: Math.max(1, spans)
+    };
+}
+
+function detectStructureDimensions(userPrompt, currentModel = null) {
     const prompt = userPrompt.toLowerCase();
+    
+    // 構造変更の明示的な指示があるかチェック
+    const structureChangeKeywords = ['層', '階', 'スパン', 'span', '間', 'story', 'floor', '門型', '門形', 'portal'];
+    const hasStructureChange = structureChangeKeywords.some(keyword => prompt.includes(keyword));
+    
+    // 編集モードで構造変更の指示がない場合、現在のモデルから検出
+    if (!hasStructureChange && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        console.error('編集モード: 構造変更の指示なし、現在のモデルから次元を検出');
+        const modelDimensions = detectDimensionsFromModel(currentModel);
+        console.error('モデルから検出した次元:', modelDimensions);
+        return modelDimensions;
+    }
     
     // 門型ラーメンの検出（最優先）
     const portalFrameKeywords = ['門型', '門形', 'portal frame', 'portal'];

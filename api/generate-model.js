@@ -221,7 +221,7 @@ export default async function handler(req, res) {
         try {
             console.error('構造検証開始');
             
-            const structureValidation = validateAndFixStructure(
+            const structureValidation = await validateAndFixStructure(
                 generatedModel, 
                 userPrompt, 
                 mode === 'edit' ? currentModel : null,
@@ -292,7 +292,7 @@ export default async function handler(req, res) {
                 }
             } else if (detectedStructureType === 'frame') {
                 // フレーム構造の検証でAI修正が必要な場合
-                const structureValidation = validateAndFixStructure(
+                const structureValidation = await validateAndFixStructure(
                     generatedModel, 
                     userPrompt,
                     mode === 'edit' ? currentModel : null,
@@ -2124,7 +2124,7 @@ function validateBoundaryConditions(originalModel, generatedModel, boundaryChang
 }
 
 // 多層多スパン構造の検証と修正関数
-function validateAndFixStructure(model, userPrompt, originalModel = null, detectedDimensions = null) {
+async function validateAndFixStructure(model, userPrompt, originalModel = null, detectedDimensions = null) {
     try {
         console.error('=== 構造検証開始 ===');
         console.error('ユーザープロンプト:', userPrompt);
@@ -2243,128 +2243,48 @@ function validateAndFixStructure(model, userPrompt, originalModel = null, detect
             needsCorrection = true;
         }
         
-        // 修正が必要な場合はプログラム的に生成
+        // 修正が必要な場合はAIに修正指示を送る
         if (needsCorrection) {
-            console.error('構造修正を実行します');
+            console.error('構造修正が必要です。AIに修正指示を送信します。');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             
-            // 既存の荷重データを保存（AI生成モデルを優先、次に元のモデルから取得）
-            // 編集モードの場合、fixedModelには既にpreserveLoadDataでマッピング済みの荷重が含まれている
-            const originalNodeLoads = fixedModel.nodeLoads || (originalModel && originalModel.nodeLoads) || [];
-            const originalMemberLoads = fixedModel.memberLoads || (originalModel && originalModel.memberLoads) || [];
-            console.error('既存の荷重データを保存:', {
-                nodeLoads: originalNodeLoads.length,
-                memberLoads: originalMemberLoads.length,
-                source: (fixedModel.nodeLoads || fixedModel.memberLoads) ? 'AI生成モデル（マッピング済み）' : (originalModel ? '元のモデル' : '荷重なし')
-            });
+            // 修正プロンプトを作成
+            const correctionPrompt = createFrameCorrectionPrompt(userPrompt, originalModel, errors);
+            console.error('修正プロンプト:', correctionPrompt);
             
-            // 構造を再生成
-            const correctedStructure = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
-            
-            // 荷重データを座標ベースで再マッピング
-            // AI生成モデル（fixedModel）の荷重を、新しく生成された構造（correctedStructure）にマッピング
-            const remappedNodeLoads = [];
-            const remappedMemberLoads = [];
-            
-            // 集中荷重のマッピング
-            if (originalNodeLoads && originalNodeLoads.length > 0) {
-                console.error('プログラム的修正後の集中荷重マッピング開始');
-                originalNodeLoads.forEach((load, index) => {
-                    // 元の節点座標を取得（fixedModelから）
-                    const originalNode = fixedModel.nodes[load.n - 1];
-                    if (!originalNode) {
-                        console.error(`警告: 集中荷重${index + 1}の節点${load.n}がモデルに存在しません`);
-                        return;
+            try {
+                // AI修正呼び出し
+                const correctionResult = await callAIWithCorrectionPrompt(correctionPrompt, 0);
+                
+                if (correctionResult && correctionResult.nodes && correctionResult.members) {
+                    console.error('AI修正成功:', {
+                        nodeCount: correctionResult.nodes.length,
+                        memberCount: correctionResult.members.length
+                    });
+                    
+                    // 修正されたモデルを使用
+                    fixedModel = correctionResult;
+                    
+                    // 荷重データを保持（元のモデルから）
+                    if (originalModel) {
+                        const hasOriginalNodeLoads = originalModel.nodeLoads && originalModel.nodeLoads.length > 0;
+                        const hasOriginalMemberLoads = originalModel.memberLoads && originalModel.memberLoads.length > 0;
+                        
+                        if (hasOriginalNodeLoads || hasOriginalMemberLoads) {
+                            console.error('編集モードの荷重データを保持します');
+                            fixedModel = preserveLoadData(originalModel, fixedModel, userPrompt);
+                        }
                     }
                     
-                    // 新しい構造で同じ座標の節点を探す
-                    const matchedNodeIndex = correctedStructure.nodes.findIndex(node =>
-                        Math.abs(node.x - originalNode.x) < 0.01 &&
-                        Math.abs(node.y - originalNode.y) < 0.01
-                    );
-                    
-                    if (matchedNodeIndex >= 0) {
-                        remappedNodeLoads.push({
-                            ...load,
-                            n: matchedNodeIndex + 1
-                        });
-                        console.error(`集中荷重再マッピング: 節点${load.n}(${originalNode.x}, ${originalNode.y}) → 新しい節点${matchedNodeIndex + 1}`);
-                    } else {
-                        console.error(`警告: 節点(${originalNode.x}, ${originalNode.y})が新しい構造に見つかりません`);
-                    }
-                });
-                console.error(`集中荷重再マッピング完了: ${remappedNodeLoads.length}/${originalNodeLoads.length}個`);
+                    errors = [`${dimensions.layers}層${dimensions.spans}スパン構造のAI修正を実行しました`];
+                } else {
+                    console.error('AI修正に失敗しました。元のモデルを使用します。');
+                    errors.push('AI修正に失敗しました');
+                }
+            } catch (aiError) {
+                console.error('AI修正呼び出しでエラー:', aiError);
+                errors.push('AI修正呼び出しでエラーが発生しました');
             }
-            
-            // 等分布荷重のマッピング
-            if (originalMemberLoads && originalMemberLoads.length > 0) {
-                console.error('プログラム的修正後の等分布荷重マッピング開始');
-                originalMemberLoads.forEach((load, index) => {
-                    // 元の部材の接続を取得（fixedModelから）
-                    const originalMember = fixedModel.members[load.m - 1];
-                    if (!originalMember) {
-                        console.error(`警告: 等分布荷重${index + 1}の部材${load.m}がモデルに存在しません`);
-                        return;
-                    }
-                    
-                    // 元の部材の始点・終点の座標を取得
-                    const originalStartNode = fixedModel.nodes[originalMember.i - 1];
-                    const originalEndNode = fixedModel.nodes[originalMember.j - 1];
-                    
-                    if (!originalStartNode || !originalEndNode) {
-                        console.error(`警告: 部材${load.m}の節点がモデルに存在しません`);
-                        return;
-                    }
-                    
-                    // 新しい構造で同じ座標の節点を探す
-                    const newStartNodeIndex = correctedStructure.nodes.findIndex(node =>
-                        Math.abs(node.x - originalStartNode.x) < 0.01 &&
-                        Math.abs(node.y - originalStartNode.y) < 0.01
-                    );
-                    const newEndNodeIndex = correctedStructure.nodes.findIndex(node =>
-                        Math.abs(node.x - originalEndNode.x) < 0.01 &&
-                        Math.abs(node.y - originalEndNode.y) < 0.01
-                    );
-                    
-                    if (newStartNodeIndex < 0 || newEndNodeIndex < 0) {
-                        console.error(`警告: 部材の節点座標が新しい構造に見つかりません`);
-                        return;
-                    }
-                    
-                    // 新しい構造で同じ接続の部材を探す
-                    const matchedMemberIndex = correctedStructure.members.findIndex(member =>
-                        (member.i === newStartNodeIndex + 1 && member.j === newEndNodeIndex + 1) ||
-                        (member.i === newEndNodeIndex + 1 && member.j === newStartNodeIndex + 1)
-                    );
-                    
-                    if (matchedMemberIndex >= 0) {
-                        remappedMemberLoads.push({
-                            ...load,
-                            m: matchedMemberIndex + 1
-                        });
-                        console.error(`等分布荷重再マッピング: 部材${load.m}(節点${originalMember.i}→${originalMember.j}) → 新しい部材${matchedMemberIndex + 1}(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})`);
-                    } else {
-                        console.error(`警告: 部材接続(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})が新しい構造に見つかりません`);
-                    }
-                });
-                console.error(`等分布荷重再マッピング完了: ${remappedMemberLoads.length}/${originalMemberLoads.length}個`);
-            }
-            
-            // 再マッピングした荷重データを保持して構造を修正
-            fixedModel = {
-                ...correctedStructure,
-                nodeLoads: remappedNodeLoads,
-                memberLoads: remappedMemberLoads
-            };
-            
-            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
-            console.error('修正後の構造:', {
-                nodeCount: fixedModel.nodes.length,
-                memberCount: fixedModel.members.length,
-                nodeLoads: fixedModel.nodeLoads.length,
-                memberLoads: fixedModel.memberLoads.length
-            });
-            errors.push(`${dimensions.layers}層${dimensions.spans}スパン構造の修正を実行しました`);
         }
     }
     
@@ -2396,19 +2316,48 @@ function validateAndFixStructure(model, userPrompt, originalModel = null, detect
 }
 
 // 任意の多層多スパン構造を生成する関数
-function generateCorrectFrameStructure(layers, spans) {
+function generateCorrectFrameStructure(layers, spans, referenceModel = null) {
     try {
         console.error(`=== ${layers}層${spans}スパン構造を生成 ===`);
         
         const nodes = [];
         const members = [];
         
+        // 参照モデルから実際のスパン長と階高を計算
+        let spanLength = 7; // デフォルト値
+        let storyHeight = 3.2; // デフォルト値
+        
+        if (referenceModel && referenceModel.nodes && referenceModel.nodes.length > 0) {
+            // X座標のユニークな値を取得してソート
+            const uniqueX = [...new Set(referenceModel.nodes.map(n => n.x))].sort((a, b) => a - b);
+            if (uniqueX.length >= 2) {
+                // 隣接するX座標の差を計算（スパン長）
+                const xDifferences = [];
+                for (let i = 1; i < uniqueX.length; i++) {
+                    xDifferences.push(uniqueX[i] - uniqueX[i - 1]);
+                }
+                // 最小の差をスパン長とする（固定支点がある場合を考慮）
+                spanLength = Math.min(...xDifferences);
+                console.error(`参照モデルからスパン長を計算: ${spanLength}m`);
+            }
+            
+            // Y座標のユニークな値を取得してソート
+            const uniqueY = [...new Set(referenceModel.nodes.map(n => n.y))].sort((a, b) => a - b);
+            if (uniqueY.length >= 2) {
+                // 隣接するY座標の差を計算（階高）
+                storyHeight = uniqueY[1] - uniqueY[0];
+                console.error(`参照モデルから階高を計算: ${storyHeight}m`);
+            }
+        } else {
+            console.error(`参照モデルがないため、デフォルト値を使用: スパン長${spanLength}m, 階高${storyHeight}m`);
+        }
+        
         // 節点の生成
-        console.error(`節点の生成開始: ${layers + 1}層×${spans + 1}列`);
+        console.error(`節点の生成開始: ${layers + 1}層×${spans + 1}列 (スパン長${spanLength}m, 階高${storyHeight}m)`);
         for (let layer = 0; layer <= layers; layer++) {
             for (let span = 0; span <= spans; span++) {
-                const x = span * 7; // スパン長7m（ログから確認）
-                const y = layer * 3.2; // 階高3.2m（ログから確認）
+                const x = span * spanLength;
+                const y = layer * storyHeight;
                 const s = layer === 0 ? 'x' : 'f'; // 地面は固定、その他は自由
                 
                 nodes.push({ x, y, s });

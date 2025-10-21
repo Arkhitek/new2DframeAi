@@ -948,34 +948,75 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
         };
     }
     
+    // 「追加」モードの検出
+    const isAddMode = /追加|延長|増設|増築/.test(prompt);
+    
     // 層数の検出（より柔軟な検出）
     let layers = 1;
-    const layerPatterns = [
-        /(\d+)層/g,
-        /(\d+)階/g,
-        /(\d+)story/g,
-        /(\d+)floor/g,
-        /(\d+)\s*層/g,  // 数字と層の間にスペースがある場合
-        /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
-    ];
+    let layersToAdd = 0; // 追加する層数
     
-    console.error('層数検出デバッグ:', {
-        prompt: prompt,
-        patterns: layerPatterns.map(p => p.toString())
-    });
+    // 「X階部分を追加」は「X階（X層目）を追加」= 1層だけ追加
+    // 「X層を追加」は「X層を追加」= X層追加
+    const addFloorPattern = /(\d+)\s*階\s*(部分|を|の)*\s*(追加|延長|増設|増築)/;
+    const addLayerPattern = /(\d+)\s*層\s*(を|の)*\s*(追加|延長|増設|増築)/;
     
-    for (const pattern of layerPatterns) {
-        const match = prompt.match(pattern);
-        console.error(`パターン ${pattern} のマッチ結果:`, match);
-        if (match) {
-            // 正規表現から数字を抽出
-            const numberMatch = match[0].match(/\d+/);
+    let isLayerAddition = false;
+    
+    // まず「X階部分を追加」をチェック（1層だけ追加）
+    const floorMatch = prompt.match(addFloorPattern);
+    if (floorMatch) {
+        // 「X階部分を追加」は1層だけ追加（X階目を追加する意味）
+        layersToAdd = 1;
+        isLayerAddition = true;
+        const floorNumber = parseInt(floorMatch[0].match(/\d+/)[0], 10);
+        console.error(`階追加モード検出: ${floorNumber}階部分を追加（1層追加）`);
+    } else {
+        // 次に「X層を追加」をチェック（X層追加）
+        const layerMatch = prompt.match(addLayerPattern);
+        if (layerMatch) {
+            const numberMatch = layerMatch[0].match(/\d+/);
             if (numberMatch) {
-                const extractedNumber = numberMatch[0];
-                layers = parseInt(extractedNumber, 10);
-                console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}層`);
-                if (!isNaN(layers)) {
-                    break;
+                layersToAdd = parseInt(numberMatch[0], 10);
+                isLayerAddition = true;
+                console.error(`層追加モード検出: ${layersToAdd}層を追加`);
+            }
+        }
+    }
+    
+    // 追加モードの場合、現在のモデルから現在の層数を取得
+    if (isLayerAddition && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        const currentDimensions = detectDimensionsFromModel(currentModel);
+        layers = currentDimensions.layers + layersToAdd;
+        console.error(`層追加: 現在${currentDimensions.layers}層 + ${layersToAdd}層 = ${layers}層`);
+    } else if (!isLayerAddition) {
+        // 通常の層数検出（絶対指定）
+        const layerPatterns = [
+            /(\d+)層/g,
+            /(\d+)階/g,
+            /(\d+)story/g,
+            /(\d+)floor/g,
+            /(\d+)\s*層/g,  // 数字と層の間にスペースがある場合
+            /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
+        ];
+        
+        console.error('層数検出デバッグ:', {
+            prompt: prompt,
+            patterns: layerPatterns.map(p => p.toString())
+        });
+        
+        for (const pattern of layerPatterns) {
+            const match = prompt.match(pattern);
+            console.error(`パターン ${pattern} のマッチ結果:`, match);
+            if (match) {
+                // 正規表現から数字を抽出
+                const numberMatch = match[0].match(/\d+/);
+                if (numberMatch) {
+                    const extractedNumber = numberMatch[0];
+                    layers = parseInt(extractedNumber, 10);
+                    console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}層`);
+                    if (!isNaN(layers)) {
+                        break;
+                    }
                 }
             }
         }
@@ -983,29 +1024,66 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
     
     // スパン数の検出（より柔軟な検出）
     let spans = 1;
-    const spanPatterns = [
-        /(\d+)スパン/g,
-        /(\d+)span/g,
-        /(\d+)間/g,
-        /(\d+)\s*スパン/g,  // 数字とスパンの間にスペースがある場合
-        /(\d+)\s*span/g     // 数字とspanの間にスペースがある場合
+    let spansToAdd = 0; // 追加するスパン数
+    
+    // 「Xスパンを追加」のパターンを検出
+    const addSpanPatterns = [
+        /(\d+)\s*スパン\s*(を|の)*\s*(追加|延長|増設|増築)/,
+        /(追加|延長|増設|増築)\s*(\d+)\s*スパン/
     ];
     
-    for (const pattern of spanPatterns) {
+    let isSpanAddition = false;
+    for (const pattern of addSpanPatterns) {
         const match = prompt.match(pattern);
-        console.error(`スパンパターン ${pattern} のマッチ結果:`, match);
         if (match) {
-            // 正規表現から数字を抽出
             const numberMatch = match[0].match(/\d+/);
             if (numberMatch) {
-                const extractedNumber = numberMatch[0];
-                spans = parseInt(extractedNumber, 10);
-                console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}スパン`);
-                if (!isNaN(spans)) {
-                    break;
+                spansToAdd = parseInt(numberMatch[0], 10);
+                isSpanAddition = true;
+                console.error(`スパン追加モード検出: ${spansToAdd}スパンを追加`);
+                break;
+            }
+        }
+    }
+    
+    // 追加モードの場合、現在のモデルから現在のスパン数を取得
+    if (isSpanAddition && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        const currentDimensions = detectDimensionsFromModel(currentModel);
+        spans = currentDimensions.spans + spansToAdd;
+        console.error(`スパン追加: 現在${currentDimensions.spans}スパン + ${spansToAdd}スパン = ${spans}スパン`);
+    } else if (!isSpanAddition) {
+        // 通常のスパン数検出（絶対指定）
+        const spanPatterns = [
+            /(\d+)スパン/g,
+            /(\d+)span/g,
+            /(\d+)間/g,
+            /(\d+)\s*スパン/g,  // 数字とスパンの間にスペースがある場合
+            /(\d+)\s*span/g     // 数字とspanの間にスペースがある場合
+        ];
+        
+        for (const pattern of spanPatterns) {
+            const match = prompt.match(pattern);
+            console.error(`スパンパターン ${pattern} のマッチ結果:`, match);
+            if (match) {
+                // 正規表現から数字を抽出
+                const numberMatch = match[0].match(/\d+/);
+                if (numberMatch) {
+                    const extractedNumber = numberMatch[0];
+                    spans = parseInt(extractedNumber, 10);
+                    console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}スパン`);
+                    if (!isNaN(spans)) {
+                        break;
+                    }
                 }
             }
         }
+    }
+    
+    // 追加モードでスパン数が検出されない場合、現在のモデルからスパン数を取得
+    if ((isLayerAddition || isAddMode) && !isSpanAddition && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        const currentDimensions = detectDimensionsFromModel(currentModel);
+        spans = currentDimensions.spans;
+        console.error(`層追加モードでスパン数を継承: ${spans}スパン`);
     }
     
     // デフォルト値の設定（明示的な指定がない場合）

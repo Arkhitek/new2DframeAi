@@ -450,7 +450,7 @@ export default async function handler(req, res) {
 function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '', retryCount = 0) {
     // ユーザープロンプトから構造タイプと次元を検出
     const structureType = detectStructureType(userPrompt);
-    const dimensions = detectStructureDimensions(userPrompt);
+    const dimensions = detectStructureDimensions(userPrompt, mode === 'edit' ? currentModel : null);
     const loadIntent = detectLoadIntent(userPrompt);
     
     // リトライ回数に応じてプロンプトを簡潔化
@@ -834,6 +834,30 @@ function detectLoadIntent(userPrompt) {
 }
 
 // 構造の層数とスパン数を検出する関数
+// 境界条件を正規化する関数（長い形式 → 短い形式）
+function normalizeBoundaryCondition(condition) {
+    if (!condition) return 'f';
+    
+    const conditionLower = condition.toString().toLowerCase();
+    
+    // 正規化マッピング
+    const mapping = {
+        'fixed': 'x',
+        'fix': 'x',
+        'x': 'x',
+        'pin': 'p',
+        'pinned': 'p',
+        'hinge': 'p',
+        'p': 'p',
+        'roller': 'r',
+        'r': 'r',
+        'free': 'f',
+        'f': 'f'
+    };
+    
+    return mapping[conditionLower] || 'f';
+}
+
 // 現在のモデルから層数とスパン数を検出する関数
 function detectDimensionsFromModel(model) {
     if (!model || !model.nodes || model.nodes.length === 0) {
@@ -876,8 +900,11 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
     const prompt = userPrompt.toLowerCase();
     
     // 構造変更の明示的な指示があるかチェック
-    const structureChangeKeywords = ['層', '階', 'スパン', 'span', '間', 'story', 'floor', '門型', '門形', 'portal'];
-    const hasStructureChange = structureChangeKeywords.some(keyword => prompt.includes(keyword));
+    // パターンマッチングで、数字+キーワードの組み合わせのみ検出
+    const hasLayers = /\d+\s*(層|階|story|floor)/.test(prompt);
+    const hasSpans = /\d+\s*(スパン|span|間)/.test(prompt);
+    const hasPortal = /(門型|門形|portal\s*frame|portal)/.test(prompt);
+    const hasStructureChange = hasLayers || hasSpans || hasPortal;
     
     // 編集モードで構造変更の指示がない場合、現在のモデルから検出
     if (!hasStructureChange && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
@@ -1410,12 +1437,18 @@ function forceBoundaryConditionPreservation(originalModel, generatedModel, bound
             const originalNode = originalModel.nodes[i];
             const generatedNode = preservedModel.nodes[i];
             
-            // 境界条件が変更されている場合は、元の境界条件を復元
-            if (originalNode.s !== generatedNode.s) {
-                console.error(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalNode.s}`);
-                preservedModel.nodes[i].s = originalNode.s;
+            // 境界条件を正規化して比較・復元
+            const originalCondition = normalizeBoundaryCondition(originalNode.s);
+            const generatedCondition = normalizeBoundaryCondition(generatedNode.s);
+            
+            if (originalCondition !== generatedCondition) {
+                console.error(`節点${i + 1}の境界条件を復元: ${generatedNode.s} → ${originalCondition}`);
+                preservedModel.nodes[i].s = originalCondition;
                 boundaryChangesDetected = true;
                 boundaryChangesApplied++;
+            } else if (generatedNode.s !== originalCondition) {
+                // 同じ意味だが形式が異なる場合も正規化
+                preservedModel.nodes[i].s = originalCondition;
             }
         }
         
@@ -1483,10 +1516,17 @@ function finalBoundaryConditionRestore(originalModel, generatedModel, boundaryCh
             const originalNode = originalModel.nodes[i];
             const currentNode = restoredModel.nodes[i];
             
-            if (originalNode.s !== currentNode.s) {
-                console.log(`フォールバック: 節点${i + 1}の境界条件を復元: ${currentNode.s} → ${originalNode.s}`);
-                restoredModel.nodes[i].s = originalNode.s;
+            // 境界条件を正規化して比較・復元
+            const originalCondition = normalizeBoundaryCondition(originalNode.s);
+            const currentCondition = normalizeBoundaryCondition(currentNode.s);
+            
+            if (originalCondition !== currentCondition) {
+                console.log(`フォールバック: 節点${i + 1}の境界条件を復元: ${currentNode.s} → ${originalCondition}`);
+                restoredModel.nodes[i].s = originalCondition;
                 restoredCount++;
+            } else if (currentNode.s !== originalCondition) {
+                // 同じ意味だが形式が異なる場合も正規化
+                restoredModel.nodes[i].s = originalCondition;
             }
         }
         
@@ -1527,13 +1567,20 @@ function emergencyBoundaryConditionFix(originalModel, generatedModel, boundaryCh
             const originalNode = originalModel.nodes[i];
             const currentNode = fixedModel.nodes[i];
             
-            // 強制的に境界条件を復元（条件チェックなし）
-            if (originalNode.s !== currentNode.s) {
-                console.log(`緊急修正: 節点${i + 1}の境界条件を強制復元: ${currentNode.s} → ${originalNode.s}`);
-                fixedModel.nodes[i].s = originalNode.s;
+            // 境界条件を正規化して復元
+            const originalCondition = normalizeBoundaryCondition(originalNode.s);
+            const currentCondition = normalizeBoundaryCondition(currentNode.s);
+            
+            if (originalCondition !== currentCondition) {
+                console.log(`緊急修正: 節点${i + 1}の境界条件を強制復元: ${currentNode.s} → ${originalCondition}`);
+                fixedModel.nodes[i].s = originalCondition;
                 fixedCount++;
             } else {
-                console.log(`緊急修正: 節点${i + 1}の境界条件は正しい: ${currentNode.s}`);
+                console.log(`緊急修正: 節点${i + 1}の境界条件は正しい: ${currentCondition}`);
+                // 形式が異なる場合も正規化
+                if (currentNode.s !== originalCondition) {
+                    fixedModel.nodes[i].s = originalCondition;
+                }
             }
         }
         
@@ -1717,8 +1764,8 @@ function validateAndFixStructure(model, userPrompt) {
         const errors = [];
         let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
         
-        // 構造の次元を検出
-        const dimensions = detectStructureDimensions(userPrompt);
+        // 構造の次元を検出（現在のモデルを渡して、必要に応じてモデルから検出）
+        const dimensions = detectStructureDimensions(userPrompt, model);
         console.error('検出された構造次元:', dimensions);
         
         // 構造タイプを確認
@@ -2242,7 +2289,7 @@ ${errors.map(error => `- ${error}`).join('\n')}
 3. y=0の節点に"p"や"r"は禁止
 4. 荷重: 自由端に集中荷重を生成（例: {"n": 2, "fy": -10}）`;
     } else {
-        const dimensions = detectStructureDimensions(originalPrompt);
+        const dimensions = detectStructureDimensions(originalPrompt, currentModel);
         if (dimensions.spans > 1) {
             correctionPrompt += `
 1. 連続梁構造を生成してください
@@ -2272,7 +2319,7 @@ JSON形式で出力してください。`;
 
 // ラーメン構造（門型含む）の修正プロンプトを作成する関数
 function createFrameCorrectionPrompt(originalPrompt, currentModel, errors) {
-    const dimensions = detectStructureDimensions(originalPrompt);
+    const dimensions = detectStructureDimensions(originalPrompt, currentModel);
     
     // 門型ラーメンの場合
     if (dimensions.isPortalFrame) {

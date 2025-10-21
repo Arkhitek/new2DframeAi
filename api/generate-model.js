@@ -1107,7 +1107,7 @@ function validateNodeReferences(model) {
     }
 }
 
-// スパン数を検証する関数
+// スパン数を検証する関数（ラーメン構造専用）
 function validateSpanCount(model) {
     const errors = [];
     
@@ -1122,6 +1122,22 @@ function validateSpanCount(model) {
     
     // Y座標=0の節点（柱脚）の数をカウント
     const groundNodes = model.nodes.filter(node => node.y === 0);
+    
+    // トラス構造の特徴を検出（y=0にピン"p"とローラー"r"がある場合はトラス）
+    const hasPinSupport = groundNodes.some(node => node.s === 'p');
+    const hasRollerSupport = groundNodes.some(node => node.s === 'r');
+    if (hasPinSupport && hasRollerSupport) {
+        console.error('トラス構造を検出: スパン数検証をスキップ');
+        return { isValid: true, errors: [] };
+    }
+    
+    // 梁構造の特徴を検出（y座標が全て同じ場合は梁構造）
+    const uniqueYValues = [...new Set(model.nodes.map(node => node.y))];
+    if (uniqueYValues.length === 1) {
+        console.error('梁構造を検出: スパン数検証をスキップ');
+        return { isValid: true, errors: [] };
+    }
+    
     const spanCount = groundNodes.length - 1;
         
         console.error('柱脚節点数:', groundNodes.length);

@@ -457,10 +457,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (retryCount >= 2) {
         // 3回目以降は極限まで簡潔
         let simplePrompt = `2D構造生成。JSON出力のみ。
-{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
+{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
-部材番号: 配列順序（1から開始）`;
+部材番号: 配列順序（1から開始）
+部材name: 指定された断面名称（例: "H-200×100×8×12"）`;
+
+        // 鋼材情報が提供されているかチェック
+        const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
+        if (hasSteelSections) {
+            simplePrompt += `
+鋼材: 「指定断面:」の値を部材nameに使用。例: "H-200×100×8×12"`;
+        }
 
         // 荷重指示の有無に基づいて条件分岐
         if (loadIntent.hasLoadIntent) {
@@ -495,7 +503,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // 通常のプロンプト
     let prompt = `2D構造モデル生成。JSON出力のみ。
 
-形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 
 基本ルール:
 - 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
@@ -503,12 +511,25 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 部材番号: 配列順序（1から開始）
 - 座標: メートル単位で小数点以下1桁まで
 - 材料定数: E=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
+- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-300×150"など）
 
 重要制約:
 - 同じ節点間には1本の部材のみ配置（重複禁止）
 - 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 - 存在しない節点番号を部材で参照しない`;
 
+    // 鋼材情報が提供されているかチェック
+    const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
+    if (hasSteelSections) {
+        prompt += `
+
+重要: 鋼材断面情報が提供されています
+- 部材のnameフィールドには、必ず「- 指定断面: 」に続く値を使用してください
+- 例: 「- 指定断面: H-200×100×8×12」 → 部材のname: "H-200×100×8×12"
+- 柱部材と梁部材で異なる断面が指定されている場合、それぞれ適切な断面名称を使用
+- 部材のI、A、Zの値は提供された断面性能値を使用`;
+    }
+    
     // 荷重指示の有無に基づいて条件分岐
     if (loadIntent.hasLoadIntent) {
         prompt += `
@@ -2433,13 +2454,18 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
             // 修正用の最適化されたシステムプロンプト
             const systemPrompt = `2D構造モデル生成。JSON出力のみ。
 
-形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 
 基本ルール:
 - 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
 - 節点番号: 配列順序（1から開始）
 - 部材番号: 配列順序（1から開始）
 - 座標: メートル単位で小数点以下1桁まで
+- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"）
+
+重要: 鋼材断面情報が提供されている場合
+- 部材のnameフィールドには「- 指定断面: 」に続く値を使用
+- 柱部材と梁部材で異なる断面を適切に割り当て
 
 重要制約:
 - 同じ節点間には1本の部材のみ配置（重複禁止）

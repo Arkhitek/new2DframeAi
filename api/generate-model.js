@@ -247,6 +247,11 @@ export default async function handler(req, res) {
                 } else {
                     console.error('トラス構造検証成功');
                 }
+            } else if (detectedStructureType === 'arch') {
+                console.error('アーチ構造: 基本検証のみ実行');
+                // アーチ構造は形状が多様なため、詳細な検証はスキップ
+                // AIが生成した構造をそのまま使用
+                console.error('アーチ構造検証成功');
             } else if (detectedStructureType === 'beam') {
                 console.error('梁構造の追加検証を実行');
                 const beamValidation = validateBeamStructure(generatedModel, userPrompt);
@@ -290,6 +295,12 @@ export default async function handler(req, res) {
                         console.error('ラーメン構造AI修正に失敗、元のモデルを使用');
                     }
                 }
+            } else if (detectedStructureType === 'basic') {
+                console.error('一般構造: AIの判断を尊重し、柔軟な検証のみ実行');
+                // 特定の構造タイプが指定されていない場合は、
+                // AIが適切に判断した構造をそのまま使用
+                // 基本的な検証（節点参照、部材重複）のみ実行
+                console.error('一般構造検証: 基本検証のみ実行');
             }
             
             // 部材重複検出・修正
@@ -537,6 +548,56 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 荷重: 中央部に集中荷重または等分布荷重を生成（等分布荷重はプラスの値で下向き）`;
             }
         }
+    } else if (structureType === 'arch') {
+        // アーチ構造の詳細なプロンプト
+        const spanLength = extractSpanLengthFromPrompt(userPrompt);
+        const rise = extractRiseFromPrompt(userPrompt);  // 矢高を抽出
+        
+        prompt += `
+アーチ構造: スパン${spanLength}m、矢高${rise}m
+重要な特徴:
+1. アーチ形状（放物線または円弧状）に節点を配置
+2. 両端の支点はy=0に配置（通常はピン支点"p"）
+3. 中間節点はアーチ曲線に沿って配置し、全て"f"（自由）
+
+節点配置の原則:
+- 両端（x=0とx=${spanLength}）: y=0、境界条件"p"（ピン支点）
+- 中間節点: アーチ曲線に沿って配置（8～12個程度）
+- 最高点: x=${spanLength / 2}、y=${rise}
+- 曲線式: 放物線 y = 4*${rise}/${spanLength}²*(x-${spanLength}/2)² を使用
+
+部材配置の原則:
+- 隣接する節点を順番に接続（アーチ曲線を形成）
+- 節点1→2→3→...→最終節点
+
+境界条件:
+- 両端: "p"（ピン支点）または"r"（ローラー支点）
+- 中間節点: 全て"f"（自由）`;
+        
+        if (loadIntent.hasLoadIntent) {
+            prompt += `
+
+荷重: アーチの節点に適切な荷重を生成（等分布荷重を節点荷重に変換）`;
+        }
+        
+        // 具体的な例を追加
+        prompt += `
+
+例: スパン20m、矢高4mのアーチ
+節点（9個）: アーチ曲線に沿って配置
+- 節点1: (0, 0, "p") - 左端支点
+- 節点2: (2.5, 1, "f")
+- 節点3: (5, 2, "f")
+- 節点4: (7.5, 3, "f")
+- 節点5: (10, 4, "f") - 最高点
+- 節点6: (12.5, 3, "f")
+- 節点7: (15, 2, "f")
+- 節点8: (17.5, 1, "f")
+- 節点9: (20, 0, "p") - 右端支点
+
+部材（8本）: 1→2, 2→3, 3→4, 4→5, 5→6, 6→7, 7→8, 8→9
+
+重要: アーチの両端はy=0に配置し、ピン支点とします。`;
     } else if (structureType === 'truss') {
         // トラス構造の詳細なプロンプト
         const height = extractHeightFromPrompt(userPrompt);
@@ -651,6 +712,29 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         }
     }
 
+    // 一般的な構造（構造タイプが指定されていない場合）
+    if (structureType === 'basic') {
+        prompt += `
+
+一般的な2D構造の生成:
+指示内容から構造の種類を柔軟に判断し、適切なモデルを生成してください。
+
+構造タイプの判断基準:
+- ラーメン構造: 柱と梁で構成、地面に固定支点、多層多スパン
+- トラス構造: 三角形要素で構成、ピンとローラー支点、斜材が重要
+- アーチ構造: 曲線形状、両端がy=0に支点、圧縮力が主
+- 梁構造: 水平材、両端に支点、曲げモーメントが主
+- その他: 指示に応じて最適な構造形式を選択
+
+境界条件の選択:
+- 固定支点("x"): 回転・移動を完全拘束（ラーメンの柱脚など）
+- ピン支点("p"): 回転自由、移動拘束（トラスの支点、アーチの両端など）
+- ローラー支点("r"): 回転・水平移動自由（トラスの片側支点など）
+- 自由("f"): 拘束なし（中間節点）
+
+指示内容をよく読み、最も適切な構造形式で生成してください。`;
+    }
+    
     // 構造タイプに応じた重要ルールを追加
     if (structureType === 'beam') {
         prompt += `
@@ -661,9 +745,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     } else if (structureType === 'frame') {
         prompt += `
 重要: 節点番号は存在するもののみ参照、地面節点は"x"`;
+    } else if (structureType === 'arch') {
+        prompt += `
+重要: 節点番号は存在するもののみ参照、アーチの両端はy=0に配置`;
     } else {
         prompt += `
-重要: 節点番号は存在するもののみ参照`;
+重要: 節点番号は存在するもののみ参照、指示内容に応じて適切な境界条件を設定`;
     }
     
     // 具体的な例を追加（梁構造のみ）
@@ -691,22 +778,28 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 function detectStructureType(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
-    // ラーメン構造のキーワード（最優先）
+    // アーチ構造のキーワード（最優先）
+    const archKeywords = ['アーチ', 'arch', '矢高', 'ライズ', 'rise'];
+    if (archKeywords.some(keyword => prompt.includes(keyword))) {
+        return 'arch';
+    }
+    
+    // ラーメン構造のキーワード
     const frameKeywords = ['ラーメン', 'フレーム', 'frame', '門型', '多層', '層', '柱', '階'];
     if (frameKeywords.some(keyword => prompt.includes(keyword))) {
         return 'frame';
-    }
-    
-    // 梁構造のキーワード
-    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', '支点', 'ピン支点', '固定支点', 'キャンチレバー', '片持ち梁', 'cantilever'];
-    if (beamKeywords.some(keyword => prompt.includes(keyword))) {
-        return 'beam';
     }
     
     // トラス構造のキーワード
     const trussKeywords = ['トラス', 'truss', 'ワーレン', 'warren', 'プラット', 'pratt', 'ハウ', 'howe', '斜材', '弦材'];
     if (trussKeywords.some(keyword => prompt.includes(keyword))) {
         return 'truss';
+    }
+    
+    // 梁構造のキーワード
+    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', 'キャンチレバー', '片持ち梁', 'cantilever'];
+    if (beamKeywords.some(keyword => prompt.includes(keyword))) {
+        return 'beam';
     }
     
     return 'basic';
@@ -1154,8 +1247,14 @@ function validateSpanCount(model) {
         return { isValid: true, errors: [] };
     }
     
-    // 梁構造の特徴を検出（y座標が全て同じ場合は梁構造）
+    // アーチ構造の特徴を検出（y=0に支点があり、y座標が多様な場合）
     const uniqueYValues = [...new Set(model.nodes.map(node => node.y))];
+    if (groundNodes.length === 2 && uniqueYValues.length >= 3 && (hasPinSupport || hasRollerSupport)) {
+        console.error('アーチ構造を検出: スパン数検証をスキップ');
+        return { isValid: true, errors: [] };
+    }
+    
+    // 梁構造の特徴を検出（y座標が全て同じ場合は梁構造）
     if (uniqueYValues.length === 1) {
         console.error('梁構造を検出: スパン数検証をスキップ');
         return { isValid: true, errors: [] };
@@ -1581,6 +1680,14 @@ function validateAndFixStructure(model, userPrompt) {
             return validateBeamStructure(fixedModel, userPrompt);
         } else if (structureType === 'truss') {
             return validateTrussStructure(fixedModel, userPrompt);
+        } else if (structureType === 'arch') {
+            // アーチ構造は形状が多様なため、詳細な検証をスキップ
+            console.error('アーチ構造: 詳細検証をスキップ');
+            return { isValid: true, errors: [], fixedModel: fixedModel };
+        } else if (structureType === 'basic') {
+            // 一般構造は、AIの判断を尊重し、詳細な検証をスキップ
+            console.error('一般構造: AIの判断を尊重、詳細検証をスキップ');
+            return { isValid: true, errors: [], fixedModel: fixedModel };
         }
         
         // ラーメン構造かどうかを確認
@@ -1868,6 +1975,34 @@ function extractSpanLengthFromPrompt(userPrompt) {
     }
     
     return 15.0; // デフォルト値
+}
+
+// プロンプトから矢高（ライズ）を直接抽出する関数
+function extractRiseFromPrompt(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    const risePatterns = [
+        /矢高(\d+(?:\.\d+)?)m/g,
+        /ライズ(\d+(?:\.\d+)?)m/g,
+        /rise\s*(\d+(?:\.\d+)?)m/g,
+        /(\d+(?:\.\d+)?)m.*矢高/g,
+        /(\d+(?:\.\d+)?)m.*ライズ/g,
+        /(\d+(?:\.\d+)?)m.*rise/g
+    ];
+    
+    for (const pattern of risePatterns) {
+        const match = prompt.match(pattern);
+        if (match) {
+            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
+            if (numberMatch) {
+                const rise = parseFloat(numberMatch[0]);
+                if (!isNaN(rise)) {
+                    return rise;
+                }
+            }
+        }
+    }
+    
+    return 4.0; // デフォルト値
 }
 
 // ワーレントラス構造生成関数

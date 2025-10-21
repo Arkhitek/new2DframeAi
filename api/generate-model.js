@@ -594,11 +594,29 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
             prompt += `
 ラーメン(${dimensions.layers}層${dimensions.spans}スパン): 節点${expectedNodes}個、部材${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
 座標: X=0,6,12...m、Y=0,3.5,7...m
-境界条件: 地面節点は"x"、上部節点は"f"
-部材配置: y=0の地面には梁材（水平材）を配置しない`;
+境界条件: 地面節点（y=0）は"x"、上部節点は"f"
+部材配置: 
+- 柱: 各柱通りに下から上へ連続的に配置（節点1→4→7...、節点2→5→8...）
+- 梁: 各層で水平方向に配置（節点4→5→6...、節点7→8→9...）
+- 重要: y=0の地面には梁材（水平材）を配置しない`;
             if (loadIntent.hasLoadIntent) {
                 prompt += `
 荷重: 各層に水平荷重、適切な節点に集中荷重を生成`;
+            }
+            
+            // 具体的な例を追加（3層2スパンの場合）
+            if (dimensions.layers === 3 && dimensions.spans === 2) {
+                prompt += `
+
+例: 3層2スパンの場合
+節点: 12個（4層×3列）
+- 地面（y=0）: 節点1(0,0,x), 節点2(6,0,x), 節点3(12,0,x)
+- 1層（y=3.5）: 節点4(0,3.5,f), 節点5(6,3.5,f), 節点6(12,3.5,f)
+- 2層（y=7）: 節点7(0,7,f), 節点8(6,7,f), 節点9(12,7,f)
+- 3層（y=10.5）: 節点10(0,10.5,f), 節点11(6,10.5,f), 節点12(12,10.5,f)
+部材: 15本（柱9本+梁6本）
+- 柱: 1→4, 4→7, 7→10, 2→5, 5→8, 8→11, 3→6, 6→9, 9→12
+- 梁: 4→5, 5→6, 7→8, 8→9, 10→11, 11→12`;
             }
         } else {
             prompt += `
@@ -1131,8 +1149,10 @@ function validateSpanCount(model) {
     }
     
         // 部材数の検証
-        const expectedColumnCount = (spanCount + 1) * layerNodeCounts.length; // 柱は(スパン数+1)×層数
-        const expectedBeamCount = spanCount * layerNodeCounts.length; // 梁はスパン数×層数（y=0の地面には梁材なし）
+        // 実際の構造層数（地面を除く）= 節点の層数 - 1
+        const actualLayers = layerNodeCounts.length - 1;
+        const expectedColumnCount = (spanCount + 1) * actualLayers; // 柱は(スパン数+1)×実際の層数
+        const expectedBeamCount = spanCount * actualLayers; // 梁はスパン数×実際の層数（y=0の地面には梁材なし）
         const expectedTotalMembers = expectedColumnCount + expectedBeamCount;
         
         console.error('期待される部材数:', {
@@ -1576,7 +1596,8 @@ function validateAndFixStructure(model, userPrompt) {
         
         // 期待値の計算
         const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
-        const expectedMembers = dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1);
+        // 柱の数: layers * (spans + 1)、梁の数: layers * spans
+        const expectedMembers = dimensions.layers * (dimensions.spans + 1) + dimensions.layers * dimensions.spans;
         
         console.error('期待値:', {
             layers: dimensions.layers,
@@ -2044,6 +2065,11 @@ JSON形式で出力してください。`;
     }
     
     // 多層多スパンラーメンの場合
+    const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
+    const expectedColumns = dimensions.layers * (dimensions.spans + 1);
+    const expectedBeams = dimensions.layers * dimensions.spans;
+    const expectedMembers = expectedColumns + expectedBeams;
+    
     let correctionPrompt = `ラーメン構造の修正指示:
 
 元の指示: ${originalPrompt}
@@ -2053,10 +2079,30 @@ ${errors.map(error => `- ${error}`).join('\n')}
 
 修正要求:
 1. ${dimensions.layers}層${dimensions.spans}スパンのラーメン構造を生成してください
-2. 節点数: ${(dimensions.layers + 1) * (dimensions.spans + 1)}個
-3. 部材数: ${dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1)}個
+2. 節点数: ${expectedNodes}個（${dimensions.layers + 1}層×${dimensions.spans + 1}列）
+3. 部材数: ${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
 4. 境界条件: 地面節点（y=0）は"x"、上部節点は"f"
-5. 部材配置: y=0の地面には梁材（水平材）を配置しない
+5. 部材配置: 
+   - 柱: 各柱通りに下から上へ連続的に配置
+   - 梁: 各層で水平方向に配置
+   - 重要: y=0の地面には梁材（水平材）を配置しない`;
+   
+    // 3層2スパンの具体例を追加
+    if (dimensions.layers === 3 && dimensions.spans === 2) {
+        correctionPrompt += `
+
+例: 3層2スパンの場合は以下のように生成してください
+節点: 12個
+- 地面: 節点1(0,0,x), 節点2(6,0,x), 節点3(12,0,x)
+- 1層: 節点4(0,3.5,f), 節点5(6,3.5,f), 節点6(12,3.5,f)
+- 2層: 節点7(0,7,f), 節点8(6,7,f), 節点9(12,7,f)
+- 3層: 節点10(0,10.5,f), 節点11(6,10.5,f), 節点12(12,10.5,f)
+部材: 15本
+- 柱: 1→4, 4→7, 7→10, 2→5, 5→8, 8→11, 3→6, 6→9, 9→12
+- 梁: 4→5, 5→6, 7→8, 8→9, 10→11, 11→12`;
+    }
+    
+    correctionPrompt += `
 
 JSON形式で出力してください。`;
 

@@ -8,11 +8,9 @@
     "build": "echo 'No build step required for static site'",
     "dev": "echo 'Use netlify dev for local development'"
   },
-  "engines": {
-    "node": ">=18.x"
-  },
   "dependencies": {
-    "google-auth-library": "^10.4.0"
+    "google-auth-library": "^10.4.0",
+    "node-fetch": "^2.6.7"
   },
   "keywords": [
     "structural-analysis",

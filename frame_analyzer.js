@@ -17148,8 +17148,7 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
                                naturalLanguageInput.toLowerCase().includes('beam') ||
                                naturalLanguageInput.toLowerCase().includes('連続') ||
                                naturalLanguageInput.toLowerCase().includes('単純') ||
-                               naturalLanguageInput.toLowerCase().includes('キャンチレバー') ||
-                               naturalLanguageInput.toLowerCase().includes('片持ち梁');
+                               naturalLanguageInput.toLowerCase().includes('カンチレバー');
         
         const isTrussStructure = naturalLanguageInput.toLowerCase().includes('トラス') ||
                                naturalLanguageInput.toLowerCase().includes('truss') ||

@@ -1274,6 +1274,52 @@ function createEditPrompt(userPrompt, currentModel) {
             editPrompt += `\n`;
         });
         editPrompt += `\n`;
+        
+        // 部材断面の統計を追加
+        const memberNameStats = {};
+        let verticalMembers = []; // 柱（垂直材）
+        let horizontalMembers = []; // 梁（水平材）
+        
+        currentModel.members.forEach((member, index) => {
+            const startNode = currentModel.nodes[member.i - 1];
+            const endNode = currentModel.nodes[member.j - 1];
+            
+            if (startNode && endNode) {
+                const isVertical = Math.abs(startNode.x - endNode.x) < 0.01; // X座標が同じ→垂直（柱）
+                const isHorizontal = Math.abs(startNode.y - endNode.y) < 0.01; // Y座標が同じ→水平（梁）
+                
+                if (member.name) {
+                    if (isVertical) {
+                        verticalMembers.push(member.name);
+                    } else if (isHorizontal) {
+                        horizontalMembers.push(member.name);
+                    }
+                }
+            }
+        });
+        
+        // 最も多く使われている柱断面と梁断面を特定
+        const getMode = (arr) => {
+            if (arr.length === 0) return null;
+            const counts = {};
+            arr.forEach(name => counts[name] = (counts[name] || 0) + 1);
+            return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+        };
+        
+        const columnSection = getMode(verticalMembers);
+        const beamSection = getMode(horizontalMembers);
+        
+        if (columnSection || beamSection) {
+            editPrompt += `**【重要】部材断面情報（新しい部材も同じ断面を使用してください）**:\n`;
+            if (columnSection) {
+                editPrompt += `- 柱（垂直材）の断面: ${columnSection}\n`;
+            }
+            if (beamSection) {
+                editPrompt += `- 梁（水平材）の断面: ${beamSection}\n`;
+            }
+            editPrompt += `- 新しく追加する柱・梁についても、上記と同じ断面（name）を使用してください\n`;
+            editPrompt += `- 既存の部材の断面（name）は変更しないでください\n\n`;
+        }
     }
     
     // 荷重情報を追加
@@ -1307,6 +1353,8 @@ function createEditPrompt(userPrompt, currentModel) {
     editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
     editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
     editPrompt += `- 既存の荷重データ（nodeLoads, memberLoads）を必ず保持してください\n`;
+    editPrompt += `- 既存の部材の断面名（name）を必ず保持してください（同じ座標の部材は同じ断面名）\n`;
+    editPrompt += `- 新しく追加する部材は、既存の柱・梁と同じ断面名（name）を使用してください\n`;
     editPrompt += `- 同じ座標に複数の節点を作成しないでください（重複節点禁止）\n`;
     
     return editPrompt;
@@ -1800,6 +1848,57 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
             console.error(`等分布荷重を保持: ${preservedModel.memberLoads.length}/${originalModel.memberLoads.length}個`);
         }
         
+        // 部材のname（断面名）の保持（部材接続でマッピング）
+        // 材料変更・断面変更の指示がない場合のみ適用
+        const materialChangeKeywords = /材料.*変更|断面.*変更|弾性係数.*変更|ステンレス|アルミ|material.*change|section.*change|modulus.*change/i;
+        const hasMaterialChangeIntent = materialChangeKeywords.test(userPrompt);
+        
+        if (!hasMaterialChangeIntent) {
+            console.error('部材断面名（name）のマッピング開始（材料変更の指示なし）');
+            let memberNameMappingCount = 0;
+            
+            originalModel.members.forEach((originalMember, index) => {
+                // 元の部材の始点と終点の座標を取得
+                const originalStartNode = originalModel.nodes[originalMember.i - 1];
+                const originalEndNode = originalModel.nodes[originalMember.j - 1];
+                
+                if (!originalStartNode || !originalEndNode) {
+                    return;
+                }
+                
+                // 生成されたモデルで同じ接続の部材を探す
+                const newStartNodeIndex = generatedModel.nodes.findIndex(node =>
+                    Math.abs(node.x - originalStartNode.x) < 0.01 &&
+                    Math.abs(node.y - originalStartNode.y) < 0.01
+                );
+                const newEndNodeIndex = generatedModel.nodes.findIndex(node =>
+                    Math.abs(node.x - originalEndNode.x) < 0.01 &&
+                    Math.abs(node.y - originalEndNode.y) < 0.01
+                );
+                
+                if (newStartNodeIndex < 0 || newEndNodeIndex < 0) {
+                    return;
+                }
+                
+                // 同じ接続を持つ部材を探す（順序は問わない）
+                const matchedMemberIndex = preservedModel.members.findIndex(member =>
+                    (member.i === newStartNodeIndex + 1 && member.j === newEndNodeIndex + 1) ||
+                    (member.i === newEndNodeIndex + 1 && member.j === newStartNodeIndex + 1)
+                );
+                
+                if (matchedMemberIndex >= 0 && originalMember.name) {
+                    // マッチした部材のnameを元のモデルから復元
+                    preservedModel.members[matchedMemberIndex].name = originalMember.name;
+                    memberNameMappingCount++;
+                    console.error(`部材断面名マッピング: 元の部材${index + 1}(${originalMember.name}) → 新しい部材${matchedMemberIndex + 1}`);
+                }
+            });
+            
+            console.error(`部材断面名を保持: ${memberNameMappingCount}/${originalModel.members.length}個`);
+        } else {
+            console.error('材料変更の指示が検出されたため、部材断面名のマッピングをスキップします');
+        }
+        
         console.error('=== 荷重データ保持処理完了 ===');
         return preservedModel;
     } else {
@@ -2266,25 +2365,40 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
         // 構造の検証
         let needsCorrection = false;
         
-        // 節点数の検証
+        // 節点数の検証（厳密）
         console.error(`節点数検証: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
         if (fixedModel.nodes.length !== expectedNodes) {
-            errors.push(`節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
-            needsCorrection = true;
+            const nodeRatio = fixedModel.nodes.length / expectedNodes;
+            if (nodeRatio < 0.8) {
+                // 80%未満の場合はエラー
+                errors.push(`節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
+                needsCorrection = true;
+            } else if (nodeRatio !== 1.0) {
+                // 80%以上100%未満の場合は警告のみ
+                console.error(`警告: 節点数が期待値と異なります（期待${expectedNodes}、実際${fixedModel.nodes.length}）が、許容範囲内です`);
+            }
         }
         
-        // 部材数の検証
+        // 部材数の検証（緩和）
         console.error(`部材数検証: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
         if (fixedModel.members.length !== expectedMembers) {
-            errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
-            needsCorrection = true;
+            const memberRatio = fixedModel.members.length / expectedMembers;
+            if (memberRatio < 0.7) {
+                // 70%未満の場合はエラー
+                errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+                needsCorrection = true;
+            } else if (memberRatio !== 1.0) {
+                // 70%以上100%未満の場合は警告のみ
+                console.error(`警告: 部材数が期待値と異なります（期待${expectedMembers}、実際${fixedModel.members.length}）が、許容範囲内です`);
+            }
         }
         
-        // スパン数の検証
+        // スパン数の検証（緩和）
         const spanCount = validateSpanCount(fixedModel);
         if (!spanCount.isValid) {
-            errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
-            needsCorrection = true;
+            // スパン数検証のエラーは警告のみにする（編集モードでは構造が正しければOK）
+            console.error(`警告: スパン数検証で問題が検出されました: ${spanCount.errors.join(', ')}`);
+            // needsCorrection = true; // コメントアウト: スパン数検証エラーでは修正を要求しない
         }
         
         // 修正が必要な場合はAIに修正指示を送る

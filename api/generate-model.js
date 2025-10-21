@@ -270,6 +270,26 @@ export default async function handler(req, res) {
                 } else {
                     console.error('梁構造検証成功');
                 }
+            } else if (detectedStructureType === 'frame') {
+                // フレーム構造の検証でAI修正が必要な場合
+                const structureValidation = validateAndFixStructure(generatedModel, userPrompt);
+                if (!structureValidation.isValid && structureValidation.needsAICorrection) {
+                    console.error('門型ラーメン検証エラー:', structureValidation.errors);
+                    
+                    // ラーメン構造の修正プロンプトを作成
+                    const correctionPrompt = createFrameCorrectionPrompt(userPrompt, generatedModel, structureValidation.errors);
+                    console.error('ラーメン構造修正プロンプト:', correctionPrompt);
+                    
+                    // 修正プロンプトでAIを再呼び出し
+                    const correctedResponse = await callAIWithCorrectionPrompt(correctionPrompt, retryCount);
+                    if (correctedResponse) {
+                        generatedModel = correctedResponse;
+                        finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                        console.error('ラーメン構造AI修正完了');
+                    } else {
+                        console.error('ラーメン構造AI修正に失敗、元のモデルを使用');
+                    }
+                }
             }
             
             // 部材重複検出・修正
@@ -540,8 +560,32 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 節点: [{"x":0,"y":0,"s":"p"},{"x":7.5,"y":0,"s":"f"},{"x":15,"y":0,"s":"r"},{"x":0,"y":3,"s":"f"},{"x":7.5,"y":3,"s":"f"},{"x":15,"y":3,"s":"f"}]
 部材: 下弦材、上弦材、斜材を適切に配置`;
     } else if (structureType === 'frame') {
+        // 門型ラーメンの特別処理
+        if (dimensions.isPortalFrame) {
+            // プロンプトから高さとスパンの値を抽出
+            const height = extractHeightFromPrompt(userPrompt);
+            const spanLength = extractSpanLengthFromPrompt(userPrompt);
+            
+            prompt += `
+門型ラーメン（ポータルフレーム）: 4節点、3部材（左柱、梁、右柱）
+節点配置: 
+- 左柱脚（x=0, y=0, s="x"）
+- 左柱頭（x=0, y=${height}, s="f"）
+- 右柱頭（x=${spanLength}, y=${height}, s="f"）
+- 右柱脚（x=${spanLength}, y=0, s="x"）
+境界条件: 柱脚は"x"（固定支点）、柱頭は"f"（自由）
+部材配置: 
+- 左柱: 節点1→節点2（i=1, j=2）
+- 梁: 節点2→節点3（i=2, j=3）
+- 右柱: 節点3→節点4（i=3, j=4）
+重要: 4節点、3部材のみで構成、追加の節点や部材を作成しない`;
+            if (loadIntent.hasLoadIntent) {
+                prompt += `
+荷重: 梁や柱頭に適切な荷重を生成（水平荷重、鉛直荷重、等分布荷重など）`;
+            }
+        }
         // 層数・スパン数が検出された場合のみ詳細ルールを追加
-        if (dimensions.layers > 0 && dimensions.spans > 0) {
+        else if (dimensions.layers > 0 && dimensions.spans > 0) {
             const expectedNodes = (dimensions.layers + 1) * (dimensions.spans + 1);
             const expectedColumns = (dimensions.spans + 1) * dimensions.layers;
             const expectedBeams = dimensions.spans * dimensions.layers; // y=0の地面には梁材なし
@@ -659,6 +703,19 @@ function detectLoadIntent(userPrompt) {
 function detectStructureDimensions(userPrompt) {
     const prompt = userPrompt.toLowerCase();
     
+    // 門型ラーメンの検出（最優先）
+    const portalFrameKeywords = ['門型', '門形', 'portal frame', 'portal'];
+    const isPortalFrame = portalFrameKeywords.some(keyword => prompt.includes(keyword));
+    
+    if (isPortalFrame) {
+        console.error('門型ラーメンを検出: 1層1スパンとして処理');
+        return {
+            layers: 1,
+            spans: 1,
+            isPortalFrame: true
+        };
+    }
+    
     // 層数の検出（より柔軟な検出）
     let layers = 1;
     const layerPatterns = [
@@ -668,14 +725,6 @@ function detectStructureDimensions(userPrompt) {
         /(\d+)floor/g,
         /(\d+)\s*層/g,  // 数字と層の間にスペースがある場合
         /(\d+)\s*階/g   // 数字と階の間にスペースがある場合
-    ];
-    
-    // トラス構造の高さ検出パターンを追加
-    const heightPatterns = [
-        /高さ(\d+(?:\.\d+)?)m/g,
-        /height\s*(\d+(?:\.\d+)?)m/g,
-        /(\d+(?:\.\d+)?)m.*高さ/g,
-        /(\d+(?:\.\d+)?)m.*height/g
     ];
     
     console.error('層数検出デバッグ:', {
@@ -692,27 +741,8 @@ function detectStructureDimensions(userPrompt) {
             if (numberMatch) {
                 const extractedNumber = numberMatch[0];
                 layers = parseInt(extractedNumber, 10);
-                console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}`);
+                console.error(`層数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${layers}層`);
                 if (!isNaN(layers)) {
-                    break;
-                }
-            }
-        }
-    }
-    
-    // トラス構造の高さ検出
-    for (const pattern of heightPatterns) {
-        const match = prompt.match(pattern);
-        console.error(`高さパターン ${pattern} のマッチ結果:`, match);
-        if (match) {
-            // マッチした文字列から数字を抽出
-            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
-            if (numberMatch) {
-                const height = parseFloat(numberMatch[0]);
-                console.error(`高さ検出: "${match[0]}" -> 抽出された数字: "${numberMatch[0]}" -> 高さ: ${height}m`);
-                if (!isNaN(height)) {
-                    // トラス構造では高さを層数として扱う（簡易的な対応）
-                    layers = Math.max(layers, Math.ceil(height / 3.0)); // 3mごとに1層として計算
                     break;
                 }
             }
@@ -729,14 +759,6 @@ function detectStructureDimensions(userPrompt) {
         /(\d+)\s*span/g     // 数字とspanの間にスペースがある場合
     ];
     
-    // トラス構造のスパン検出パターンを追加
-    const spanLengthPatterns = [
-        /スパン(\d+(?:\.\d+)?)m/g,
-        /span\s*(\d+(?:\.\d+)?)m/g,
-        /(\d+(?:\.\d+)?)m.*スパン/g,
-        /(\d+(?:\.\d+)?)m.*span/g
-    ];
-    
     for (const pattern of spanPatterns) {
         const match = prompt.match(pattern);
         console.error(`スパンパターン ${pattern} のマッチ結果:`, match);
@@ -746,27 +768,8 @@ function detectStructureDimensions(userPrompt) {
             if (numberMatch) {
                 const extractedNumber = numberMatch[0];
                 spans = parseInt(extractedNumber, 10);
-                console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}`);
+                console.error(`スパン数検出: "${match[0]}" -> 抽出された数字: "${extractedNumber}" -> ${spans}スパン`);
                 if (!isNaN(spans)) {
-                    break;
-                }
-            }
-        }
-    }
-    
-    // トラス構造のスパン長検出
-    for (const pattern of spanLengthPatterns) {
-        const match = prompt.match(pattern);
-        console.error(`スパン長パターン ${pattern} のマッチ結果:`, match);
-        if (match) {
-            // マッチした文字列から数字を抽出
-            const numberMatch = match[0].match(/\d+(?:\.\d+)?/);
-            if (numberMatch) {
-                const spanLength = parseFloat(numberMatch[0]);
-                console.error(`スパン長検出: "${match[0]}" -> 抽出された数字: "${numberMatch[0]}" -> スパン長: ${spanLength}m`);
-                if (!isNaN(spanLength)) {
-                    // トラス構造ではスパン長からスパン数を推定（簡易的な対応）
-                    spans = Math.max(spans, Math.ceil(spanLength / 3.0)); // 3mごとに1スパンとして計算
                     break;
                 }
             }
@@ -1525,8 +1528,50 @@ function validateAndFixStructure(model, userPrompt) {
         const isFrameStructure = structureType === 'frame';
         console.error('ラーメン構造:', isFrameStructure);
     
-    // ラーメン構造の場合のみ検証・修正を実行
-    if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {
+    // 門型ラーメンの場合は特別な検証を実行
+    if (isFrameStructure && dimensions.isPortalFrame) {
+        console.error('門型ラーメンの検証を実行');
+        
+        // 門型ラーメンの期待値
+        const expectedNodes = 4;
+        const expectedMembers = 3;
+        
+        console.error('期待値:', {
+            isPortalFrame: true,
+            expectedNodes,
+            expectedMembers
+        });
+        
+        // 構造の検証
+        let needsCorrection = false;
+        
+        // 節点数の検証
+        console.error(`節点数検証: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
+        if (fixedModel.nodes.length !== expectedNodes) {
+            errors.push(`門型ラーメン節点数が不正: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
+            needsCorrection = true;
+        }
+        
+        // 部材数の検証
+        console.error(`部材数検証: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+        if (fixedModel.members.length !== expectedMembers) {
+            errors.push(`門型ラーメン部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+            needsCorrection = true;
+        }
+        
+        // 修正は行わず、エラーを返すのみ（AIに再生成させる）
+        if (needsCorrection) {
+            console.error('門型ラーメンの構造が不正: AIに修正を依頼');
+            return {
+                isValid: false,
+                errors: errors,
+                fixedModel: fixedModel,
+                needsAICorrection: true
+            };
+        }
+    }
+    // 多層多スパンラーメンの場合は通常の検証を実行
+    else if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {
         console.error(`${dimensions.layers}層${dimensions.spans}スパン構造の検証を実行`);
         
         // 期待値の計算
@@ -1954,6 +1999,64 @@ ${errors.map(error => `- ${error}`).join('\n')}
 
 重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）
+
+JSON形式で出力してください。`;
+
+    return correctionPrompt;
+}
+
+// ラーメン構造（門型含む）の修正プロンプトを作成する関数
+function createFrameCorrectionPrompt(originalPrompt, currentModel, errors) {
+    const dimensions = detectStructureDimensions(originalPrompt);
+    
+    // 門型ラーメンの場合
+    if (dimensions.isPortalFrame) {
+        const height = extractHeightFromPrompt(originalPrompt);
+        const spanLength = extractSpanLengthFromPrompt(originalPrompt);
+        
+        let correctionPrompt = `門型ラーメン構造の修正指示:
+
+元の指示: ${originalPrompt}
+
+現在の生成結果に以下の問題があります:
+${errors.map(error => `- ${error}`).join('\n')}
+
+修正要求:
+1. 門型ラーメン（ポータルフレーム）構造を生成してください
+2. 高さ${height}m、スパン長${spanLength}m
+3. 節点は4個のみ: 左柱脚、左柱頭、右柱頭、右柱脚
+4. 部材は3本のみ: 左柱、梁、右柱
+5. 節点配置:
+   - 節点1: (x=0, y=0, s="x") - 左柱脚（固定支点）
+   - 節点2: (x=0, y=${height}, s="f") - 左柱頭（自由）
+   - 節点3: (x=${spanLength}, y=${height}, s="f") - 右柱頭（自由）
+   - 節点4: (x=${spanLength}, y=0, s="x") - 右柱脚（固定支点）
+6. 部材配置:
+   - 部材1: i=1, j=2 (左柱)
+   - 部材2: i=2, j=3 (梁)
+   - 部材3: i=3, j=4 (右柱)
+
+重要: 4節点、3部材のみで構成してください。追加の節点や部材を作成しないでください。
+
+JSON形式で出力してください。`;
+
+        return correctionPrompt;
+    }
+    
+    // 多層多スパンラーメンの場合
+    let correctionPrompt = `ラーメン構造の修正指示:
+
+元の指示: ${originalPrompt}
+
+現在の生成結果に以下の問題があります:
+${errors.map(error => `- ${error}`).join('\n')}
+
+修正要求:
+1. ${dimensions.layers}層${dimensions.spans}スパンのラーメン構造を生成してください
+2. 節点数: ${(dimensions.layers + 1) * (dimensions.spans + 1)}個
+3. 部材数: ${dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1)}個
+4. 境界条件: 地面節点（y=0）は"x"、上部節点は"f"
+5. 部材配置: y=0の地面には梁材（水平材）を配置しない
 
 JSON形式で出力してください。`;
 

@@ -378,8 +378,9 @@ exports.handler = async (event, context) => {
 
 // 必要な関数をここに追加（元のapi/generate-model.jsから）
 function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '', retryCount = 0) {
-    // 簡略化されたプロンプト生成
-    return `2D構造モデル生成。JSON出力のみ。
+    const dimensions = detectStructureDimensions(userPrompt);
+    
+    let prompt = `2D構造モデル生成。JSON出力のみ。
 
 形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 
@@ -394,6 +395,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 同じ節点間には1本の部材のみ配置（重複禁止）
 - 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 - 存在しない節点番号を部材で参照しない`;
+
+    // 門型ラーメンの場合は特別な説明を追加
+    if (dimensions.isPortalFrame) {
+        prompt += `
+
+門型ラーメン（ポータルフレーム）:
+- 4節点、3部材（左柱、梁、右柱）のみで構成
+- 柱脚は"x"（固定支点）、柱頭は"f"（自由）
+- 追加の節点や部材を作成しない`;
+    }
+    
+    return prompt;
 }
 
 function createEditPrompt(userPrompt, currentModel) {
@@ -418,6 +431,20 @@ function detectStructureType(userPrompt) {
 }
 
 function detectStructureDimensions(userPrompt) {
+    const prompt = userPrompt.toLowerCase();
+    
+    // 門型ラーメンの検出（最優先）
+    const portalFrameKeywords = ['門型', '門形', 'portal frame', 'portal'];
+    const isPortalFrame = portalFrameKeywords.some(keyword => prompt.includes(keyword));
+    
+    if (isPortalFrame) {
+        return {
+            layers: 1,
+            spans: 1,
+            isPortalFrame: true
+        };
+    }
+    
     // 簡略化された次元検出
     const layersMatch = userPrompt.match(/(\d+)層/);
     const spansMatch = userPrompt.match(/(\d+)スパン/);

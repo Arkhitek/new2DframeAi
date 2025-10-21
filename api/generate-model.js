@@ -2397,6 +2397,12 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
         let needsCorrection = false;
         
         // 節点数の検証（厳密）
+        // スパン追加・層追加の検出（早期検出）
+        const isSpanAddition = userPrompt.match(/(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/) || 
+                              userPrompt.match(/(右側|左側|横).*スパン/);
+        const isLayerAddition = userPrompt.match(/(\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築)/);
+        const isAdditionMode = isSpanAddition || isLayerAddition;
+        
         console.error(`節点数検証: 期待値${expectedNodes}、実際${fixedModel.nodes.length}`);
         if (fixedModel.nodes.length !== expectedNodes) {
             const nodeRatio = fixedModel.nodes.length / expectedNodes;
@@ -2410,27 +2416,35 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
             }
         }
         
-        // 部材数の検証（緩和）
+        // 部材数の検証
         console.error(`部材数検証: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
         if (fixedModel.members.length !== expectedMembers) {
-            const memberRatio = fixedModel.members.length / expectedMembers;
-            if (memberRatio < 0.7) {
-                // 70%未満の場合はエラー
-                errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+            // 追加モードの場合は厳密にチェック
+            if (isAdditionMode) {
+                errors.push(`部材数が不正です。期待値: ${expectedMembers}個、実際: ${fixedModel.members.length}個`);
                 needsCorrection = true;
-            } else if (memberRatio !== 1.0) {
-                // 70%以上100%未満の場合は警告のみ
-                console.error(`警告: 部材数が期待値と異なります（期待${expectedMembers}、実際${fixedModel.members.length}）が、許容範囲内です`);
+                console.error(`追加モード検出: 部材数が期待値と一致しないため、AI修正を要求します`);
+            } else {
+                const memberRatio = fixedModel.members.length / expectedMembers;
+                if (memberRatio < 0.7) {
+                    // 70%未満の場合はエラー
+                    errors.push(`部材数が不正: 期待値${expectedMembers}、実際${fixedModel.members.length}`);
+                    needsCorrection = true;
+                } else if (memberRatio !== 1.0) {
+                    // 70%以上100%未満の場合は警告のみ
+                    console.error(`警告: 部材数が期待値と異なります（期待${expectedMembers}、実際${fixedModel.members.length}）が、許容範囲内です`);
+                }
             }
         }
         
-        // スパン数の検証（編集での追加が明示されている場合は厳格）
+        // スパン数の検証
         const spanCount = validateSpanCount(fixedModel);
         if (!spanCount.isValid) {
-            const isAdditionEdit = /(\d+\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築))|((右側|左側|横).*スパン)|((\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築))/i.test(userPrompt);
-            if (isAdditionEdit) {
+            // 追加モードの場合は厳格にチェック
+            if (isAdditionMode) {
                 errors.push(`スパン数が不正: ${spanCount.errors.join(', ')}`);
                 needsCorrection = true;
+                console.error(`追加モード検出: スパン数検証エラーのため、AI修正を要求します`);
             } else {
                 // 編集意図が曖昧な場合は警告
                 console.error(`警告: スパン数検証で問題が検出されました: ${spanCount.errors.join(', ')}`);

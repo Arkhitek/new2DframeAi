@@ -51,7 +51,8 @@ export default async function handler(req, res) {
         // 最適化されたリトライ機能付きAI呼び出し
         let mistralResponse;
         let data;
-        const maxRetries = 5; // リトライ回数を5回に増加
+        const maxRetries = 3; // リトライ回数を3回に最適化
+        let lastError = null;
         
         while (retryCount <= maxRetries) {
             try {
@@ -102,8 +103,9 @@ export default async function handler(req, res) {
                     }
                 }
                 
-                // その他のエラーは即座にスロー
-            throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                // その他のエラーは記録してスロー
+                lastError = new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                throw lastError;
                 
             } catch (error) {
                 console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} でエラー:`, error.message);
@@ -213,29 +215,18 @@ export default async function handler(req, res) {
             
             if (!structureValidation.isValid) {
                 console.error('構造検証エラー:', structureValidation.errors);
-                
-                // AIに修正点を指摘した再指示を行う
-                const correctionPrompt = createStructureCorrectionPrompt(userPrompt, generatedModel, structureValidation.errors, detectedStructureType);
-                console.error('構造修正プロンプト:', correctionPrompt);
-                
-                // 修正プロンプトでAIを再呼び出し
-                const correctedResponse = await callAIWithCorrectionPrompt(correctionPrompt, retryCount);
-                if (correctedResponse) {
-                    generatedModel = correctedResponse;
-                    finalGeneratedText = JSON.stringify(generatedModel, null, 2);
-                    console.error('構造AI修正完了');
-                } else {
-                    console.error('構造AI修正に失敗、元のモデルを使用');
-                }
+                generatedModel = structureValidation.fixedModel;
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                console.error('構造修正完了');
             } else {
                 console.error('構造検証成功');
             }
             
-            // トラス構造の場合は追加の検証・修正を実行
+            // 構造タイプ別の追加検証・修正を実行
             const detectedStructureType = detectStructureType(userPrompt);
             if (detectedStructureType === 'truss') {
                 console.error('トラス構造の追加検証を実行');
-                const trussValidation = validateAndFixTrussStructure(generatedModel, userPrompt);
+                const trussValidation = validateTrussStructure(generatedModel, userPrompt);
                 
                 if (!trussValidation.isValid) {
                     console.error('トラス構造検証エラー:', trussValidation.errors);
@@ -255,6 +246,29 @@ export default async function handler(req, res) {
                     }
                 } else {
                     console.error('トラス構造検証成功');
+                }
+            } else if (detectedStructureType === 'beam') {
+                console.error('梁構造の追加検証を実行');
+                const beamValidation = validateBeamStructure(generatedModel, userPrompt);
+                
+                if (!beamValidation.isValid) {
+                    console.error('梁構造検証エラー:', beamValidation.errors);
+                    
+                    // 梁構造の修正プロンプトを作成
+                    const correctionPrompt = createBeamCorrectionPrompt(userPrompt, generatedModel, beamValidation.errors);
+                    console.error('梁構造修正プロンプト:', correctionPrompt);
+                    
+                    // 修正プロンプトでAIを再呼び出し
+                    const correctedResponse = await callAIWithCorrectionPrompt(correctionPrompt, retryCount);
+                    if (correctedResponse) {
+                        generatedModel = correctedResponse;
+                        finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                        console.error('梁構造AI修正完了');
+                    } else {
+                        console.error('梁構造AI修正に失敗、元のモデルを使用');
+                    }
+                } else {
+                    console.error('梁構造検証成功');
                 }
             }
             
@@ -308,21 +322,33 @@ export default async function handler(req, res) {
             
             let programmaticModel;
             
-            // プログラム的生成は行わず、最小限の構造を返す
-            console.error('AI生成に失敗したため、最小限の構造を返します');
-            programmaticModel = {
-                nodes: [
-                    {x: 0, y: 0, s: 'x'},
-                    {x: 6, y: 0, s: 'x'},
-                    {x: 0, y: 3.5, s: 'f'},
-                    {x: 6, y: 3.5, s: 'f'}
-                ],
-                members: [
-                    {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                    {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
-                    {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
-                ]
-            };
+            if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
+                console.error(`${dimensions.layers}層${dimensions.spans}スパンラーメン構造をプログラム的に生成`);
+                programmaticModel = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
+            } else if (structureType === 'truss') {
+                // トラス構造の場合は、AI生成を優先し、プログラム的生成は行わない
+                console.error(`トラス構造のため、プログラム的生成をスキップします`);
+                // AI生成に失敗した場合は、最小限のトラス構造を返す
+                programmaticModel = {
+                    nodes: [
+                        {x: 0, y: 0, s: 'p'},
+                        {x: 7.5, y: 0, s: 'r'},
+                        {x: 0, y: 3, s: 'f'},
+                        {x: 7.5, y: 3, s: 'f'}
+                    ],
+                    members: [
+                        {i: 1, j: 2, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                        {i: 3, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                        {i: 1, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                        {i: 2, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                        {i: 1, j: 4, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638},
+                        {i: 2, j: 3, E: 205000, I: 0.00011, A: 0.005245, Z: 0.000638}
+                    ]
+                };
+            } else {
+                console.error('基本的な構造をプログラム的に生成');
+                programmaticModel = generateBasicStructure(userPrompt, dimensions);
+            }
             
             finalGeneratedText = JSON.stringify(programmaticModel, null, 2);
             console.error('プログラム的生成完了:', {
@@ -439,9 +465,18 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     let prompt = `2D構造モデル生成。JSON出力のみ。
 
 形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
-境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-節点番号: 配列順序（1から開始）
-部材番号: 配列順序（1から開始）`;
+
+基本ルール:
+- 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
+- 節点番号: 配列順序（1から開始）
+- 部材番号: 配列順序（1から開始）
+- 座標: メートル単位で小数点以下1桁まで
+- 材料定数: E=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
+
+重要制約:
+- 同じ節点間には1本の部材のみ配置（重複禁止）
+- 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
+- 存在しない節点番号を部材で参照しない`;
 
     // 荷重指示の有無に基づいて条件分岐
     if (loadIntent.hasLoadIntent) {
@@ -453,6 +488,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
     }
 
+    // 構造タイプに応じたプロンプト生成（キャッシュ機能付き）
+    console.error('構造タイプ:', structureType);
+    
+    // プロンプトキャッシュのキーを生成
+    const promptCacheKey = `${structureType}_${loadIntent.hasLoadIntent ? 'with_loads' : 'no_loads'}`;
+    console.error('プロンプトキャッシュキー:', promptCacheKey);
+    
     // 構造タイプに応じて最小限のルールを追加
     if (structureType === 'beam') {
         // キャンチレバー（片持ち梁）の検出
@@ -1472,14 +1514,19 @@ function validateAndFixStructure(model, userPrompt) {
         const structureType = detectStructureType(userPrompt);
         console.error('構造タイプ:', structureType);
         
-        // 全ての構造タイプで検証を実行
+        // 構造タイプ別の詳細検証を実行
+        if (structureType === 'beam') {
+            return validateBeamStructure(fixedModel, userPrompt);
+        } else if (structureType === 'truss') {
+            return validateTrussStructure(fixedModel, userPrompt);
+        }
         
         // ラーメン構造かどうかを確認
         const isFrameStructure = structureType === 'frame';
         console.error('ラーメン構造:', isFrameStructure);
     
-    // 構造タイプに応じた検証を実行
-    if (structureType === 'frame' && dimensions.layers > 0 && dimensions.spans > 0) {
+    // ラーメン構造の場合のみ検証・修正を実行
+    if (isFrameStructure && dimensions.layers > 0 && dimensions.spans > 0) {
         console.error(`${dimensions.layers}層${dimensions.spans}スパン構造の検証を実行`);
         
         // 期待値の計算
@@ -1517,57 +1564,37 @@ function validateAndFixStructure(model, userPrompt) {
             needsCorrection = true;
         }
         
-        // 修正が必要な場合は、AIに修正指示を行う
+        // 修正が必要な場合はプログラム的に生成
         if (needsCorrection) {
-            console.error('構造に問題が検出されました。AIに修正指示を行います');
-            errors.push('構造の修正が必要です');
-        }
-    } else if (structureType === 'beam') {
-        console.error('梁構造の検証を実行');
-        
-        // 梁構造の基本検証
-        if (fixedModel.nodes.length < 2) {
-            errors.push(`梁構造の節点が不足: ${fixedModel.nodes.length}個（最低2個必要）`);
-            needsCorrection = true;
-        }
-        
-        if (fixedModel.members.length < 1) {
-            errors.push(`梁構造の部材が不足: ${fixedModel.members.length}個（最低1個必要）`);
-            needsCorrection = true;
-        }
-        
-        // 境界条件の検証
-        const groundNodes = fixedModel.nodes.filter(node => node.y === 0);
-        const groundSupports = groundNodes.filter(node => node.s === 'p' || node.s === 'r' || node.s === 'x');
-        
-        if (groundSupports.length > 0) {
-            errors.push(`梁構造でy=0の節点に支点が配置されています。梁構造ではy=0の節点に支点を配置しないでください`);
-            needsCorrection = true;
-        }
-        
-        // 修正が必要な場合は、AIに修正指示を行う
-        if (needsCorrection) {
-            console.error('梁構造に問題が検出されました。AIに修正指示を行います');
-            errors.push('梁構造の修正が必要です');
-        }
-    } else if (structureType === 'truss') {
-        console.error('トラス構造の検証を実行');
-        
-        // トラス構造の基本検証
-        if (fixedModel.nodes.length < 4) {
-            errors.push(`トラス構造の節点が不足: ${fixedModel.nodes.length}個（最低4個必要）`);
-            needsCorrection = true;
-        }
-        
-        if (fixedModel.members.length < 3) {
-            errors.push(`トラス構造の部材が不足: ${fixedModel.members.length}個（最低3個必要）`);
-            needsCorrection = true;
-        }
-        
-        // 修正が必要な場合は、AIに修正指示を行う
-        if (needsCorrection) {
-            console.error('トラス構造に問題が検出されました。AIに修正指示を行います');
-            errors.push('トラス構造の修正が必要です');
+            console.error('構造修正を実行します');
+            console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
+            
+            // 既存の荷重データを保存
+            const originalNodeLoads = fixedModel.nodeLoads || [];
+            const originalMemberLoads = fixedModel.memberLoads || [];
+            console.error('既存の荷重データを保存:', {
+                nodeLoads: originalNodeLoads.length,
+                memberLoads: originalMemberLoads.length
+            });
+            
+            // 構造を再生成
+            const correctedStructure = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
+            
+            // 荷重データを保持して構造を修正
+            fixedModel = {
+                ...correctedStructure,
+                nodeLoads: originalNodeLoads,
+                memberLoads: originalMemberLoads
+            };
+            
+            console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));
+            console.error('修正後の構造:', {
+                nodeCount: fixedModel.nodes.length,
+                memberCount: fixedModel.members.length,
+                nodeLoads: fixedModel.nodeLoads.length,
+                memberLoads: fixedModel.memberLoads.length
+            });
+            errors.push(`${dimensions.layers}層${dimensions.spans}スパン構造の修正を実行しました`);
         }
     }
     
@@ -1858,67 +1885,6 @@ function generateBasicStructure(userPrompt, dimensions) {
     return generateCorrectFrameStructure(layers, spans);
 }
 
-// 一般的な構造修正プロンプトを作成する関数
-function createStructureCorrectionPrompt(originalPrompt, currentModel, errors, structureType) {
-    let correctionPrompt = `${structureType}構造の修正指示:
-
-元の指示: ${originalPrompt}
-
-現在の生成結果に以下の問題があります:
-${errors.map(error => `- ${error}`).join('\n')}
-
-修正要求:`;
-
-    if (structureType === 'frame') {
-        const dimensions = detectStructureDimensions(originalPrompt);
-        correctionPrompt += `
-1. ${dimensions.layers}層${dimensions.spans}スパンのラーメン構造を生成してください
-2. 節点数: ${(dimensions.layers + 1) * (dimensions.spans + 1)}個
-3. 部材数: ${dimensions.spans * (dimensions.layers + 1) + dimensions.layers * (dimensions.spans + 1)}個（柱${(dimensions.spans + 1) * dimensions.layers}本+梁${dimensions.spans * dimensions.layers}本）
-4. 境界条件: 地面節点（y=0）は"x"、上部節点は"f"
-5. 部材配置: y=0の地面には梁材（水平材）を配置しない
-6. 座標: X=0,7,14...m、Y=0,3.2,6.4...m`;
-    } else if (structureType === 'beam') {
-        const dimensions = detectStructureDimensions(originalPrompt);
-        if (originalPrompt.includes('キャンチレバー') || originalPrompt.includes('片持ち梁')) {
-            correctionPrompt += `
-1. キャンチレバー（片持ち梁）構造を生成してください
-2. 左端のみ"x"、他は全て"f"
-3. y=0の節点に"p"や"r"は禁止
-4. 荷重: 自由端に集中荷重を生成`;
-        } else if (dimensions.spans > 1) {
-            correctionPrompt += `
-1. 連続梁構造を生成してください
-2. 両端のみ"p"、中間節点は全て"f"
-3. y=0の節点に"x"や"r"は禁止`;
-        } else {
-            correctionPrompt += `
-1. 単純梁構造を生成してください
-2. 両端のみ"p"、中間節点は全て"f"
-3. y=0の節点に"x"や"r"は禁止`;
-        }
-    } else if (structureType === 'truss') {
-        const height = extractHeightFromPrompt(originalPrompt);
-        const spanLength = extractSpanLengthFromPrompt(originalPrompt);
-        correctionPrompt += `
-1. 高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
-2. 下弦材（y=0）に適切な数の節点を配置してください（最低2個以上）
-3. 上弦材（y=${height}）に適切な数の節点を配置してください（最低2個以上）
-4. 境界条件: 下弦材の左端（x=0,y=0）は"p"、下弦材の右端（x=${spanLength},y=0）は"r"、その他は"f"
-5. 重要: 支点は必ずy=0の下弦材に配置し、y=${height}の上弦材には支点を配置しない
-6. 部材配置: 下弦材・上弦材・斜材を適切に配置してください`;
-    }
-
-    correctionPrompt += `
-
-重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
-部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）
-
-JSON形式で出力してください。`;
-
-    return correctionPrompt;
-}
-
 // トラス構造の修正プロンプトを作成する関数
 function createTrussCorrectionPrompt(originalPrompt, currentModel, errors) {
     const height = extractHeightFromPrompt(originalPrompt);
@@ -1948,119 +1914,290 @@ JSON形式で出力してください。`;
     return correctionPrompt;
 }
 
-// AIに修正プロンプトで再呼び出しを行う関数
-async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
-    try {
-        console.error('=== AI修正呼び出し開始 ===');
-        
-        const API_KEY = process.env.MISTRAL_API_KEY;
-        const API_URL = 'https://api.mistral.ai/v1/chat/completions';
-        
-        const systemPrompt = `2D構造モデル生成。JSON出力のみ。
+// 梁構造の修正プロンプトを作成する関数
+function createBeamCorrectionPrompt(originalPrompt, currentModel, errors) {
+    let correctionPrompt = `梁構造の修正指示:
 
-形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
-境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-節点番号: 配列順序（1から開始）
-部材番号: 配列順序（1から開始）
+元の指示: ${originalPrompt}
+
+現在の生成結果に以下の問題があります:
+${errors.map(error => `- ${error}`).join('\n')}
+
+修正要求:`;
+
+    if (originalPrompt.includes('キャンチレバー') || originalPrompt.includes('片持ち梁') || originalPrompt.includes('cantilever')) {
+        correctionPrompt += `
+1. キャンチレバー（片持ち梁）構造を生成してください
+2. 左端のみ"x"（固定端）、他は全て"f"（自由端）
+3. y=0の節点に"p"や"r"は禁止
+4. 荷重: 自由端に集中荷重を生成（例: {"n": 2, "fy": -10}）`;
+    } else {
+        const dimensions = detectStructureDimensions(originalPrompt);
+        if (dimensions.spans > 1) {
+            correctionPrompt += `
+1. 連続梁構造を生成してください
+2. 両端のみ"p"（ピン支点）、中間節点は全て"f"（自由端）
+3. y=0の節点に"x"や"r"は禁止
+4. 節点数: ${dimensions.spans + 1}個以上
+5. 部材数: ${dimensions.spans}個以上`;
+        } else {
+            correctionPrompt += `
+1. 単純梁構造を生成してください
+2. 両端のみ"p"（ピン支点）、中間節点は全て"f"（自由端）
+3. y=0の節点に"x"や"r"は禁止
+4. 節点数: 2個以上
+5. 部材数: 1個以上`;
+        }
+    }
+
+    correctionPrompt += `
 
 重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
-部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）`;
+部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）
 
-        const requestBody = {
-            model: "mistral-large-latest",
-            messages: [
-                { "role": "system", "content": systemPrompt },
-                { "role": "user", "content": correctionPrompt }
-            ],
-            response_format: { "type": "json_object" }
-        };
+JSON形式で出力してください。`;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒タイムアウト
+    return correctionPrompt;
+}
 
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json' 
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal
-        });
+// AIに修正プロンプトで再呼び出しを行う関数（改善版）
+async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
+    const maxCorrectionRetries = 2; // 修正呼び出しのリトライ回数を制限
+    let correctionRetryCount = 0;
+    
+    while (correctionRetryCount <= maxCorrectionRetries) {
+        try {
+            console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) ===`);
+            
+            const API_KEY = process.env.MISTRAL_API_KEY;
+            const API_URL = 'https://api.mistral.ai/v1/chat/completions';
+            
+            // 修正用の最適化されたシステムプロンプト
+            const systemPrompt = `2D構造モデル生成。JSON出力のみ。
 
-        clearTimeout(timeoutId);
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 
-        if (!response.ok) {
-            throw new Error(`AI修正呼び出し失敗: ${response.status}`);
+基本ルール:
+- 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
+- 節点番号: 配列順序（1から開始）
+- 部材番号: 配列順序（1から開始）
+- 座標: メートル単位で小数点以下1桁まで
+
+重要制約:
+- 同じ節点間には1本の部材のみ配置（重複禁止）
+- 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
+- 存在しない節点番号を部材で参照しない`;
+
+            const requestBody = {
+                model: "mistral-large-latest",
+                messages: [
+                    { "role": "system", "content": systemPrompt },
+                    { "role": "user", "content": correctionPrompt }
+                ],
+                response_format: { "type": "json_object" },
+                temperature: 0.3, // 修正時は低い温度で一貫性を重視
+                max_tokens: 4000 // トークン数を制限
+            };
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000); // 45秒タイムアウト
+
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                if (response.status === 429 && correctionRetryCount < maxCorrectionRetries) {
+                    // 容量制限の場合は待機してリトライ
+                    const waitTime = 2000 + (correctionRetryCount * 1000);
+                    console.error(`修正呼び出し容量制限: ${waitTime}ms待機後にリトライ`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    correctionRetryCount++;
+                    continue;
+                }
+                throw new Error(`AI修正呼び出し失敗: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            if (!data.choices || !data.choices[0] || !data.choices[0].message.content) {
+                throw new Error("AI修正から予期しない形式のレスポンス");
+            }
+
+            const correctedText = data.choices[0].message.content;
+            const correctedModel = JSON.parse(correctedText);
+            
+            // 修正後のモデルの基本検証
+            if (!correctedModel.nodes || !correctedModel.members) {
+                throw new Error("修正後のモデルに節点または部材データが不足");
+            }
+            
+            console.error('AI修正呼び出し成功');
+            console.error('修正後のモデル:', {
+                nodeCount: correctedModel.nodes.length,
+                memberCount: correctedModel.members.length
+            });
+            
+            return correctedModel;
+            
+        } catch (error) {
+            console.error(`AI修正呼び出しエラー (試行 ${correctionRetryCount + 1}):`, error.message);
+            
+            if (correctionRetryCount < maxCorrectionRetries) {
+                const waitTime = 1000 + (correctionRetryCount * 500);
+                console.error(`${waitTime}ms待機後にリトライ`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                correctionRetryCount++;
+                continue;
+            }
+            
+            console.error('AI修正呼び出し失敗: 最大リトライ回数に達しました');
+            return null;
         }
-
-        const data = await response.json();
-        
-        if (!data.choices || !data.choices[0] || !data.choices[0].message.content) {
-            throw new Error("AI修正から予期しない形式のレスポンス");
-        }
-
-        const correctedText = data.choices[0].message.content;
-        const correctedModel = JSON.parse(correctedText);
-        
-        console.error('AI修正呼び出し成功');
-        console.error('修正後のモデル:', {
-            nodeCount: correctedModel.nodes?.length || 0,
-            memberCount: correctedModel.members?.length || 0
-        });
-        
-        return correctedModel;
-        
-    } catch (error) {
-        console.error('AI修正呼び出しエラー:', error.message);
-        return null;
     }
 }
 
-// トラス構造の検証と修正関数
-function validateAndFixTrussStructure(model, userPrompt) {
+// 梁構造の詳細検証関数
+function validateBeamStructure(model, userPrompt) {
     try {
-        console.error('=== トラス構造検証開始 ===');
-        console.error('ユーザープロンプト:', userPrompt);
-        console.error('現在のモデル:', JSON.stringify(model, null, 2));
+        console.error('=== 梁構造詳細検証開始 ===');
         
         const errors = [];
-        let fixedModel = JSON.parse(JSON.stringify(model)); // ディープコピー
+        let fixedModel = JSON.parse(JSON.stringify(model));
         
-        // トラス構造の基本的な検証
-        if (!fixedModel.nodes || !fixedModel.members) {
-            console.error('トラス構造: 節点または部材データが不足');
-            return {
-                isValid: true,
-                errors: [],
-                fixedModel: fixedModel
-            };
+        // 基本構造の検証
+        if (!fixedModel.nodes || fixedModel.nodes.length < 2) {
+            errors.push(`梁構造の節点が不足: ${fixedModel.nodes?.length || 0}個（最低2個必要）`);
+        }
+        
+        if (!fixedModel.members || fixedModel.members.length < 1) {
+            errors.push(`梁構造の部材が不足: ${fixedModel.members?.length || 0}個（最低1個必要）`);
+        }
+        
+        // キャンチレバー（片持ち梁）の検証
+        if (userPrompt.includes('キャンチレバー') || userPrompt.includes('片持ち梁') || userPrompt.includes('cantilever')) {
+            console.error('キャンチレバー構造の検証を実行');
+            
+            // 固定端の検証
+            const fixedNodes = fixedModel.nodes.filter(node => node.s === 'x');
+            if (fixedNodes.length !== 1) {
+                errors.push(`キャンチレバーの固定端が不正: ${fixedNodes.length}個（1個である必要）`);
+            }
+            
+            // 自由端の検証
+            const freeNodes = fixedModel.nodes.filter(node => node.s === 'f');
+            if (freeNodes.length < 1) {
+                errors.push(`キャンチレバーの自由端が不足: ${freeNodes.length}個（最低1個必要）`);
+            }
+            
+            // y=0の節点に支点がないかチェック
+            const groundNodes = fixedModel.nodes.filter(node => node.y === 0);
+            const groundSupports = groundNodes.filter(node => node.s === 'p' || node.s === 'r');
+            if (groundSupports.length > 0) {
+                errors.push(`キャンチレバーでy=0の節点に支点が配置されています。y=0の節点に支点を配置しないでください`);
+            }
+        } else {
+            // 連続梁・単純梁の検証
+            const pinNodes = fixedModel.nodes.filter(node => node.s === 'p');
+            const freeNodes = fixedModel.nodes.filter(node => node.s === 'f');
+            
+            if (pinNodes.length < 2) {
+                errors.push(`梁構造のピン支点が不足: ${pinNodes.length}個（最低2個必要）`);
+            }
+            
+            if (freeNodes.length < 1) {
+                errors.push(`梁構造の自由節点が不足: ${freeNodes.length}個（最低1個必要）`);
+            }
+            
+            // y=0の節点に支点がないかチェック
+            const groundNodes = fixedModel.nodes.filter(node => node.y === 0);
+            const groundSupports = groundNodes.filter(node => node.s === 'p' || node.s === 'r' || node.s === 'x');
+            if (groundSupports.length > 0) {
+                errors.push(`梁構造でy=0の節点に支点が配置されています。梁構造ではy=0の節点に支点を配置しないでください`);
+            }
+        }
+        
+        // 部材の連続性チェック
+        if (fixedModel.members && fixedModel.members.length > 0) {
+            const nodeConnections = new Map();
+            fixedModel.members.forEach(member => {
+                if (!nodeConnections.has(member.i)) nodeConnections.set(member.i, []);
+                if (!nodeConnections.has(member.j)) nodeConnections.set(member.j, []);
+                nodeConnections.get(member.i).push(member.j);
+                nodeConnections.get(member.j).push(member.i);
+            });
+            
+            // 孤立節点のチェック
+            fixedModel.nodes.forEach((node, index) => {
+                const nodeNum = index + 1;
+                if (!nodeConnections.has(nodeNum) || nodeConnections.get(nodeNum).length === 0) {
+                    errors.push(`節点${nodeNum}が部材に接続されていません（孤立節点）`);
+                }
+            });
+        }
+        
+        console.error('梁構造詳細検証結果:', {
+            isValid: errors.length === 0,
+            errors: errors,
+            nodeCount: fixedModel.nodes.length,
+            memberCount: fixedModel.members.length
+        });
+        
+        return {
+            isValid: errors.length === 0,
+            errors: errors,
+            fixedModel: fixedModel
+        };
+        
+    } catch (error) {
+        console.error('validateBeamStructure関数でエラーが発生しました:', error);
+        return {
+            isValid: true,
+            errors: [],
+            fixedModel: model
+        };
+    }
+}
+
+// トラス構造の詳細検証関数
+function validateTrussStructure(model, userPrompt) {
+    try {
+        console.error('=== トラス構造詳細検証開始 ===');
+        
+        const errors = [];
+        let fixedModel = JSON.parse(JSON.stringify(model));
+        
+        // 基本構造の検証
+        if (!fixedModel.nodes || fixedModel.nodes.length < 4) {
+            errors.push(`トラス構造の節点が不足: ${fixedModel.nodes?.length || 0}個（最低4個必要）`);
+        }
+        
+        if (!fixedModel.members || fixedModel.members.length < 3) {
+            errors.push(`トラス構造の部材が不足: ${fixedModel.members?.length || 0}個（最低3個必要）`);
         }
         
         // 高さとスパン長を検出
         const height = extractHeightFromPrompt(userPrompt);
         const spanLength = extractSpanLengthFromPrompt(userPrompt);
-        console.error(`トラス構造検証: 高さ=${height}m, スパン長=${spanLength}m`);
         
-        // 節点の検証
+        // 下弦材・上弦材の検証
         const bottomNodes = fixedModel.nodes.filter(node => node.y === 0);
         const topNodes = fixedModel.nodes.filter(node => node.y === height);
         
-        console.error(`下弦材節点数: ${bottomNodes.length}, 上弦材節点数: ${topNodes.length}`);
-        
-        // 基本的なトラス構造の要件をチェック
-        let needsCorrection = false;
-        
-        // 下弦材の節点が少なすぎる場合
         if (bottomNodes.length < 2) {
             errors.push(`下弦材の節点が不足: ${bottomNodes.length}個（最低2個必要）`);
-            needsCorrection = true;
         }
         
-        // 上弦材の節点が少なすぎる場合
         if (topNodes.length < 2) {
             errors.push(`上弦材の節点が不足: ${topNodes.length}個（最低2個必要）`);
-            needsCorrection = true;
         }
         
         // 境界条件の検証（支点はy=0の下弦材に配置）
@@ -2069,18 +2206,14 @@ function validateAndFixTrussStructure(model, userPrompt) {
         
         if (!leftNode) {
             errors.push(`下弦材の左端節点（x=0,y=0）が見つかりません`);
-            needsCorrection = true;
         } else if (leftNode.s !== 'p') {
             errors.push(`下弦材の左端節点の境界条件が不正: ${leftNode.s}（"p"である必要）`);
-            needsCorrection = true;
         }
         
         if (!rightNode) {
             errors.push(`下弦材の右端節点（x=${spanLength},y=0）が見つかりません`);
-            needsCorrection = true;
         } else if (rightNode.s !== 'r') {
             errors.push(`下弦材の右端節点の境界条件が不正: ${rightNode.s}（"r"である必要）`);
-            needsCorrection = true;
         }
         
         // 上弦材に支点が配置されていないかチェック
@@ -2090,22 +2223,44 @@ function validateAndFixTrussStructure(model, userPrompt) {
         
         if (topNodesWithSupport.length > 0) {
             errors.push(`上弦材（y=${height}）に支点が配置されています。支点は下弦材（y=0）のみに配置してください`);
-            needsCorrection = true;
         }
         
-        // 修正が必要な場合は、AIに修正指示を行う
-        if (needsCorrection) {
-            console.error('トラス構造に問題が検出されました。AIに修正指示を行います');
-            errors.push('トラス構造の修正が必要です');
+        // トラス構造の幾何学的整合性チェック
+        if (fixedModel.members && fixedModel.members.length > 0) {
+            // 部材の重複チェック
+            const memberSet = new Set();
+            fixedModel.members.forEach(member => {
+                const key = member.i < member.j ? `${member.i}-${member.j}` : `${member.j}-${member.i}`;
+                if (memberSet.has(key)) {
+                    errors.push(`重複部材が検出されました: 節点${member.i}-${member.j}`);
+                }
+                memberSet.add(key);
+            });
+            
+            // 節点の接続性チェック
+            const nodeConnections = new Map();
+            fixedModel.members.forEach(member => {
+                if (!nodeConnections.has(member.i)) nodeConnections.set(member.i, []);
+                if (!nodeConnections.has(member.j)) nodeConnections.set(member.j, []);
+                nodeConnections.get(member.i).push(member.j);
+                nodeConnections.get(member.j).push(member.i);
+            });
+            
+            // 孤立節点のチェック
+            fixedModel.nodes.forEach((node, index) => {
+                const nodeNum = index + 1;
+                if (!nodeConnections.has(nodeNum) || nodeConnections.get(nodeNum).length === 0) {
+                    errors.push(`節点${nodeNum}が部材に接続されていません（孤立節点）`);
+                }
+            });
         }
         
-        console.error('トラス構造検証結果:', {
+        console.error('トラス構造詳細検証結果:', {
             isValid: errors.length === 0,
             errors: errors,
             nodeCount: fixedModel.nodes.length,
             memberCount: fixedModel.members.length
         });
-        console.error('=== トラス構造検証完了 ===');
         
         return {
             isValid: errors.length === 0,
@@ -2114,11 +2269,7 @@ function validateAndFixTrussStructure(model, userPrompt) {
         };
         
     } catch (error) {
-        console.error('validateAndFixTrussStructure関数でエラーが発生しました:', error);
-        console.error('エラーの詳細:', error.message);
-        console.error('エラースタック:', error.stack);
-        
-        // エラーが発生した場合は、元のモデルをそのまま返す
+        console.error('validateTrussStructure関数でエラーが発生しました:', error);
         return {
             isValid: true,
             errors: [],
@@ -2126,6 +2277,7 @@ function validateAndFixTrussStructure(model, userPrompt) {
         };
     }
 }
+
 
 
 // 部材重複検出・修正関数

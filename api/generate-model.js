@@ -1171,7 +1171,7 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
     }
     
     // スパン追加モードで層数が検出されない場合、現在のモデルから層数を取得
-    if (isSpanAddition && !isLayerAddition && !isAddMode && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+    if (isSpanAddition && !isLayerAddition && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
         const currentDimensions = detectDimensionsFromModel(currentModel);
         layers = currentDimensions.layers;
         console.error(`スパン追加モードで層数を継承: ${layers}層`);

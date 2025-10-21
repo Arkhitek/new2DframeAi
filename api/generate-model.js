@@ -2248,23 +2248,113 @@ function validateAndFixStructure(model, userPrompt, originalModel = null, detect
             console.error('構造修正を実行します');
             console.error('修正前のモデル:', JSON.stringify(fixedModel, null, 2));
             
-            // 既存の荷重データを保存（元のモデルから取得）
-            const originalNodeLoads = (originalModel && originalModel.nodeLoads) || fixedModel.nodeLoads || [];
-            const originalMemberLoads = (originalModel && originalModel.memberLoads) || fixedModel.memberLoads || [];
+            // 既存の荷重データを保存（AI生成モデルを優先、次に元のモデルから取得）
+            // 編集モードの場合、fixedModelには既にpreserveLoadDataでマッピング済みの荷重が含まれている
+            const originalNodeLoads = fixedModel.nodeLoads || (originalModel && originalModel.nodeLoads) || [];
+            const originalMemberLoads = fixedModel.memberLoads || (originalModel && originalModel.memberLoads) || [];
             console.error('既存の荷重データを保存:', {
                 nodeLoads: originalNodeLoads.length,
                 memberLoads: originalMemberLoads.length,
-                source: originalModel ? '元のモデル' : '生成されたモデル'
+                source: (fixedModel.nodeLoads || fixedModel.memberLoads) ? 'AI生成モデル（マッピング済み）' : (originalModel ? '元のモデル' : '荷重なし')
             });
             
             // 構造を再生成
             const correctedStructure = generateCorrectFrameStructure(dimensions.layers, dimensions.spans);
             
-            // 荷重データを保持して構造を修正
+            // 荷重データを座標ベースで再マッピング
+            // AI生成モデル（fixedModel）の荷重を、新しく生成された構造（correctedStructure）にマッピング
+            const remappedNodeLoads = [];
+            const remappedMemberLoads = [];
+            
+            // 集中荷重のマッピング
+            if (originalNodeLoads && originalNodeLoads.length > 0) {
+                console.error('プログラム的修正後の集中荷重マッピング開始');
+                originalNodeLoads.forEach((load, index) => {
+                    // 元の節点座標を取得（fixedModelから）
+                    const originalNode = fixedModel.nodes[load.n - 1];
+                    if (!originalNode) {
+                        console.error(`警告: 集中荷重${index + 1}の節点${load.n}がモデルに存在しません`);
+                        return;
+                    }
+                    
+                    // 新しい構造で同じ座標の節点を探す
+                    const matchedNodeIndex = correctedStructure.nodes.findIndex(node =>
+                        Math.abs(node.x - originalNode.x) < 0.01 &&
+                        Math.abs(node.y - originalNode.y) < 0.01
+                    );
+                    
+                    if (matchedNodeIndex >= 0) {
+                        remappedNodeLoads.push({
+                            ...load,
+                            n: matchedNodeIndex + 1
+                        });
+                        console.error(`集中荷重再マッピング: 節点${load.n}(${originalNode.x}, ${originalNode.y}) → 新しい節点${matchedNodeIndex + 1}`);
+                    } else {
+                        console.error(`警告: 節点(${originalNode.x}, ${originalNode.y})が新しい構造に見つかりません`);
+                    }
+                });
+                console.error(`集中荷重再マッピング完了: ${remappedNodeLoads.length}/${originalNodeLoads.length}個`);
+            }
+            
+            // 等分布荷重のマッピング
+            if (originalMemberLoads && originalMemberLoads.length > 0) {
+                console.error('プログラム的修正後の等分布荷重マッピング開始');
+                originalMemberLoads.forEach((load, index) => {
+                    // 元の部材の接続を取得（fixedModelから）
+                    const originalMember = fixedModel.members[load.m - 1];
+                    if (!originalMember) {
+                        console.error(`警告: 等分布荷重${index + 1}の部材${load.m}がモデルに存在しません`);
+                        return;
+                    }
+                    
+                    // 元の部材の始点・終点の座標を取得
+                    const originalStartNode = fixedModel.nodes[originalMember.i - 1];
+                    const originalEndNode = fixedModel.nodes[originalMember.j - 1];
+                    
+                    if (!originalStartNode || !originalEndNode) {
+                        console.error(`警告: 部材${load.m}の節点がモデルに存在しません`);
+                        return;
+                    }
+                    
+                    // 新しい構造で同じ座標の節点を探す
+                    const newStartNodeIndex = correctedStructure.nodes.findIndex(node =>
+                        Math.abs(node.x - originalStartNode.x) < 0.01 &&
+                        Math.abs(node.y - originalStartNode.y) < 0.01
+                    );
+                    const newEndNodeIndex = correctedStructure.nodes.findIndex(node =>
+                        Math.abs(node.x - originalEndNode.x) < 0.01 &&
+                        Math.abs(node.y - originalEndNode.y) < 0.01
+                    );
+                    
+                    if (newStartNodeIndex < 0 || newEndNodeIndex < 0) {
+                        console.error(`警告: 部材の節点座標が新しい構造に見つかりません`);
+                        return;
+                    }
+                    
+                    // 新しい構造で同じ接続の部材を探す
+                    const matchedMemberIndex = correctedStructure.members.findIndex(member =>
+                        (member.i === newStartNodeIndex + 1 && member.j === newEndNodeIndex + 1) ||
+                        (member.i === newEndNodeIndex + 1 && member.j === newStartNodeIndex + 1)
+                    );
+                    
+                    if (matchedMemberIndex >= 0) {
+                        remappedMemberLoads.push({
+                            ...load,
+                            m: matchedMemberIndex + 1
+                        });
+                        console.error(`等分布荷重再マッピング: 部材${load.m}(節点${originalMember.i}→${originalMember.j}) → 新しい部材${matchedMemberIndex + 1}(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})`);
+                    } else {
+                        console.error(`警告: 部材接続(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})が新しい構造に見つかりません`);
+                    }
+                });
+                console.error(`等分布荷重再マッピング完了: ${remappedMemberLoads.length}/${originalMemberLoads.length}個`);
+            }
+            
+            // 再マッピングした荷重データを保持して構造を修正
             fixedModel = {
                 ...correctedStructure,
-                nodeLoads: originalNodeLoads,
-                memberLoads: originalMemberLoads
+                nodeLoads: remappedNodeLoads,
+                memberLoads: remappedMemberLoads
             };
             
             console.error('修正後のモデル:', JSON.stringify(fixedModel, null, 2));

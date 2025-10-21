@@ -819,6 +819,66 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 function detectStructureType(userPrompt, currentModel = null) {
     const prompt = userPrompt.toLowerCase();
     
+    // 編集モードの場合、まず元のモデルから構造タイプを推定
+    if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        console.error('元のモデルから構造タイプを推定');
+        
+        // Y座標のバリエーションを取得
+        const uniqueY = [...new Set(currentModel.nodes.map(n => n.y))].sort((a, b) => a - b);
+        const layers = uniqueY.length - 1; // 地面を除く層数
+        
+        // 固定支点の数をカウント
+        const fixedSupports = currentModel.nodes.filter(n => n.s === 'x' || n.s === 'fixed').length;
+        
+        // ピン支点の数をカウント
+        const pinSupports = currentModel.nodes.filter(n => n.s === 'p' || n.s === 'pin' || n.s === 'pinned').length;
+        
+        // ラーメン構造の特徴: 複数層、固定支点、柱と梁の構成
+        if (layers >= 2 && fixedSupports > 0) {
+            console.error('元のモデルはラーメン構造と推定（層数:', layers, '、固定支点:', fixedSupports, '）');
+            
+            // プロンプトに明示的な構造タイプ変更の指示がある場合のみ、変更を許可
+            const structureChangeKeywords = ['に変更', 'を変更', 'として', 'トラス化', '梁化', '梁構造に', 'トラス構造に', 'アーチ構造に'];
+            const hasStructureChange = structureChangeKeywords.some(keyword => prompt.includes(keyword));
+            
+            if (!hasStructureChange) {
+                // 構造タイプ変更の指示がない場合は、元のラーメン構造を維持
+                console.error('構造タイプ変更の指示なし、ラーメン構造を維持');
+                return 'frame';
+            }
+        }
+        
+        // トラス構造の特徴: 1層、ピン支点
+        if (layers === 1 && pinSupports >= 2) {
+            console.error('元のモデルはトラス構造と推定');
+            
+            // 構造タイプ変更の指示がない場合は維持
+            const structureChangeKeywords = ['に変更', 'を変更', 'として', 'ラーメン化', '梁化', '梁構造に', 'ラーメン構造に', 'アーチ構造に'];
+            const hasStructureChange = structureChangeKeywords.some(keyword => prompt.includes(keyword));
+            
+            if (!hasStructureChange) {
+                console.error('構造タイプ変更の指示なし、トラス構造を維持');
+                return 'truss';
+            }
+        }
+        
+        // 梁構造の特徴: 1層、少数の支点
+        if (layers === 1) {
+            console.error('元のモデルは梁構造と推定');
+            
+            // 構造タイプ変更の指示がない場合は維持
+            const structureChangeKeywords = ['に変更', 'を変更', 'として', 'ラーメン化', 'トラス化', 'トラス構造に', 'ラーメン構造に', 'アーチ構造に'];
+            const hasStructureChange = structureChangeKeywords.some(keyword => prompt.includes(keyword));
+            
+            if (!hasStructureChange) {
+                console.error('構造タイプ変更の指示なし、梁構造を維持');
+                return 'beam';
+            }
+        }
+    }
+    
+    // プロンプトから構造タイプを検出（新規作成時、または構造タイプ変更時）
+    
     // アーチ構造のキーワード（最優先）
     const archKeywords = ['アーチ', 'arch', '矢高', 'ライズ', 'rise'];
     if (archKeywords.some(keyword => prompt.includes(keyword))) {
@@ -837,41 +897,11 @@ function detectStructureType(userPrompt, currentModel = null) {
         return 'truss';
     }
     
-    // 梁構造のキーワード
-    const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', 'キャンチレバー', '片持ち梁', 'cantilever'];
-    if (beamKeywords.some(keyword => prompt.includes(keyword))) {
-        return 'beam';
-    }
-    
-    // プロンプトに構造タイプが明示されていない場合、元のモデルから推定
-    if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
-        console.error('元のモデルから構造タイプを推定');
-        
-        // Y座標のバリエーションを取得
-        const uniqueY = [...new Set(currentModel.nodes.map(n => n.y))].sort((a, b) => a - b);
-        const layers = uniqueY.length - 1; // 地面を除く層数
-        
-        // 固定支点の数をカウント
-        const fixedSupports = currentModel.nodes.filter(n => n.s === 'x' || n.s === 'fixed').length;
-        
-        // ピン支点の数をカウント
-        const pinSupports = currentModel.nodes.filter(n => n.s === 'p' || n.s === 'pin' || n.s === 'pinned').length;
-        
-        // ラーメン構造の特徴: 複数層、固定支点、柱と梁の構成
-        if (layers >= 2 && fixedSupports > 0) {
-            console.error('元のモデルはラーメン構造と推定（層数:', layers, '、固定支点:', fixedSupports, '）');
-            return 'frame';
-        }
-        
-        // トラス構造の特徴: 1層、ピン支点
-        if (layers === 1 && pinSupports >= 2) {
-            console.error('元のモデルはトラス構造と推定');
-            return 'truss';
-        }
-        
-        // 梁構造の特徴: 1層、少数の支点
-        if (layers === 1) {
-            console.error('元のモデルは梁構造と推定');
+    // 梁構造のキーワード（「梁部材」「既存の梁」などは除外）
+    const beamStructureKeywords = ['連続梁', '単純梁', 'beam', '連続', '単純', 'キャンチレバー', '片持ち梁', 'cantilever'];
+    if (beamStructureKeywords.some(keyword => prompt.includes(keyword))) {
+        // 「梁部材」「既存の梁」などの文脈でないことを確認
+        if (!prompt.includes('梁部材') && !prompt.includes('既存の梁') && !prompt.includes('梁と同様')) {
             return 'beam';
         }
     }
@@ -1630,21 +1660,100 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         console.error('荷重変更の指示がないため、元の荷重データを保持します');
         
         const preservedModel = JSON.parse(JSON.stringify(generatedModel));
+        preservedModel.nodeLoads = [];
+        preservedModel.memberLoads = [];
         
-        // 集中荷重の保持
+        // 集中荷重の保持（節点座標でマッピング）
         if (hasOriginalNodeLoads) {
-            preservedModel.nodeLoads = JSON.parse(JSON.stringify(originalModel.nodeLoads));
-            console.error(`集中荷重を保持: ${preservedModel.nodeLoads.length}個`);
-        } else {
-            preservedModel.nodeLoads = [];
+            console.error('集中荷重のマッピング開始');
+            
+            originalModel.nodeLoads.forEach((load, index) => {
+                // 元の節点番号から節点座標を取得
+                const originalNode = originalModel.nodes[load.n - 1]; // n は1ベース
+                if (!originalNode) {
+                    console.error(`警告: 集中荷重${index + 1}の節点${load.n}が元のモデルに存在しません`);
+                    return;
+                }
+                
+                // 生成されたモデルで同じ座標の節点を探す
+                const matchedNodeIndex = generatedModel.nodes.findIndex(node => 
+                    Math.abs(node.x - originalNode.x) < 0.01 && 
+                    Math.abs(node.y - originalNode.y) < 0.01
+                );
+                
+                if (matchedNodeIndex >= 0) {
+                    // マッチした節点番号で荷重を追加（0ベース→1ベース）
+                    const newLoad = {
+                        ...load,
+                        n: matchedNodeIndex + 1
+                    };
+                    preservedModel.nodeLoads.push(newLoad);
+                    console.error(`集中荷重マッピング: 元の節点${load.n}(${originalNode.x}, ${originalNode.y}) → 新しい節点${matchedNodeIndex + 1}`);
+                } else {
+                    console.error(`警告: 節点(${originalNode.x}, ${originalNode.y})が新しいモデルに見つかりません`);
+                }
+            });
+            
+            console.error(`集中荷重を保持: ${preservedModel.nodeLoads.length}/${originalModel.nodeLoads.length}個`);
         }
         
-        // 等分布荷重の保持
+        // 等分布荷重の保持（部材接続でマッピング）
         if (hasOriginalMemberLoads) {
-            preservedModel.memberLoads = JSON.parse(JSON.stringify(originalModel.memberLoads));
-            console.error(`等分布荷重を保持: ${preservedModel.memberLoads.length}個`);
-        } else {
-            preservedModel.memberLoads = [];
+            console.error('等分布荷重のマッピング開始');
+            
+            originalModel.memberLoads.forEach((load, index) => {
+                // 元の部材番号から部材接続を取得
+                const originalMember = originalModel.members[load.m - 1]; // m は1ベース
+                if (!originalMember) {
+                    console.error(`警告: 等分布荷重${index + 1}の部材${load.m}が元のモデルに存在しません`);
+                    return;
+                }
+                
+                // 元の部材の始点と終点の座標を取得
+                const originalStartNode = originalModel.nodes[originalMember.i - 1];
+                const originalEndNode = originalModel.nodes[originalMember.j - 1];
+                
+                if (!originalStartNode || !originalEndNode) {
+                    console.error(`警告: 部材${load.m}の節点が元のモデルに存在しません`);
+                    return;
+                }
+                
+                // 生成されたモデルで同じ接続の部材を探す
+                // 1. 新しいモデルで始点・終点の座標に対応する節点番号を見つける
+                const newStartNodeIndex = generatedModel.nodes.findIndex(node =>
+                    Math.abs(node.x - originalStartNode.x) < 0.01 &&
+                    Math.abs(node.y - originalStartNode.y) < 0.01
+                );
+                const newEndNodeIndex = generatedModel.nodes.findIndex(node =>
+                    Math.abs(node.x - originalEndNode.x) < 0.01 &&
+                    Math.abs(node.y - originalEndNode.y) < 0.01
+                );
+                
+                if (newStartNodeIndex < 0 || newEndNodeIndex < 0) {
+                    console.error(`警告: 部材の節点座標が新しいモデルに見つかりません`);
+                    return;
+                }
+                
+                // 2. 同じ接続を持つ部材を探す（順序は問わない）
+                const matchedMemberIndex = generatedModel.members.findIndex(member =>
+                    (member.i === newStartNodeIndex + 1 && member.j === newEndNodeIndex + 1) ||
+                    (member.i === newEndNodeIndex + 1 && member.j === newStartNodeIndex + 1)
+                );
+                
+                if (matchedMemberIndex >= 0) {
+                    // マッチした部材番号で荷重を追加（0ベース→1ベース）
+                    const newLoad = {
+                        ...load,
+                        m: matchedMemberIndex + 1
+                    };
+                    preservedModel.memberLoads.push(newLoad);
+                    console.error(`等分布荷重マッピング: 元の部材${load.m}(節点${originalMember.i}→${originalMember.j}) → 新しい部材${matchedMemberIndex + 1}(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})`);
+                } else {
+                    console.error(`警告: 部材接続(節点${newStartNodeIndex + 1}→${newEndNodeIndex + 1})が新しいモデルに見つかりません`);
+                }
+            });
+            
+            console.error(`等分布荷重を保持: ${preservedModel.memberLoads.length}/${originalModel.memberLoads.length}個`);
         }
         
         console.error('=== 荷重データ保持処理完了 ===');

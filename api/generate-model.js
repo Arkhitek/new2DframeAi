@@ -197,6 +197,12 @@ export default async function handler(req, res) {
                 }
                 
                 console.error('編集モード: 境界条件保持処理完了');
+                
+                // 荷重データ保持処理
+                console.error('編集モード: 荷重データ保持処理開始');
+                generatedModel = preserveLoadData(currentModel, generatedModel, userPrompt);
+                finalGeneratedText = JSON.stringify(generatedModel, null, 2);
+                console.error('編集モード: 荷重データ保持処理完了');
             }
             
         // 新規作成・編集両方で節点参照を検証（エラーが発生しても処理を続行）
@@ -232,7 +238,7 @@ export default async function handler(req, res) {
             }
             
             // 構造タイプ別の追加検証・修正を実行
-            const detectedStructureType = detectStructureType(userPrompt);
+            const detectedStructureType = detectStructureType(userPrompt, mode === 'edit' ? currentModel : null);
             if (detectedStructureType === 'truss') {
                 console.error('トラス構造の追加検証を実行');
                 const trussValidation = validateTrussStructure(generatedModel, userPrompt);
@@ -463,7 +469,7 @@ export default async function handler(req, res) {
 
 function createSystemPromptForBackend(mode = 'new', currentModel = null, userPrompt = '', retryCount = 0) {
     // ユーザープロンプトから構造タイプと次元を検出
-    const structureType = detectStructureType(userPrompt);
+    const structureType = detectStructureType(userPrompt, mode === 'edit' ? currentModel : null);
     const dimensions = detectStructureDimensions(userPrompt, mode === 'edit' ? currentModel : null);
     const loadIntent = detectLoadIntent(userPrompt);
     
@@ -810,7 +816,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 }
 
 // 構造タイプを検出する関数
-function detectStructureType(userPrompt) {
+function detectStructureType(userPrompt, currentModel = null) {
     const prompt = userPrompt.toLowerCase();
     
     // アーチ構造のキーワード（最優先）
@@ -835,6 +841,39 @@ function detectStructureType(userPrompt) {
     const beamKeywords = ['連続梁', '単純梁', '梁', 'beam', '連続', '単純', 'キャンチレバー', '片持ち梁', 'cantilever'];
     if (beamKeywords.some(keyword => prompt.includes(keyword))) {
         return 'beam';
+    }
+    
+    // プロンプトに構造タイプが明示されていない場合、元のモデルから推定
+    if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        console.error('元のモデルから構造タイプを推定');
+        
+        // Y座標のバリエーションを取得
+        const uniqueY = [...new Set(currentModel.nodes.map(n => n.y))].sort((a, b) => a - b);
+        const layers = uniqueY.length - 1; // 地面を除く層数
+        
+        // 固定支点の数をカウント
+        const fixedSupports = currentModel.nodes.filter(n => n.s === 'x' || n.s === 'fixed').length;
+        
+        // ピン支点の数をカウント
+        const pinSupports = currentModel.nodes.filter(n => n.s === 'p' || n.s === 'pin' || n.s === 'pinned').length;
+        
+        // ラーメン構造の特徴: 複数層、固定支点、柱と梁の構成
+        if (layers >= 2 && fixedSupports > 0) {
+            console.error('元のモデルはラーメン構造と推定（層数:', layers, '、固定支点:', fixedSupports, '）');
+            return 'frame';
+        }
+        
+        // トラス構造の特徴: 1層、ピン支点
+        if (layers === 1 && pinSupports >= 2) {
+            console.error('元のモデルはトラス構造と推定');
+            return 'truss';
+        }
+        
+        // 梁構造の特徴: 1層、少数の支点
+        if (layers === 1) {
+            console.error('元のモデルは梁構造と推定');
+            return 'beam';
+        }
     }
     
     return 'basic';
@@ -1042,8 +1081,9 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
     
     // 「Xスパンを追加」のパターンを検出
     const addSpanPatterns = [
-        /(\d+)\s*スパン\s*(を|の)*\s*(追加|延長|増設|増築)/,
-        /(追加|延長|増設|増築)\s*(\d+)\s*スパン/
+        /(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/,  // 「2スパン分を追加」に対応
+        /(追加|延長|増設|増築)\s*(\d+)\s*スパン/,
+        /(右側|左側|横).*(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/  // 「右側に2スパン分を追加」に対応
     ];
     
     let isSpanAddition = false;
@@ -1098,6 +1138,13 @@ function detectStructureDimensions(userPrompt, currentModel = null) {
         const currentDimensions = detectDimensionsFromModel(currentModel);
         spans = currentDimensions.spans;
         console.error(`層追加モードでスパン数を継承: ${spans}スパン`);
+    }
+    
+    // スパン追加モードで層数が検出されない場合、現在のモデルから層数を取得
+    if (isSpanAddition && !isLayerAddition && !isAddMode && currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
+        const currentDimensions = detectDimensionsFromModel(currentModel);
+        layers = currentDimensions.layers;
+        console.error(`スパン追加モードで層数を継承: ${layers}層`);
     }
     
     // デフォルト値の設定（明示的な指定がない場合）
@@ -1160,11 +1207,33 @@ function createEditPrompt(userPrompt, currentModel) {
         editPrompt += `\n`;
     }
     
+    // 荷重情報を追加
+    if (currentModel && (currentModel.nodeLoads?.length > 0 || currentModel.memberLoads?.length > 0)) {
+        editPrompt += `現在の荷重情報（必ず保持してください）:\n`;
+        
+        if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
+            editPrompt += `集中荷重:\n`;
+            currentModel.nodeLoads.forEach((load, index) => {
+                editPrompt += `  節点${load.n}: fx=${load.fx || 0}, fy=${load.fy || 0}\n`;
+            });
+        }
+        
+        if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
+            editPrompt += `等分布荷重:\n`;
+            currentModel.memberLoads.forEach((load, index) => {
+                editPrompt += `  部材${load.m}: q=${load.q}\n`;
+            });
+        }
+        
+        editPrompt += `\n**重要**: 上記の荷重は必ず保持してください。新しい節点・部材を追加する場合でも、既存の荷重は元の節点・部材番号で保持してください。\n\n`;
+    }
+    
     editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。\n\n`;
     editPrompt += `**最終確認事項（絶対に守ってください）**:\n`;
     editPrompt += `- 境界条件変更の指示がない場合は、既存の節点の境界条件（s）を必ず保持してください\n`;
     editPrompt += `- 座標変更や部材変更の指示だけで境界条件を変更することは絶対に禁止です\n`;
     editPrompt += `- 生成するJSONでは、既存の節点の境界条件（s）を元の値のまま出力してください\n`;
+    editPrompt += `- 既存の荷重データ（nodeLoads, memberLoads）を必ず保持してください\n`;
     
     return editPrompt;
 }
@@ -1524,6 +1593,66 @@ function validateSpanCount(model) {
             isValid: false,
             errors: ['スパン数検証でエラーが発生しました: ' + error.message]
         };
+    }
+}
+
+// 荷重データ保持関数
+function preserveLoadData(originalModel, generatedModel, userPrompt) {
+    if (!originalModel || !generatedModel) {
+        console.error('荷重保持: モデルが不足しているため、処理をスキップします');
+        return generatedModel;
+    }
+    
+    console.error('=== 荷重データ保持処理開始 ===');
+    
+    // 荷重変更の指示を検出
+    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add/i;
+    const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt);
+    
+    console.error('荷重変更意図検出:', hasLoadChangeIntent);
+    
+    // 元のモデルに荷重データがあるか確認
+    const hasOriginalNodeLoads = originalModel.nodeLoads && originalModel.nodeLoads.length > 0;
+    const hasOriginalMemberLoads = originalModel.memberLoads && originalModel.memberLoads.length > 0;
+    
+    console.error('元のモデルの荷重:', {
+        nodeLoads: hasOriginalNodeLoads ? originalModel.nodeLoads.length : 0,
+        memberLoads: hasOriginalMemberLoads ? originalModel.memberLoads.length : 0
+    });
+    
+    console.error('生成されたモデルの荷重:', {
+        nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
+        memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
+    });
+    
+    // 荷重変更の指示がない場合は、元の荷重データを保持
+    if (!hasLoadChangeIntent) {
+        console.error('荷重変更の指示がないため、元の荷重データを保持します');
+        
+        const preservedModel = JSON.parse(JSON.stringify(generatedModel));
+        
+        // 集中荷重の保持
+        if (hasOriginalNodeLoads) {
+            preservedModel.nodeLoads = JSON.parse(JSON.stringify(originalModel.nodeLoads));
+            console.error(`集中荷重を保持: ${preservedModel.nodeLoads.length}個`);
+        } else {
+            preservedModel.nodeLoads = [];
+        }
+        
+        // 等分布荷重の保持
+        if (hasOriginalMemberLoads) {
+            preservedModel.memberLoads = JSON.parse(JSON.stringify(originalModel.memberLoads));
+            console.error(`等分布荷重を保持: ${preservedModel.memberLoads.length}個`);
+        } else {
+            preservedModel.memberLoads = [];
+        }
+        
+        console.error('=== 荷重データ保持処理完了 ===');
+        return preservedModel;
+    } else {
+        console.error('荷重変更の指示があるため、AIの生成を尊重します');
+        console.error('=== 荷重データ保持処理完了 ===');
+        return generatedModel;
     }
 }
 
@@ -1900,8 +2029,8 @@ function validateAndFixStructure(model, userPrompt, originalModel = null, detect
         const dimensions = detectedDimensions || detectStructureDimensions(userPrompt, originalModel);
         console.error('検出された構造次元:', dimensions);
         
-        // 構造タイプを確認
-        const structureType = detectStructureType(userPrompt);
+        // 構造タイプを確認（元のモデルがあればそれから推定）
+        const structureType = detectStructureType(userPrompt, originalModel);
         console.error('構造タイプ:', structureType);
         
         // 構造タイプ別の詳細検証を実行

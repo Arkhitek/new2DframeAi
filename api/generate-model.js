@@ -1187,7 +1187,9 @@ function validateNodeReferences(model) {
             errors.push(`節点${index + 1}の座標が数値ではありません`);
                 console.error(`節点${index + 1}の座標が数値ではありません`);
         }
-        if (!['f', 'p', 'r', 'x'].includes(node.s)) {
+        // 境界条件のチェック（短い形式と長い形式の両方を許容）
+        const validBoundaryConditions = ['f', 'p', 'r', 'x', 'free', 'pin', 'pinned', 'roller', 'fixed', 'fix', 'hinge'];
+        if (!validBoundaryConditions.includes(node.s)) {
             errors.push(`節点${index + 1}の境界条件（${node.s}）が無効です`);
                 console.error(`節点${index + 1}の境界条件（${node.s}）が無効です`);
         }
@@ -1586,11 +1588,14 @@ function emergencyBoundaryConditionFix(originalModel, generatedModel, boundaryCh
         
         console.log(`緊急修正: ${fixedCount}個の節点の境界条件を復元しました`);
         
-        // 最終確認: 全ての境界条件が正しいかチェック
+        // 最終確認: 全ての境界条件が正しいかチェック（正規化して比較）
         let allCorrect = true;
         for (let i = 0; i < minLength; i++) {
-            if (originalModel.nodes[i].s !== fixedModel.nodes[i].s) {
-                console.error(`緊急修正エラー: 節点${i + 1}の境界条件が復元されていません: ${fixedModel.nodes[i].s} (期待値: ${originalModel.nodes[i].s})`);
+            const originalCondition = normalizeBoundaryCondition(originalModel.nodes[i].s);
+            const fixedCondition = normalizeBoundaryCondition(fixedModel.nodes[i].s);
+            
+            if (originalCondition !== fixedCondition) {
+                console.error(`緊急修正エラー: 節点${i + 1}の境界条件が復元されていません: ${fixedModel.nodes[i].s} (期待値: ${originalCondition})`);
                 allCorrect = false;
             }
         }
@@ -1631,7 +1636,11 @@ function testBoundaryConditionPreservation(originalModel, generatedModel, bounda
         const originalBoundary = originalModel.nodes[i].s;
         const generatedBoundary = generatedModel.nodes[i].s;
         
-        if (originalBoundary === generatedBoundary) {
+        // 境界条件を正規化して比較
+        const normalizedOriginal = normalizeBoundaryCondition(originalBoundary);
+        const normalizedGenerated = normalizeBoundaryCondition(generatedBoundary);
+        
+        if (normalizedOriginal === normalizedGenerated) {
             correctCount++;
             console.log(`✓ 節点${i + 1}: ${originalBoundary} (正しい)`);
         } else {
@@ -1684,19 +1693,21 @@ function ultimateBoundaryConditionFix(originalModel, generatedModel) {
     const minLength = Math.min(originalModel.nodes.length, fixedModel.nodes.length);
     let fixedCount = 0;
     
-    // 全ての境界条件を強制的に復元
+    // 全ての境界条件を強制的に復元（正規化して短い形式に統一）
     for (let i = 0; i < minLength; i++) {
         const originalBoundary = originalModel.nodes[i].s;
         const currentBoundary = fixedModel.nodes[i].s;
         
-        // 強制的に境界条件を復元
-        fixedModel.nodes[i].s = originalBoundary;
+        // 境界条件を正規化して復元（短い形式に統一）
+        const normalizedBoundary = normalizeBoundaryCondition(originalBoundary);
+        fixedModel.nodes[i].s = normalizedBoundary;
         
-        if (originalBoundary !== currentBoundary) {
-            console.log(`最終復元: 節点${i + 1}の境界条件を強制復元: ${currentBoundary} → ${originalBoundary}`);
+        const normalizedCurrent = normalizeBoundaryCondition(currentBoundary);
+        if (normalizedBoundary !== normalizedCurrent) {
+            console.log(`最終復元: 節点${i + 1}の境界条件を強制復元: ${currentBoundary} → ${normalizedBoundary}`);
             fixedCount++;
         } else {
-            console.log(`最終復元: 節点${i + 1}の境界条件は正しい: ${originalBoundary}`);
+            console.log(`最終復元: 節点${i + 1}の境界条件は正しい: ${normalizedBoundary}`);
         }
     }
     

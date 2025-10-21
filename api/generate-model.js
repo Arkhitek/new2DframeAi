@@ -2983,12 +2983,63 @@ JSON形式で出力してください。`;
     const isSpanAddition = originalPrompt.match(/(\d+)\s*スパン\s*分*\s*(を|の)*\s*(追加|延長|増設|増築)/);
     const isLayerAddition = originalPrompt.match(/(\d+)\s*(階|層)\s*部分\s*(を|の)*\s*(追加|延長|増設|増築)/);
     
+    // 現在のモデルから実際の部材配置を分析
+    let missingMembersDetail = '';
+    if (currentModel && currentModel.members) {
+        const actualMemberCount = currentModel.members.length;
+        const missingCount = expectedMembers - actualMemberCount;
+        
+        if (missingCount > 0) {
+            // 既存の部材接続を分析
+            const existingConnections = new Set();
+            currentModel.members.forEach(m => {
+                existingConnections.add(`${m.i}-${m.j}`);
+                existingConnections.add(`${m.j}-${m.i}`);
+            });
+            
+            // 期待される全ての接続を列挙
+            const missingConnections = [];
+            
+            // 柱の接続をチェック
+            for (let col = 1; col <= dimensions.spans + 1; col++) {
+                for (let floor = 0; floor < dimensions.layers; floor++) {
+                    const lowerNode = floor * (dimensions.spans + 1) + col;
+                    const upperNode = (floor + 1) * (dimensions.spans + 1) + col;
+                    if (!existingConnections.has(`${lowerNode}-${upperNode}`) && 
+                        !existingConnections.has(`${upperNode}-${lowerNode}`)) {
+                        missingConnections.push(`柱: 節点${lowerNode}→節点${upperNode}`);
+                    }
+                }
+            }
+            
+            // 梁の接続をチェック
+            for (let floor = 1; floor <= dimensions.layers; floor++) {
+                for (let span = 1; span <= dimensions.spans; span++) {
+                    const leftNode = floor * (dimensions.spans + 1) + span;
+                    const rightNode = floor * (dimensions.spans + 1) + span + 1;
+                    if (!existingConnections.has(`${leftNode}-${rightNode}`) && 
+                        !existingConnections.has(`${rightNode}-${leftNode}`)) {
+                        missingConnections.push(`梁: 節点${leftNode}→節点${rightNode}`);
+                    }
+                }
+            }
+            
+            if (missingConnections.length > 0) {
+                missingMembersDetail = `\n\n【不足している部材の詳細】\n現在${actualMemberCount}個の部材がありますが、${expectedMembers}個必要です。\n以下の${missingConnections.length}個の部材が不足しています:\n${missingConnections.slice(0, 10).map(c => `- ${c}`).join('\n')}`;
+                if (missingConnections.length > 10) {
+                    missingMembersDetail += `\n... 他${missingConnections.length - 10}個`;
+                }
+                missingMembersDetail += `\n\n上記の部材を必ず追加してください。`;
+            }
+        }
+    }
+    
     let correctionPrompt = `ラーメン構造の修正指示:
 
 元の指示: ${originalPrompt}
 
 現在の生成結果に以下の問題があります:
-${errors.map(error => `- ${error}`).join('\n')}
+${errors.map(error => `- ${error}`).join('\n')}${missingMembersDetail}
 
 修正要求:
 1. ${dimensions.layers}層${dimensions.spans}スパンのラーメン構造を生成してください
@@ -2996,9 +3047,10 @@ ${errors.map(error => `- ${error}`).join('\n')}
 3. 部材数: ${expectedMembers}個（柱${expectedColumns}本+梁${expectedBeams}本）
 4. 境界条件: 地面節点（y=0）は"x"、上部節点は"f"
 5. 部材配置: 
-   - 柱: 各柱通りに下から上へ連続的に配置
-   - 梁: 各層で水平方向に配置
-   - 重要: y=0の地面には梁材（水平材）を配置しない`;
+   - 柱: 各柱通りに下から上へ連続的に配置（全${expectedColumns}本）
+   - 梁: 各層で水平方向に配置（全${expectedBeams}本）
+   - 重要: y=0の地面には梁材（水平材）を配置しない
+   - 重要: 全ての柱通り（${dimensions.spans + 1}通り）に、全ての階（${dimensions.layers}階分）の柱を配置すること`;
     
     // 元のモデルがある場合（編集モード）、既存の座標情報を追加
     if (currentModel && currentModel.nodes && currentModel.nodes.length > 0) {
@@ -3036,19 +3088,52 @@ ${errors.map(error => `- ${error}`).join('\n')}
         }
     }
    
-    // 3層2スパンの具体例を追加
+    // 具体例を追加（現在の構造に合わせて）
     if (dimensions.layers === 3 && dimensions.spans === 2) {
         correctionPrompt += `
 
-例: 3層2スパンの場合は以下のように生成してください
-節点: 12個
-- 地面: 節点1(0,0,x), 節点2(6,0,x), 節点3(12,0,x)
-- 1層: 節点4(0,3.5,f), 節点5(6,3.5,f), 節点6(12,3.5,f)
-- 2層: 節点7(0,7,f), 節点8(6,7,f), 節点9(12,7,f)
-- 3層: 節点10(0,10.5,f), 節点11(6,10.5,f), 節点12(12,10.5,f)
-部材: 15本
-- 柱: 1→4, 4→7, 7→10, 2→5, 5→8, 8→11, 3→6, 6→9, 9→12
-- 梁: 4→5, 5→6, 7→8, 8→9, 10→11, 11→12`;
+【3層2スパンの完全な例】
+節点: 12個（4行×3列）
+- 地面（Y=0）: 節点1(0,0,x), 節点2(6,0,x), 節点3(12,0,x)
+- 1階（Y=3.5）: 節点4(0,3.5,f), 節点5(6,3.5,f), 節点6(12,3.5,f)
+- 2階（Y=7）: 節点7(0,7,f), 節点8(6,7,f), 節点9(12,7,f)
+- 3階（Y=10.5）: 節点10(0,10.5,f), 節点11(6,10.5,f), 節点12(12,10.5,f)
+
+部材: 15本（柱9本+梁6本）
+柱（9本、垂直方向）:
+- 左柱通り: 1→4, 4→7, 7→10
+- 中柱通り: 2→5, 5→8, 8→11
+- 右柱通り: 3→6, 6→9, 9→12
+梁（6本、水平方向）:
+- 1階: 4→5, 5→6
+- 2階: 7→8, 8→9
+- 3階: 10→11, 11→12
+
+重要: 上記のように全ての柱（3通り×3階分=9本）と全ての梁（3階×2スパン=6本）を必ず配置してください。`;
+    } else if (dimensions.layers === 3 && dimensions.spans === 4) {
+        correctionPrompt += `
+
+【3層4スパンの完全な例】
+節点: 20個（4行×5列）
+- 地面（Y=0）: 節点1～5（X=0,8,16,24,32）、全て境界条件"x"
+- 1階（Y=4）: 節点6～10（X=0,8,16,24,32）、全て境界条件"f"
+- 2階（Y=8）: 節点11～15（X=0,8,16,24,32）、全て境界条件"f"
+- 3階（Y=12）: 節点16～20（X=0,8,16,24,32）、全て境界条件"f"
+
+部材: 27本（柱15本+梁12本）
+柱（15本、垂直方向、5通り×3階分）:
+- 1通り目（X=0）: 1→6, 6→11, 11→16
+- 2通り目（X=8）: 2→7, 7→12, 12→17
+- 3通り目（X=16）: 3→8, 8→13, 13→18
+- 4通り目（X=24）: 4→9, 9→14, 14→19
+- 5通り目（X=32）: 5→10, 10→15, 15→20
+梁（12本、水平方向、3階×4スパン）:
+- 1階（Y=4）: 6→7, 7→8, 8→9, 9→10
+- 2階（Y=8）: 11→12, 12→13, 13→14, 14→15
+- 3階（Y=12）: 16→17, 17→18, 18→19, 19→20
+
+重要: 上記のように全ての柱（5通り×3階分=15本）と全ての梁（3階×4スパン=12本）を必ず配置してください。
+各柱通りには3本の柱が必要です。各階には4本の梁が必要です。`;
     }
     
     correctionPrompt += `

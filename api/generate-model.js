@@ -722,11 +722,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 節点（9個）:
 - 下弦材: 節点1(0,0,"p"), 節点2(3.75,0,"f"), 節点3(7.5,0,"f"), 節点4(11.25,0,"f"), 節点5(15,0,"r")
 - 上弦材: 節点6(1.875,3,"f"), 節点7(5.625,3,"f"), 節点8(9.375,3,"f"), 節点9(13.125,3,"f")
-部材（16本）:
-- 下弦材: 1→2, 2→3, 3→4, 4→5
-- 上弦材: 6→7, 7→8, 8→9
-- 斜材（上向き）: 1→6, 2→7, 3→8, 4→9
-- 斜材（下向き）: 6→2, 7→3, 8→4, 9→5`;
+部材（16本、全てピン接合）:
+- 下弦材: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+- 上弦材: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}
+- 斜材（上向き）: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
+- 斜材（下向き）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
+
+**重要**: トラス構造では全ての部材がi_conn="pin", j_conn="pin"（ピン接合）である必要があります。`;
             
         } else if (trussType === 'pratt') {
             prompt += `**プラットトラス（Pratt Truss）**の特徴:
@@ -763,13 +765,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
 - 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
 
-部材（17本、必ず全て配置）:
-1. 下弦材（4本）: {"i":1,"j":2}, {"i":2,"j":3}, {"i":3,"j":4}, {"i":4,"j":5}
-2. 上弦材（4本）: {"i":6,"j":7}, {"i":7,"j":8}, {"i":8,"j":9}, {"i":9,"j":10}
-3. 垂直材（3本、必須）: {"i":2,"j":7}, {"i":3,"j":8}, {"i":4,"j":9}
-4. 斜材（6本）: {"i":6,"j":2}, {"i":7,"j":3}, {"i":8,"j":4}, {"i":9,"j":5}, {"i":1,"j":6}, {"i":5,"j":10}
+部材（17本、必ず全て配置、全てピン接合）:
+1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（3本、必須）: {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
+4. 斜材（6本）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
 
-**確認**: 垂直材（2→7, 3→8, 4→9）が必ず含まれていることを確認してください。`;
+**確認**: 垂直材（2→7, 3→8, 4→9）が必ず含まれ、全ての部材がピン接合（i_conn="pin", j_conn="pin"）であることを確認してください。`;
             
         } else if (trussType === 'howe') {
             prompt += `**ハウトラス（Howe Truss）**の特徴:
@@ -807,13 +809,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
 - 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
 
-部材（17本、必ず全て配置）:
-1. 下弦材（4本）: {"i":1,"j":2}, {"i":2,"j":3}, {"i":3,"j":4}, {"i":4,"j":5}
-2. 上弦材（4本）: {"i":6,"j":7}, {"i":7,"j":8}, {"i":8,"j":9}, {"i":9,"j":10}
-3. 垂直材（3本、必須）: {"i":1,"j":6}, {"i":2,"j":7}, {"i":3,"j":8}
-4. 斜材（6本）: {"i":7,"j":2}, {"i":8,"j":3}, {"i":9,"j":4}, {"i":10,"j":5}, {"i":4,"j":9}, {"i":5,"j":10}
+部材（17本、必ず全て配置、全てピン接合）:
+1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（3本、必須）: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}
+4. 斜材（6本）: {"i":7,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":10,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
 
-**確認**: 垂直材（1→6, 2→7, 3→8）が必ず含まれていることを確認してください。`;
+**確認**: 垂直材（1→6, 2→7, 3→8）が必ず含まれ、全ての部材がピン接合（i_conn="pin", j_conn="pin"）であることを確認してください。`;
             
         } else if (trussType === 'k') {
             prompt += `**K型トラス（K Truss）**の特徴:
@@ -868,12 +870,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
 - 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
 
-部材（21本、必ず全て配置）:
-1. 下弦材: {"i":1,"j":2}, {"i":2,"j":3}, {"i":3,"j":4}, {"i":4,"j":5}
-2. 上弦材: {"i":6,"j":7}, {"i":7,"j":8}, {"i":8,"j":9}, {"i":9,"j":10}
-3. 垂直材: {"i":2,"j":7}, {"i":3,"j":8}, {"i":4,"j":9}
-4. 主斜材: {"i":6,"j":2}, {"i":7,"j":3}, {"i":8,"j":4}, {"i":9,"j":5}, {"i":1,"j":6}, {"i":5,"j":10}
-5. 副斜材: {"i":1,"j":7}, {"i":2,"j":8}, {"i":3,"j":9}, {"i":4,"j":10}`;
+部材（21本、必ず全て配置、全てピン接合）:
+1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（3本）: {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
+4. 主斜材（6本）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
+5. 副斜材（4本）: {"i":1,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":10,"i_conn":"pin","j_conn":"pin"}`;
             
         } else if (trussType === 'baltimore') {
             prompt += `**ボルチモアトラス（Baltimore Truss）**の特徴:
@@ -930,14 +932,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 下弦材: 節点1(0,0,"p"), 節点2(6,0,"f"), 節点3(12,0,"r")
 - 上弦材: 節点4(6,3,"f")
 
-部材（5本）:
-1. 下弦材左: {"i":1,"j":2}
-2. 下弦材右: {"i":2,"j":3}
-3. 垂直材（キングポスト）: {"i":2,"j":4}
-4. 斜材左: {"i":1,"j":4}
-5. 斜材右: {"i":4,"j":3}
+部材（5本、全てピン接合）:
+1. 下弦材左: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}
+2. 下弦材右: {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（キングポスト）: {"i":2,"j":4,"i_conn":"pin","j_conn":"pin"}
+4. 斜材左: {"i":1,"j":4,"i_conn":"pin","j_conn":"pin"}
+5. 斜材右: {"i":4,"j":3,"i_conn":"pin","j_conn":"pin"}
 
-**確認**: 垂直材（2→4）が必ず含まれていることを確認してください。`;
+**確認**: 垂直材（2→4）が必ず含まれ、全ての部材がピン接合（i_conn="pin", j_conn="pin"）であることを確認してください。`;
             
         } else if (trussType === 'queenpost') {
             prompt += `**クイーンポストトラス（Queen Post Truss）**の特徴:
@@ -3552,14 +3554,14 @@ ${errors.map(error => `- ${error}`).join('\n')}
 - {"x":${spanLength},"y":0,"s":"r"}
 - {"x":${spanLength/2},"y":${height},"s":"f"}
 
-部材（5本）:
-- {"i":1,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
-- {"i":2,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
-- {"i":2,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}  ← キングポスト（垂直材）
-- {"i":1,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
-- {"i":4,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+部材（5本、全てピン接合）:
+- {"i":1,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638,"i_conn":"pin","j_conn":"pin"}
+- {"i":2,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638,"i_conn":"pin","j_conn":"pin"}
+- {"i":2,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638,"i_conn":"pin","j_conn":"pin"}  ← キングポスト（垂直材）
+- {"i":1,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638,"i_conn":"pin","j_conn":"pin"}
+- {"i":4,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638,"i_conn":"pin","j_conn":"pin"}
 
-**重要**: 垂直材（節点2→4）が必ず含まれていることを確認してください。`;
+**重要**: トラス構造では全ての部材がi_conn="pin", j_conn="pin"（ピン接合）で、垂直材（節点2→4）が必ず含まれていることを確認してください。`;
         
     } else if (trussType === 'queenpost') {
         correctionPrompt += `高さ${height}m、スパン長${spanLength}mのクイーンポストトラスを生成してください

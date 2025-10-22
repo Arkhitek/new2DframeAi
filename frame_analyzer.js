@@ -16856,6 +16856,11 @@ function integrateEditData(newState, userPrompt = '') {
     const hasLoadDeleteIntent = loadDeleteKeywords.test(userPrompt);
     console.log('🔍 荷重削除意図検出:', hasLoadDeleteIntent);
     
+    // 材料変更意図を検出
+    const materialChangeKeywords = /材料.*(変更|設定)|断面.*(変更|設定)|弾性係数.*(変更|設定)|ヤング係数.*(変更|設定)|ステンレス|アルミ|material.*(change|set)|section.*(change|set)|modulus.*(change|set)|elastic/i;
+    const hasMaterialChangeIntent = materialChangeKeywords.test(userPrompt);
+    console.log('🔍 材料変更意図検出:', hasMaterialChangeIntent);
+    
     // 既存のデータを取得
     const existingModelData = getCurrentModelData();
     console.log('🔍 既存データ:', existingModelData);
@@ -16958,12 +16963,17 @@ function integrateEditData(newState, userPrompt = '') {
             
             // 既存部材がある場合は、物性値と接合条件を保持
             if (existingMember) {
-                // 物性値を既存のものから保持
-                if (existingMember.E !== undefined) integratedMember.E = existingMember.E;
-                if (existingMember.F !== undefined) integratedMember.F = existingMember.F;
-                if (existingMember.I !== undefined) integratedMember.I = existingMember.I;
-                if (existingMember.A !== undefined) integratedMember.A = existingMember.A;
-                if (existingMember.Z !== undefined) integratedMember.Z = existingMember.Z;
+                // 材料変更の指示がない場合のみ物性値を既存のものから保持
+                if (!hasMaterialChangeIntent) {
+                    if (existingMember.E !== undefined) integratedMember.E = existingMember.E;
+                    if (existingMember.F !== undefined) integratedMember.F = existingMember.F;
+                    if (existingMember.I !== undefined) integratedMember.I = existingMember.I;
+                    if (existingMember.A !== undefined) integratedMember.A = existingMember.A;
+                    if (existingMember.Z !== undefined) integratedMember.Z = existingMember.Z;
+                    console.log(`🔍 部材${i + 1}: 材料変更意図なし、既存の物性値を保持 (E=${integratedMember.E})`);
+                } else {
+                    console.log(`🔍 部材${i + 1}: 材料変更意図あり、AIの新しい物性値を使用 (E=${integratedMember.E})`);
+                }
                 
                 // 接合条件を既存のものから保持
                 if (existingMember.i_conn !== undefined) integratedMember.i_conn = existingMember.i_conn;
@@ -16991,7 +17001,7 @@ function integrateEditData(newState, userPrompt = '') {
                 if (existingMember.ix !== undefined) integratedMember.ix = existingMember.ix;
                 if (existingMember.iy !== undefined) integratedMember.iy = existingMember.iy;
                 
-                console.log(`🔍 部材${i + 1}統合: 新規部材に既存の物性値を適用`, integratedMember);
+                console.log(`🔍 部材${i + 1}統合完了:`, integratedMember);
             } else {
                 console.log(`🔍 部材${i + 1}使用: 新規部材（既存部材なし）`, integratedMember);
             }
@@ -17006,6 +17016,22 @@ function integrateEditData(newState, userPrompt = '') {
     
     console.log(`🔍 統合後部材数: ${integratedMembers.length}`);
     console.log(`🔍 統合後部材詳細:`, integratedMembers);
+    
+    // 材料変更の確認
+    if (hasMaterialChangeIntent && integratedMembers.length > 0) {
+        const firstE = integratedMembers[0].E;
+        const allSameE = integratedMembers.every(m => m.E === firstE);
+        console.log(`🔍 材料変更処理結果: 最初の部材E=${firstE}, 全部材同じE=${allSameE}`);
+        if (existingMembers.length > 0) {
+            const originalE = existingMembers[0].E;
+            if (firstE !== originalE) {
+                console.log(`🔍 ✓ 材料が変更されました: ${originalE} → ${firstE}`);
+            } else {
+                console.log(`🔍 ⚠️ 警告: 材料が変更されていません (E=${firstE})`);
+            }
+        }
+    }
+    
     console.log(`🔍 既存節点荷重数: ${(existingModelData.nodeLoads || []).length}, 新規節点荷重数: ${(newState.nodeLoads || []).length}`);
     console.log(`🔍 既存部材荷重数: ${(existingModelData.memberLoads || []).length}, 新規部材荷重数: ${(newState.memberLoads || []).length}`);
     

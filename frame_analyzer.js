@@ -9866,8 +9866,8 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         baseColumns.push(`<span class="section-axis-cell">${sectionAxis || '-'}</span>`);
 
         // 接続条件列を追加
-        baseColumns.push(`<select><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
-        baseColumns.push(`<select><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
+        baseColumns.push(`<select><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'pin' || i_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
+        baseColumns.push(`<select><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'pin' || j_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
 
         return baseColumns;
     };
@@ -16861,6 +16861,11 @@ function integrateEditData(newState, userPrompt = '') {
     const hasMaterialChangeIntent = materialChangeKeywords.test(userPrompt);
     console.log('🔍 材料変更意図検出:', hasMaterialChangeIntent);
     
+    // トラス構造の作成意図を検出（接合条件をAI生成に従う）
+    const trussCreateKeywords = /トラス|truss|ワーレン|プラット|ハウ|warren|pratt|howe|弦材|斜材/i;
+    const hasTrussCreateIntent = trussCreateKeywords.test(userPrompt);
+    console.log('🔍 トラス構造作成意図検出:', hasTrussCreateIntent);
+    
     // 既存のデータを取得
     const existingModelData = getCurrentModelData();
     console.log('🔍 既存データ:', existingModelData);
@@ -16975,9 +16980,14 @@ function integrateEditData(newState, userPrompt = '') {
                     console.log(`🔍 部材${i + 1}: 材料変更意図あり、AIの新しい物性値を使用 (E=${integratedMember.E})`);
                 }
                 
-                // 接合条件を既存のものから保持
-                if (existingMember.i_conn !== undefined) integratedMember.i_conn = existingMember.i_conn;
-                if (existingMember.j_conn !== undefined) integratedMember.j_conn = existingMember.j_conn;
+                // 接合条件をAI生成または既存のものから保持（トラス構造の場合はAI生成を優先）
+                if (!hasTrussCreateIntent) {
+                    if (existingMember.i_conn !== undefined) integratedMember.i_conn = existingMember.i_conn;
+                    if (existingMember.j_conn !== undefined) integratedMember.j_conn = existingMember.j_conn;
+                    console.log(`🔍 部材${i + 1}: 非トラス構造、既存の接合条件を保持 (i_conn=${integratedMember.i_conn}, j_conn=${integratedMember.j_conn})`);
+                } else {
+                    console.log(`🔍 部材${i + 1}: トラス構造、AIの接合条件を使用 (i_conn=${integratedMember.i_conn}, j_conn=${integratedMember.j_conn})`);
+                }
                 
                 // 断面情報も既存のものから保持
                 if (existingMember.sectionName !== undefined) integratedMember.sectionName = existingMember.sectionName;

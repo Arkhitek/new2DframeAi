@@ -1773,7 +1773,7 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
     console.error('=== 荷重データ保持処理開始 ===');
     
     // 荷重変更の指示を検出
-    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add/i;
+    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add|節点.*荷重|部材.*荷重|水平荷重|鉛直荷重|等分布荷重|kN|N|荷重.*kN|荷重.*N|fx|fy|q.*=|荷重.*作用|荷重.*加える|荷重.*与える/i;
     const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt);
     
     console.error('荷重変更意図検出:', hasLoadChangeIntent);
@@ -1803,9 +1803,18 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
     });
     
+    // 荷重変更の指示がある場合は、AIが生成した荷重データを使用
+    if (hasLoadChangeIntent) {
+        console.error('荷重変更の指示があるため、AIが生成した荷重データを使用します');
+        console.error('AI生成荷重データ:', {
+            nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
+            memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
+        });
+        return generatedModel;
+    }
+    
     // 荷重変更の指示がない場合は、元の荷重データを保持
-    if (!hasLoadChangeIntent) {
-        console.error('荷重変更の指示がないため、元の荷重データを保持します');
+    console.error('荷重変更の指示がないため、元の荷重データを保持します');
         
         const preservedModel = JSON.parse(JSON.stringify(generatedModel));
         preservedModel.nodeLoads = [];
@@ -1977,11 +1986,6 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         
         console.error('=== 荷重データ保持処理完了 ===');
         return preservedModel;
-    } else {
-        console.error('荷重変更の指示があるため、AIの生成を尊重します');
-        console.error('=== 荷重データ保持処理完了 ===');
-        return generatedModel;
-    }
 }
 
 // 境界条件を強制的に保持する関数

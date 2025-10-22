@@ -513,7 +513,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
             if (trussType === 'pratt' || trussType === 'howe' || trussType === 'pennsylvania' || trussType === 'baltimore' || trussType === 'curvedpratt') {
                 simplePrompt += `
 重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦と下弦の節点は同じx座標。垂直材必須（同じx座標の下弦→上弦）`;
-                if (trussType === 'pennsylvania') {
+                if (trussType === 'pratt') {
+                    simplePrompt += `。プラット: 斜材は中央で反転（左半分は中央向き、右半分は外向き）`;
+                } else if (trussType === 'pennsylvania') {
                     simplePrompt += `。ペンシルヴァニア: サブダイアゴナル追加`;
                 } else if (trussType === 'baltimore') {
                     simplePrompt += `。ボルチモア: 上弦に中間節点追加`;
@@ -522,7 +524,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
                 }
             } else if (trussType === 'warren' || trussType === 'curvedwarren') {
                 simplePrompt += `
-重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦節点は下弦節点の中間位置。垂直材なし、斜材のみ`;
+重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦節点は下弦節点の中間位置。**垂直材絶対禁止**、斜材のみ。同じx座標の節点同士を接続しない`;
                 if (trussType === 'curvedwarren') {
                     simplePrompt += `。曲弦: 上弦y座標は放物線`;
                 }
@@ -703,18 +705,23 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         // トラスの種類に応じた詳細説明
         if (trussType === 'warren') {
             prompt += `**ワーレントラス（Warren Truss）**の特徴:
-1. 垂直材を使用しない（斜材のみで構成）
+1. **垂直材を絶対に使用しない**（斜材のみで構成）
 2. 斜材が上向き・下向きと交互に配置（ジグザグの「W」字形状）
 3. 上弦材の節点は下弦材の節点の中間位置に配置
 
+**重要な制約**:
+- **垂直材禁止**: 同じx座標の節点同士を接続する部材は配置しない
+- **斜材のみ**: 全ての部材は異なるx座標の節点を接続する
+
 節点配置:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3.75, 7.5, 11.25, 15）
-- 上弦材（y=${height}）: 下弦材の中間位置（例: x=1.875, 5.625, 9.375, 13.125）
+- 上弦材（y=${height}）: **必ず下弦材の中間位置**（例: x=1.875, 5.625, 9.375, 13.125）
+  * 上弦と下弦はx座標が一致しない（中間位置にずれる）
 
 部材配置:
 - 下弦材: 下弦の節点を順に接続（水平材）
 - 上弦材: 上弦の節点を順に接続（水平材）
-- 斜材: 交互に上向き・下向きに配置
+- 斜材のみ: 交互に上向き・下向きに配置（**垂直材なし**）
   * 上向き斜材: 下弦材の節点から右上の上弦材の節点へ
   * 下向き斜材: 上弦材の節点から右下の下弦材の節点へ
 
@@ -733,34 +740,38 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         } else if (trussType === 'pratt') {
             prompt += `**プラットトラス（Pratt Truss）**の特徴:
 1. **必ず垂直材を配置する**（同じx座標の下弦節点と上弦節点を接続）
-2. 斜材は中央に向かって下向き（∧形状の連続）
+2. **斜材は中央で反転する**（左半分は中央に向かって下向き∧、右半分は中央から外に向かって下向き∧）
 3. 上弦材と下弦材の節点位置は一致（同じx座標）
 
-**重要**: プラットトラスでは垂直材が必須です。各パネルの左側または右側に垂直材を配置してください。
+**重要**: プラットトラスでは垂直材が必須で、斜材は中央を境に向きが反転します。
 
 節点配置の詳細:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
 - 上弦材（y=${height}）: **必ず下弦材と同じx座標**（x=0, 3, 6, 9, 12）
 - 境界条件: 左端(x=0,y=0)は"p"、右端は"r"、その他は"f"
+- 中央節点: スパンの中央付近の節点（例: x=6）
 
-部材配置の詳細（4パネルの場合）:
+部材配置の詳細（4パネル、中央がx=6の場合）:
 1. **下弦材（4本）**: 下弦の節点を順に接続
    - 節点1→2, 2→3, 3→4, 4→5
 2. **上弦材（4本）**: 上弦の節点を順に接続
    - 節点6→7, 7→8, 8→9, 9→10
 3. **垂直材（3本、必須）**: 同じx座標の下弦→上弦を垂直接続
    - 節点2→7（x=3の垂直材）
-   - 節点3→8（x=6の垂直材）
+   - 節点3→8（x=6の中央垂直材）
    - 節点4→9（x=9の垂直材）
-4. **斜材（6本）**: 上弦の節点から右下の下弦の節点へ下向き
-   - 節点6→2（左から1番目の斜材）
-   - 節点7→3（左から2番目の斜材）
-   - 節点8→4（左から3番目の斜材）
-   - 節点9→5（左から4番目の斜材）
-   - 節点1→6（左端部の斜材）
-   - 節点5→10（右端部の斜材）
+4. **斜材（6本、中央で反転）**: 
+   **左半分（中央に向かって下向き）:**
+   - 節点6→2（上弦左端から下弦2へ、右下がり）
+   - 節点7→3（上弦から下弦中央へ、右下がり）
+   **右半分（中央から外に向かって下向き）:**
+   - 節点8→4（上弦中央から下弦へ、右下がり）
+   - 節点9→5（上弦から下弦右端へ、右下がり）
+   **端部斜材:**
+   - 節点1→6（下弦左端から上弦左端へ、右上がり）
+   - 節点5→10（下弦右端から上弦右端へ、左上がり）
 
-例: 高さ3m、スパン12mのプラットトラス（4パネル）
+例: 高さ3m、スパン12mのプラットトラス（4パネル、中央x=6）
 節点（10個）:
 - 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
 - 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
@@ -769,9 +780,15 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
 2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
 3. 垂直材（3本、必須）: {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
-4. 斜材（6本）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
+4. 斜材（6本、中央で反転）:
+   - 左半分: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}
+   - 右半分: {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
+   - 端部: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
 
-**確認**: 垂直材（2→7, 3→8, 4→9）が必ず含まれ、全ての部材がピン接合（i_conn="pin", j_conn="pin"）であることを確認してください。`;
+**確認**: 
+- 垂直材（2→7, 3→8, 4→9）が必ず含まれている
+- 斜材が中央（x=6）を境に向きが反転している（左：6→2, 7→3、右：8→4, 9→5）
+- 全ての部材がピン接合（i_conn="pin", j_conn="pin"）`;
             
         } else if (trussType === 'howe') {
             prompt += `**ハウトラス（Howe Truss）**の特徴:
@@ -3592,19 +3609,24 @@ ${errors.map(error => `- ${error}`).join('\n')}
         correctionPrompt += `高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
 
 ワーレントラスの重要な特徴:
-1. 垂直材を使用しない（斜材のみで構成）
+1. **垂直材を絶対に使用しない**（斜材のみで構成）
 2. 斜材が上向き・下向きと交互に配置（ジグザグの「W」字形状）
 3. 上弦材の節点は下弦材の節点の中間位置に配置
 
+**重要な制約**:
+- **垂直材禁止**: 同じx座標の節点同士を接続する部材は配置しない
+- **斜材のみ**: 全ての部材は異なるx座標の節点を接続する
+- 上弦と下弦はx座標が一致しない（中間位置にずれる）
+
 節点配置:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3.75, 7.5, 11.25, 15）
-- 上弦材（y=${height}）: 下弦材の中間位置（例: x=1.875, 5.625, 9.375, 13.125）
+- 上弦材（y=${height}）: **必ず下弦材の中間位置**（例: x=1.875, 5.625, 9.375, 13.125）
 - 境界条件: 下弦材の左端（x=0,y=0）は"p"、右端（x=${spanLength},y=0）は"r"、その他は"f"
 
 部材配置:
 - 下弦材: 下弦の節点を順に接続
 - 上弦材: 上弦の節点を順に接続
-- 斜材: 交互に上向き・下向きに配置（垂直材は絶対に配置しない）
+- 斜材のみ: 交互に上向き・下向きに配置（**垂直材なし**）
   * 上向き斜材: 下弦材の節点から右上の上弦材の節点へ
   * 下向き斜材: 上弦材の節点から右下の下弦材の節点へ
 
@@ -3618,7 +3640,7 @@ ${errors.map(error => `- ${error}`).join('\n')}
 - 斜材（上向き）: 1→6, 2→7, 3→8, 4→9
 - 斜材（下向き）: 6→2, 7→3, 8→4, 9→5
 
-重要: この形状が「W」字のジグザグパターンを作ります。`;
+**確認**: 垂直材（同じx座標の節点同士を接続する部材）が含まれていないことを確認してください。この形状が「W」字のジグザグパターンを作ります。`;
     }
     
     correctionPrompt += `
@@ -4270,9 +4292,40 @@ function validateTrussStructure(model, userPrompt) {
             } else {
                 console.error(`✓ 垂直材が${verticalMembers.length}本検出されました`);
             }
-        } else if (trussType === 'warren') {
-            console.error('ワーレントラスの検証（垂直材なし）');
-            // ワーレントラスでは垂直材があってはいけない（オプショナルチェック）
+        } else if (trussType === 'warren' || trussType === 'curvedwarren') {
+            // ワーレントラスでは垂直材があってはいけない
+            console.error('ワーレントラスの垂直材検証を開始（垂直材があってはならない）');
+            
+            // 垂直材を検出（同じx座標の下弦→上弦の部材）
+            const verticalMembers = [];
+            fixedModel.members.forEach((member, index) => {
+                const startNode = fixedModel.nodes[member.i - 1];
+                const endNode = fixedModel.nodes[member.j - 1];
+                
+                if (startNode && endNode) {
+                    // 同じx座標で、y座標が異なる（垂直）
+                    const tolerance = 0.1; // 許容誤差
+                    if (Math.abs(startNode.x - endNode.x) < tolerance && 
+                        Math.abs(startNode.y - endNode.y) > tolerance) {
+                        verticalMembers.push({
+                            memberIndex: index + 1,
+                            x: startNode.x,
+                            i: member.i,
+                            j: member.j,
+                            startNode: startNode,
+                            endNode: endNode
+                        });
+                    }
+                }
+            });
+            
+            console.error(`垂直材の数: ${verticalMembers.length}`);
+            if (verticalMembers.length > 0) {
+                console.error('⚠️ 警告: ワーレントラスに垂直材が検出されました:', verticalMembers);
+                errors.push(`ワーレントラスには垂直材を配置してはいけません。${verticalMembers.length}本の垂直材が検出されました。ワーレントラスは斜材のみで構成されます。`);
+            } else {
+                console.error('✓ ワーレントラスに垂直材はありません（正常）');
+            }
         }
         
         // トラス構造の幾何学的整合性チェック

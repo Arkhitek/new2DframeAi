@@ -21,12 +21,14 @@ export default async function handler(req, res) {
             return;
         }
 
-        const API_KEY = process.env.GROQ_API_KEY;
+        // API設定（容量制限エラー時に自動切り替え）
+        let API_KEY = process.env.GROQ_API_KEY;
+        let API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+        let apiProvider = 'groq';
+        
         if (!API_KEY) {
             throw new Error("Groq AIのAPIキーがサーバーに設定されていません。");
         }
-        
-        const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
         
         // retryCount変数を先に定義
         let retryCount = 0;
@@ -43,8 +45,12 @@ export default async function handler(req, res) {
             userMessage = createEditPrompt(userPrompt, currentModel);
         }
 
+        // モデル設定（容量制限エラー時に自動切り替え）
+        let aiModel = "llama-3.3-70b-versatile";
+        let modelSwitched = false;
+        
         const requestBody = {
-            model: "llama-3.3-70b-versatile",
+            model: aiModel,
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -83,13 +89,49 @@ export default async function handler(req, res) {
 
                 // 成功した場合はループを抜ける
                 if (groqResponse.ok) {
-                    console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目)`);
+                    console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目) - 使用プロバイダー: ${apiProvider}, モデル: ${aiModel}`);
                     break;
                 }
                 
                 // 容量制限エラーの場合
                 if (groqResponse.status === 429) {
-                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
+                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1}) - 現在のプロバイダー: ${apiProvider}`);
+                    
+                    // まだモデルを切り替えていない場合、llama-3.1-8b-instantに切り替え
+                    if (!modelSwitched && aiModel === "llama-3.3-70b-versatile") {
+                        console.error('🔄 容量制限のため、モデルをllama-3.1-8b-instantに切り替えます');
+                        aiModel = "llama-3.1-8b-instant";
+                        modelSwitched = true;
+                        requestBody.model = aiModel;
+                        
+                        // モデル切り替え後は即座に再試行
+                        retryCount++;
+                        continue;
+                    }
+                    
+                    // llama-3.1-8b-instantでも容量制限の場合、Mistral APIに切り替え
+                    if (apiProvider === 'groq' && aiModel === "llama-3.1-8b-instant") {
+                        console.error('🔄 Groq APIの容量制限のため、Mistral APIに切り替えます');
+                        
+                        // Mistral APIに切り替え
+                        const mistralApiKey = process.env.MISTRAL_API_KEY;
+                        if (!mistralApiKey) {
+                            console.error('❌ Mistral APIキーが設定されていません');
+                            throw new Error("Mistral APIキーがサーバーに設定されていません。容量制限回避のためMistral APIへの切り替えができません。");
+                        }
+                        
+                        API_KEY = mistralApiKey;
+                        API_URL = 'https://api.mistral.ai/v1/chat/completions';
+                        apiProvider = 'mistral';
+                        aiModel = "mistral-large-latest";
+                        requestBody.model = aiModel;
+                        
+                        console.error('✅ Mistral APIに切り替え完了');
+                        
+                        // API切り替え後は即座に再試行
+                        retryCount++;
+                        continue;
+                    }
                     
                     if (retryCount < maxRetries) {
                         // リトライ前に待機（より長い待機時間）
@@ -2468,7 +2510,7 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
                 const correctionResult = await callAIWithCorrectionPrompt(correctionPrompt, 0);
                 
                 if (correctionResult && correctionResult.nodes && correctionResult.members) {
-                    console.error('AI修正成功:', {
+                    console.error(`AI修正成功 (使用プロバイダー: ${correctionResult._usedProvider || 'unknown'}, モデル: ${correctionResult._usedModel || 'unknown'}):`, {
                         nodeCount: correctionResult.nodes.length,
                         memberCount: correctionResult.members.length
                     });
@@ -3155,8 +3197,10 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
         try {
             console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) ===`);
             
-            const API_KEY = process.env.GROQ_API_KEY;
-            const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+            // 修正API用のAPI設定（容量制限エラー時に自動切り替え）
+            let API_KEY = process.env.GROQ_API_KEY;
+            let API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+            let apiProvider = 'groq';
             
             // 修正用の最適化されたシステムプロンプト
             const systemPrompt = `2D構造モデル生成。JSON出力のみ。
@@ -3184,8 +3228,12 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 - 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 - 存在しない節点番号を部材で参照しない`;
 
+            // 修正API用のモデル設定（容量制限エラー時に自動切り替え）
+            let correctionModel = "llama-3.3-70b-versatile";
+            let correctionModelSwitched = false;
+            
             const requestBody = {
-                model: "llama-3.3-70b-versatile",
+                model: correctionModel,
                 messages: [
                     { "role": "system", "content": systemPrompt },
                     { "role": "user", "content": correctionPrompt }
@@ -3212,6 +3260,44 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 
             if (!response.ok) {
                 if (response.status === 429 && correctionRetryCount < maxCorrectionRetries) {
+                    console.error(`修正API容量制限エラー検出 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) - 現在のプロバイダー: ${apiProvider}`);
+                    
+                    // まだモデルを切り替えていない場合、llama-3.1-8b-instantに切り替え
+                    if (!correctionModelSwitched && correctionModel === "llama-3.3-70b-versatile") {
+                        console.error('🔄 修正API容量制限のため、モデルをllama-3.1-8b-instantに切り替えます');
+                        correctionModel = "llama-3.1-8b-instant";
+                        correctionModelSwitched = true;
+                        requestBody.model = correctionModel;
+                        
+                        // モデル切り替え後は即座に再試行
+                        correctionRetryCount++;
+                        continue;
+                    }
+                    
+                    // llama-3.1-8b-instantでも容量制限の場合、Mistral APIに切り替え
+                    if (apiProvider === 'groq' && correctionModel === "llama-3.1-8b-instant") {
+                        console.error('🔄 修正API Groq容量制限のため、Mistral APIに切り替えます');
+                        
+                        // Mistral APIに切り替え
+                        const mistralApiKey = process.env.MISTRAL_API_KEY;
+                        if (!mistralApiKey) {
+                            console.error('❌ 修正API用Mistral APIキーが設定されていません');
+                            throw new Error("Mistral APIキーがサーバーに設定されていません。容量制限回避のためMistral APIへの切り替えができません。");
+                        }
+                        
+                        API_KEY = mistralApiKey;
+                        API_URL = 'https://api.mistral.ai/v1/chat/completions';
+                        apiProvider = 'mistral';
+                        correctionModel = "mistral-large-latest";
+                        requestBody.model = correctionModel;
+                        
+                        console.error('✅ 修正API Mistral APIに切り替え完了');
+                        
+                        // API切り替え後は即座に再試行
+                        correctionRetryCount++;
+                        continue;
+                    }
+                    
                     // 容量制限の場合は待機してリトライ
                     const waitTime = 2000 + (correctionRetryCount * 1000);
                     console.error(`修正呼び出し容量制限: ${waitTime}ms待機後にリトライ`);
@@ -3236,13 +3322,18 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
                 throw new Error("修正後のモデルに節点または部材データが不足");
             }
             
-            console.error('AI修正呼び出し成功');
+            console.error(`AI修正呼び出し成功 (使用プロバイダー: ${apiProvider}, モデル: ${correctionModel})`);
             console.error('修正後のモデル:', {
                 nodeCount: correctedModel.nodes.length,
                 memberCount: correctedModel.members.length
             });
             
-            return correctedModel;
+            // モデル情報を含めて返す
+            return {
+                ...correctedModel,
+                _usedModel: correctionModel,
+                _usedProvider: apiProvider
+            };
             
         } catch (error) {
             console.error(`AI修正呼び出しエラー (試行 ${correctionRetryCount + 1}):`, error.message);

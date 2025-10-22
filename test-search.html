@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H形鋼検索テスト</title>
+</head>
+<body>
+    <h1>H形鋼検索テスト</h1>
+    <div id="results"></div>
+
+    <script src="steel_data.js"></script>
+    <script>
+        // テスト用のfindSteelPropertiesFromLibrary関数（簡略版）
+        function testFindSteelPropertiesFromLibrary(steelInfo) {
+            console.log('🔍 ライブラリから断面性能を検索:', steelInfo);
+            
+            if (typeof window.steelData === 'undefined') {
+                console.warn('window.steelDataが利用できません');
+                return null;
+            }
+            
+            console.log('✅ steelDataライブラリが利用可能:', Object.keys(window.steelData));
+            
+            const steelType = steelInfo.type;
+            const spec = steelInfo.spec;
+            
+            // H形鋼の場合は、まず正確な断面名で検索を試行
+            if (steelType.startsWith('hkatakou') && spec) {
+                console.log('🔍 H形鋼の正確な断面名で検索:', spec);
+                
+                // 全てのH形鋼カテゴリを検索
+                const hBeamCategories = ['hkatakou_hiro', 'hkatakou_naka', 'hkatakou_hoso'];
+                
+                for (const category of hBeamCategories) {
+                    if (window.steelData[category]) {
+                        console.log(`🔍 ${category} で断面名 "${spec}" を検索`);
+                        
+                        for (let i = 0; i < window.steelData[category].data.length; i++) {
+                            const rowData = window.steelData[category].data[i];
+                            const sectionName = rowData[0] ? String(rowData[0]) : '';
+                            
+                            // 断面名が完全一致する場合
+                            if (sectionName === spec) {
+                                console.log(`✅ 正確な断面名で発見: ${category} - ${sectionName}`);
+                                return {
+                                    index: i,
+                                    rowData: rowData,
+                                    sectionName: sectionName,
+                                    steelType: category,
+                                    matchType: 'exact'
+                                };
+                            }
+                            
+                            // 断面名に含まれる場合（部分一致）
+                            if (sectionName.includes(spec) || spec.includes(sectionName)) {
+                                console.log(`🔍 部分一致発見: ${category} - ${sectionName}`);
+                                return {
+                                    index: i,
+                                    rowData: rowData,
+                                    sectionName: sectionName,
+                                    steelType: category,
+                                    matchType: 'partial'
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        // テスト実行
+        function runTests() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>テスト結果</h2>';
+            
+            // テストケース1: H-588×300×12×20
+            console.log('=== テストケース1: H-588×300×12×20 ===');
+            const test1 = testFindSteelPropertiesFromLibrary({
+                type: 'hkatakou_hiro', // 初期タイプは広幅
+                spec: 'H-588×300×12×20'
+            });
+            
+            results.innerHTML += `<h3>テスト1: H-588×300×12×20</h3>`;
+            if (test1) {
+                results.innerHTML += `<p>✅ 発見: ${test1.steelType} - ${test1.sectionName} (${test1.matchType})</p>`;
+                results.innerHTML += `<p>断面性能: Ix=${test1.rowData[6]}, A=${test1.rowData[4]}, Zx=${test1.rowData[10]}</p>`;
+            } else {
+                results.innerHTML += `<p>❌ 見つかりませんでした</p>`;
+            }
+            
+            // テストケース2: 588×300 (データベースの実際の形式)
+            console.log('=== テストケース2: 588×300 ===');
+            const test2 = testFindSteelPropertiesFromLibrary({
+                type: 'hkatakou_hiro',
+                spec: '588×300'
+            });
+            
+            results.innerHTML += `<h3>テスト2: 588×300</h3>`;
+            if (test2) {
+                results.innerHTML += `<p>✅ 発見: ${test2.steelType} - ${test2.sectionName} (${test2.matchType})</p>`;
+                results.innerHTML += `<p>断面性能: Ix=${test2.rowData[6]}, A=${test2.rowData[4]}, Zx=${test2.rowData[10]}</p>`;
+            } else {
+                results.innerHTML += `<p>❌ 見つかりませんでした</p>`;
+            }
+            
+            // テストケース3: 部分一致テスト
+            console.log('=== テストケース3: 部分一致テスト ===');
+            const test3 = testFindSteelPropertiesFromLibrary({
+                type: 'hkatakou_hiro',
+                spec: '588×300×12×20'
+            });
+            
+            results.innerHTML += `<h3>テスト3: 588×300×12×20</h3>`;
+            if (test3) {
+                results.innerHTML += `<p>✅ 発見: ${test3.steelType} - ${test3.sectionName} (${test3.matchType})</p>`;
+                results.innerHTML += `<p>断面性能: Ix=${test3.rowData[6]}, A=${test3.rowData[4]}, Zx=${test3.rowData[10]}</p>`;
+            } else {
+                results.innerHTML += `<p>❌ 見つかりませんでした</p>`;
+            }
+        }
+
+        // ページ読み込み後にテスト実行
+        window.addEventListener('load', runTests);
+    </script>
+</body>
+</html>

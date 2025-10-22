@@ -15147,6 +15147,56 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     
     const steelType = steelInfo.type;
     const dimensions = steelInfo.dimensions;
+    const spec = steelInfo.spec;
+    
+    // H形鋼の場合は、まず正確な断面名で検索を試行
+    if (steelType.startsWith('hkatakou') && spec) {
+        console.log('🔍 H形鋼の正確な断面名で検索:', spec);
+        
+        // 全てのH形鋼カテゴリを検索
+        const hBeamCategories = ['hkatakou_hiro', 'hkatakou_naka', 'hkatakou_hoso'];
+        
+        for (const category of hBeamCategories) {
+            if (window.steelData[category]) {
+                console.log(`🔍 ${category} で断面名 "${spec}" を検索`);
+                
+                for (let i = 0; i < window.steelData[category].data.length; i++) {
+                    const rowData = window.steelData[category].data[i];
+                    const sectionName = rowData[0] ? String(rowData[0]) : '';
+                    
+                    // 断面名が完全一致する場合
+                    if (sectionName === spec) {
+                        console.log(`✅ 正確な断面名で発見: ${category} - ${sectionName}`);
+                        
+                        const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
+                        
+                        return {
+                            index: i,
+                            rowData: rowData,
+                            dimensions: rowDims,
+                            distance: 0,
+                            steelType: category
+                        };
+                    }
+                    
+                    // 断面名に含まれる場合（部分一致）
+                    if (sectionName.includes(spec) || spec.includes(sectionName)) {
+                        console.log(`🔍 部分一致発見: ${category} - ${sectionName}`);
+                        
+                        const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
+                        
+                        return {
+                            index: i,
+                            rowData: rowData,
+                            dimensions: rowDims,
+                            distance: 0.1, // 部分一致は低い距離
+                            steelType: category
+                        };
+                    }
+                }
+            }
+        }
+    }
     
     if (!window.steelData[steelType]) {
         console.warn(`鋼材タイプ ${steelType} のデータが見つかりません`);
@@ -15178,26 +15228,21 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
         }
     }
     
-    // 2つの寸法のH形鋼の場合、細幅H形鋼から近い断面を探す
-    if (steelType === 'hkatakou_hoso' && dimensions.length === 2) {
-        console.log('🔍 2つの寸法のH形鋼のため、細幅H形鋼から近い断面を検索');
-        console.log('🔍 検索対象寸法:', dimensions);
+    // H形鋼の場合、他のカテゴリも検索
+    if (steelType.startsWith('hkatakou')) {
+        console.log('🔍 H形鋼の他のカテゴリも検索');
         
-        const hosoData = window.steelData.hkatakou_hoso;
-        if (hosoData) {
-            console.log('🔍 細幅H形鋼データ数:', hosoData.data.length);
-            for (let i = 0; i < hosoData.data.length; i++) {
-                const rowData = hosoData.data[i];
-                const rowDims = getDimensionsFromRow('hkatakou_hoso', rowData, hosoData.headers);
+        const hBeamCategories = ['hkatakou_hiro', 'hkatakou_naka', 'hkatakou_hoso'];
+        
+        for (const category of hBeamCategories) {
+            if (category !== steelType && window.steelData[category]) {
+                console.log(`🔍 ${category} で寸法ベース検索`);
                 
-                console.log(`🔍 細幅H形鋼 ${i}: ${rowData[0]}, 抽出寸法:`, rowDims);
-                
-                // rowDimsがオブジェクトかどうかチェック
-                if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
-                    // H×Bのみで比較（オブジェクト形式で渡す）
-                    const distance = calculateDimensionDistance(dimensions, rowDims, 'hkatakou_hoso');
+                for (let i = 0; i < window.steelData[category].data.length; i++) {
+                    const rowData = window.steelData[category].data[i];
+                    const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
                     
-                    console.log(`🔍 細幅H形鋼 ${i}: 寸法比較 ${dimensions} vs H=${rowDims.H}, B=${rowDims.B}, 距離: ${distance}`);
+                    const distance = calculateDimensionDistance(dimensions, rowDims, category);
                     
                     if (distance < minDistance) {
                         minDistance = distance;
@@ -15206,41 +15251,9 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                             rowData: rowData,
                             dimensions: rowDims,
                             distance: distance,
-                            steelType: 'hkatakou_hoso'
+                            steelType: category
                         };
-                        console.log('🔍 新しい最適マッチ:', bestMatch);
-                    }
-                }
-            }
-        }
-    }
-    
-    // 細幅H形鋼で見つからない場合、広幅H形鋼も検索
-    if (!bestMatch && steelType === 'hkatakou_hoso' && dimensions.length === 2) {
-        console.log('🔍 細幅H形鋼で見つからないため、広幅H形鋼も検索');
-        
-        const hiroData = window.steelData.hkatakou_hiro;
-        if (hiroData) {
-            for (let i = 0; i < hiroData.data.length; i++) {
-                const rowData = hiroData.data[i];
-                const rowDims = getDimensionsFromRow('hkatakou_hiro', rowData, hiroData.headers);
-                
-                // rowDimsがオブジェクトかどうかチェック
-                if (rowDims && typeof rowDims === 'object' && rowDims.H && rowDims.B) {
-                    // H×Bのみで比較（オブジェクト形式で渡す）
-                    const distance = calculateDimensionDistance(dimensions, rowDims, 'hkatakou_hiro');
-                    
-                    console.log(`🔍 広幅H形鋼 ${i}: 寸法比較 ${dimensions} vs H=${rowDims.H}, B=${rowDims.B}, 距離: ${distance}`);
-                    
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        bestMatch = {
-                            index: i,
-                            rowData: rowData,
-                            dimensions: rowDims,
-                            distance: distance,
-                            steelType: 'hkatakou_hiro'
-                        };
+                        console.log(`🔍 新しい最適マッチ (${category}):`, bestMatch);
                     }
                 }
             }

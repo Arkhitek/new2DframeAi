@@ -482,13 +482,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
 部材番号: 配列順序（1から開始）
-部材name: 指定された断面名称（例: "H-200×100×8×12"）`;
+部材name: 指定された断面名称（例: "H-200×200×8×12"）`;
 
         // 鋼材情報が提供されているかチェック
         const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
         if (hasSteelSections) {
             simplePrompt += `
-鋼材: 「指定断面:」の値を部材nameに使用。例: "H-200×100×8×12"`;
+鋼材: 「指定断面:」の値を部材nameに使用。例: "H-200×200×8×12"`;
         }
 
         // 荷重指示の有無に基づいて条件分岐
@@ -532,7 +532,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 部材番号: 配列順序（1から開始）
 - 座標: メートル単位で小数点以下1桁まで
 - 材料定数: E=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
-- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-300×150"など）
+- 部材name: 指定された断面名称を必ず含める（例: "H-200×200×8×12"、"H-588×300×11×18"など）
 
 重要制約:
 - 同じ節点間には1本の部材のみ配置（重複禁止）
@@ -546,7 +546,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 
 重要: 鋼材断面情報が提供されています
 - 部材のnameフィールドには、必ず「- 指定断面: 」に続く値を使用してください
-- 例: 「- 指定断面: H-200×100×8×12」 → 部材のname: "H-200×100×8×12"
+- 例: 「- 指定断面: H-200×200×8×12」 → 部材のname: "H-200×200×8×12"
 - 柱部材と梁部材で異なる断面が指定されている場合、それぞれ適切な断面名称を使用
 - 部材のI、A、Zの値は提供された断面性能値を使用`;
     }
@@ -3166,7 +3166,7 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 - 節点番号: 配列順序（1から開始）
 - 部材番号: 配列順序（1から開始）
 - 座標: メートル単位で小数点以下1桁まで
-- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"）
+- 部材name: 指定された断面名称を必ず含める（例: "H-200×200×8×12"）
 
 重要: 鋼材断面情報が提供されている場合
 - 部材のnameフィールドには「- 指定断面: 」に続く値を使用

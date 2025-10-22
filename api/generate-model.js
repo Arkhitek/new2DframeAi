@@ -44,7 +44,7 @@ export default async function handler(req, res) {
         }
 
         const requestBody = {
-            model: "llama-3.1-70b-versatile",
+            model: "llama-3.1-8b-instant",
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -3178,7 +3178,7 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 - 存在しない節点番号を部材で参照しない`;
 
             const requestBody = {
-                model: "llama-3.1-70b-versatile",
+                model: "llama-3.1-8b-instant",
                 messages: [
                     { "role": "system", "content": systemPrompt },
                     { "role": "user", "content": correctionPrompt }

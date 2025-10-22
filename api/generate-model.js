@@ -530,7 +530,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦節点は下弦節点の中間位置。垂直材 + ワーレンパターン斜材`;
             } else if (trussType === 'kingpost') {
                 simplePrompt += `
-重要: キングポスト（3節点、3部材）。下弦両端は支点、上弦中央1点。中央垂直材1本 + 斜材2本`;
+重要: キングポスト（4節点、5部材）。下弦3点（左端p、中央f、右端r）、上弦中央1点。下弦2本 + 中央垂直材（キングポスト）1本 + 斜材2本`;
             } else if (trussType === 'queenpost') {
                 simplePrompt += `
 重要: クイーンポスト（6節点、8部材）。垂直材2本 + 上弦材1本 + 下弦材3本 + 斜材4本`;
@@ -897,34 +897,42 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
             
         } else if (trussType === 'kingpost') {
             prompt += `**キングポストトラス（King Post Truss）**の特徴:
-1. 最もシンプルなトラス構造
+1. シンプルなトラス構造
 2. **1本の中央垂直材（キングポスト）が必須**
-3. 3節点の構造（2つの支点 + 1つの頂点）
-4. 2本の斜材で三角形を形成
+3. 4節点の構造（2つの支点 + 下弦中央 + 中央頂点）
+4. 5本の部材（下弦2本 + 垂直材1本 + 斜材2本）
 
-**重要**: キングポストトラスは中央に1本だけ垂直材を配置します。
+**重要**: キングポストトラスは中央に垂直材を配置します。下弦材は中央で2本に分割されます。
 
 節点配置の詳細:
-- 下弦材（y=0）: 両端のみ（x=0, ${spanLength}）
+- 下弦材（y=0）: 両端 + 中央（x=0, ${spanLength/2}, ${spanLength}）
+  * 左端: {"x":0,"y":0,"s":"p"}
+  * 下弦中央: {"x":${spanLength/2},"y":0,"s":"f"}
+  * 右端: {"x":${spanLength},"y":0,"s":"r"}
 - 上弦材（y=${height}）: 中央のみ（x=${spanLength/2}）
-- 境界条件: 左端(x=0,y=0)は"p"、右端は"r"、中央上部は"f"
+  * 中央頂点: {"x":${spanLength/2},"y":${height},"s":"f"}
+- 境界条件: 左端は"p"、右端は"r"、その他は"f"
 
-部材配置の詳細:
-1. **下弦材（1本）**: 節点1→2
-2. **垂直材（1本、キングポスト）**: 下弦中央から上弦へ（ただし2D表現では頂点から下弦へ）
-3. **斜材（2本）**: 節点1→3, 3→2
+部材配置の詳細（5本）:
+1. **下弦材左**: 節点1→節点2（左端から下弦中央へ）
+2. **下弦材右**: 節点2→節点3（下弦中央から右端へ）
+3. **垂直材（キングポスト、必須）**: 節点2→節点4（下弦中央から中央頂点へ）
+4. **斜材左**: 節点1→節点4（左端から中央頂点へ）
+5. **斜材右**: 節点4→節点3（中央頂点から右端へ）
 
 例: 高さ3m、スパン12mのキングポストトラス
-節点（3個）:
-- 下弦材: 節点1(0,0,"p"), 節点2(12,0,"r")
-- 上弦材: 節点3(6,3,"f")
+節点（4個）:
+- 下弦材: 節点1(0,0,"p"), 節点2(6,0,"f"), 節点3(12,0,"r")
+- 上弦材: 節点4(6,3,"f")
 
-部材（3本）:
-1. 斜材左: {"i":1,"j":3}
-2. 斜材右: {"i":3,"j":2}
-3. 下弦材: {"i":1,"j":2}
+部材（5本）:
+1. 下弦材左: {"i":1,"j":2}
+2. 下弦材右: {"i":2,"j":3}
+3. 垂直材（キングポスト）: {"i":2,"j":4}
+4. 斜材左: {"i":1,"j":4}
+5. 斜材右: {"i":4,"j":3}
 
-注: キングポストは伝統的には引張材ですが、2D解析では垂直材として表現されます。`;
+**確認**: 垂直材（2→4）が必ず含まれていることを確認してください。`;
             
         } else if (trussType === 'queenpost') {
             prompt += `**クイーンポストトラス（Queen Post Truss）**の特徴:
@@ -1068,8 +1076,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
    - 垂直材 + 斜材（上弦中間節点に接続）
    
 7. **キングポストトラス**: 
-   - 最もシンプル（3節点、3部材）
-   - 1本の中央垂直材
+   - シンプル（4節点、5部材）
+   - 1本の中央垂直材（キングポスト）
+   - 下弦材は中央で2本に分割
    
 8. **クイーンポストトラス**: 
    - シンプル（6節点、8部材）
@@ -3512,32 +3521,40 @@ ${errors.map(error => `- ${error}`).join('\n')}
         correctionPrompt += `高さ${height}m、スパン長${spanLength}mのキングポストトラスを生成してください
 
 キングポストトラスの重要な特徴:
-1. 最もシンプルなトラス構造（3節点、3部材）
-2. 1本の中央垂直材（キングポスト）が必須
-3. 3節点の構造（2つの支点 + 1つの頂点）
+1. シンプルなトラス構造（4節点、5部材）
+2. **1本の中央垂直材（キングポスト）が必須**
+3. 下弦材は中央で2本に分割
 
-節点配置:
-- 下弦材（y=0）: 両端のみ
+節点配置（4個）:
+- 下弦材（y=0）: 両端 + 中央
   * 左端: {"x":0,"y":0,"s":"p"}
+  * 下弦中央: {"x":${spanLength/2},"y":0,"s":"f"}
   * 右端: {"x":${spanLength},"y":0,"s":"r"}
 - 上弦材（y=${height}）: 中央のみ
-  * 中央: {"x":${spanLength/2},"y":${height},"s":"f"}
+  * 中央頂点: {"x":${spanLength/2},"y":${height},"s":"f"}
 
-部材配置（3本）:
-1. 斜材左: 節点1→節点3（左支点から中央頂点へ）
-2. 斜材右: 節点3→節点2（中央頂点から右支点へ）
-3. 下弦材: 節点1→節点2（左支点から右支点へ）
+部材配置（5本）:
+1. 下弦材左: 節点1→節点2（左端から下弦中央へ）
+2. 下弦材右: 節点2→節点3（下弦中央から右端へ）
+3. **垂直材（キングポスト、必須）**: 節点2→節点4（下弦中央から中央頂点へ）
+4. 斜材左: 節点1→節点4（左端から中央頂点へ）
+5. 斜材右: 節点4→節点3（中央頂点から右端へ）
 
 例: 高さ${height}m、スパン${spanLength}mのキングポストトラス
-節点（3個）:
+節点（4個）:
 - {"x":0,"y":0,"s":"p"}
+- {"x":${spanLength/2},"y":0,"s":"f"}
 - {"x":${spanLength},"y":0,"s":"r"}
 - {"x":${spanLength/2},"y":${height},"s":"f"}
 
-部材（3本）:
-- {"i":1,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
-- {"i":3,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
-- {"i":1,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}`;
+部材（5本）:
+- {"i":1,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+- {"i":2,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+- {"i":2,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}  ← キングポスト（垂直材）
+- {"i":1,"j":4,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+- {"i":4,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+
+**重要**: 垂直材（節点2→4）が必ず含まれていることを確認してください。`;
         
     } else if (trussType === 'queenpost') {
         correctionPrompt += `高さ${height}m、スパン長${spanLength}mのクイーンポストトラスを生成してください
@@ -4093,23 +4110,51 @@ function validateTrussStructure(model, userPrompt) {
         
         // トラス形式別の基本構造検証
         if (trussType === 'kingpost') {
-            // キングポストトラス: 3節点、3部材
-            console.error('キングポストトラスの検証（3節点、3部材）');
+            // キングポストトラス: 4節点、5部材
+            console.error('キングポストトラスの検証（4節点、5部材）');
             
-            if (!fixedModel.nodes || fixedModel.nodes.length !== 3) {
-                errors.push(`キングポストトラスの節点数が不正: ${fixedModel.nodes?.length || 0}個（3個必要）`);
+            if (!fixedModel.nodes || fixedModel.nodes.length !== 4) {
+                errors.push(`キングポストトラスの節点数が不正: ${fixedModel.nodes?.length || 0}個（4個必要）`);
             }
             
-            if (!fixedModel.members || fixedModel.members.length !== 3) {
-                errors.push(`キングポストトラスの部材数が不正: ${fixedModel.members?.length || 0}個（3個必要）`);
+            if (!fixedModel.members || fixedModel.members.length !== 5) {
+                errors.push(`キングポストトラスの部材数が不正: ${fixedModel.members?.length || 0}個（5個必要）`);
             }
             
-            if (bottomNodes.length !== 2) {
-                errors.push(`キングポストトラスの下弦材節点が不正: ${bottomNodes.length}個（2個必要）`);
+            if (bottomNodes.length !== 3) {
+                errors.push(`キングポストトラスの下弦材節点が不正: ${bottomNodes.length}個（3個必要：左端、中央、右端）`);
             }
             
             if (topNodes.length !== 1) {
                 errors.push(`キングポストトラスの上弦材節点が不正: ${topNodes.length}個（1個必要）`);
+            }
+            
+            // 垂直材（キングポスト）の検証
+            const verticalMembers = [];
+            fixedModel.members.forEach((member, index) => {
+                const startNode = fixedModel.nodes[member.i - 1];
+                const endNode = fixedModel.nodes[member.j - 1];
+                
+                if (startNode && endNode) {
+                    // 同じx座標で、y座標が異なる（垂直）
+                    if (Math.abs(startNode.x - endNode.x) < tolerance && 
+                        Math.abs(startNode.y - endNode.y) > tolerance) {
+                        verticalMembers.push({
+                            memberIndex: index + 1,
+                            x: startNode.x,
+                            i: member.i,
+                            j: member.j
+                        });
+                    }
+                }
+            });
+            
+            if (verticalMembers.length === 0) {
+                errors.push(`キングポストトラスには中央垂直材（キングポスト）が必須です`);
+            } else if (verticalMembers.length > 1) {
+                errors.push(`キングポストトラスの垂直材は1本のみです（${verticalMembers.length}本検出）`);
+            } else {
+                console.error(`✓ キングポスト（垂直材）が検出されました:`, verticalMembers[0]);
             }
             
         } else if (trussType === 'queenpost') {

@@ -3495,8 +3495,9 @@ function generateBasicStructure(userPrompt, dimensions) {
 function createTrussCorrectionPrompt(originalPrompt, currentModel, errors) {
     const height = extractHeightFromPrompt(originalPrompt);
     const spanLength = extractSpanLengthFromPrompt(originalPrompt);
+    const trussType = detectTrussType(originalPrompt);
     
-    let correctionPrompt = `ワーレントラス構造の修正指示:
+    let correctionPrompt = `トラス構造の修正指示:
 
 元の指示: ${originalPrompt}
 
@@ -3504,7 +3505,67 @@ function createTrussCorrectionPrompt(originalPrompt, currentModel, errors) {
 ${errors.map(error => `- ${error}`).join('\n')}
 
 修正要求:
-高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
+`;
+
+    // トラス形式別の修正プロンプト
+    if (trussType === 'kingpost') {
+        correctionPrompt += `高さ${height}m、スパン長${spanLength}mのキングポストトラスを生成してください
+
+キングポストトラスの重要な特徴:
+1. 最もシンプルなトラス構造（3節点、3部材）
+2. 1本の中央垂直材（キングポスト）が必須
+3. 3節点の構造（2つの支点 + 1つの頂点）
+
+節点配置:
+- 下弦材（y=0）: 両端のみ
+  * 左端: {"x":0,"y":0,"s":"p"}
+  * 右端: {"x":${spanLength},"y":0,"s":"r"}
+- 上弦材（y=${height}）: 中央のみ
+  * 中央: {"x":${spanLength/2},"y":${height},"s":"f"}
+
+部材配置（3本）:
+1. 斜材左: 節点1→節点3（左支点から中央頂点へ）
+2. 斜材右: 節点3→節点2（中央頂点から右支点へ）
+3. 下弦材: 節点1→節点2（左支点から右支点へ）
+
+例: 高さ${height}m、スパン${spanLength}mのキングポストトラス
+節点（3個）:
+- {"x":0,"y":0,"s":"p"}
+- {"x":${spanLength},"y":0,"s":"r"}
+- {"x":${spanLength/2},"y":${height},"s":"f"}
+
+部材（3本）:
+- {"i":1,"j":3,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+- {"i":3,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}
+- {"i":1,"j":2,"E":205000,"I":0.00011,"A":0.005245,"Z":0.000638}`;
+        
+    } else if (trussType === 'queenpost') {
+        correctionPrompt += `高さ${height}m、スパン長${spanLength}mのクイーンポストトラスを生成してください
+
+クイーンポストトラスの重要な特徴:
+1. シンプルなトラス構造（6節点、8部材程度）
+2. 2本の垂直材（クイーンポスト）が必須
+3. 中央に上弦材を配置
+
+節点配置:
+- 下弦材（y=0）: 両端 + 垂直材位置
+  * 左端: {"x":0,"y":0,"s":"p"}
+  * 左垂直材位置: {"x":${spanLength/3},"y":0,"s":"f"}
+  * 右垂直材位置: {"x":${spanLength*2/3},"y":0,"s":"f"}
+  * 右端: {"x":${spanLength},"y":0,"s":"r"}
+- 上弦材（y=${height}）: 垂直材位置
+  * 左: {"x":${spanLength/3},"y":${height},"s":"f"}
+  * 右: {"x":${spanLength*2/3},"y":${height},"s":"f"}
+
+部材配置:
+1. 下弦材（3本）
+2. 上弦材（1本）
+3. 垂直材（2本、必須）
+4. 斜材（4本）`;
+        
+    } else {
+        // デフォルトはワーレントラス
+        correctionPrompt += `高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
 
 ワーレントラスの重要な特徴:
 1. 垂直材を使用しない（斜材のみで構成）
@@ -3533,7 +3594,10 @@ ${errors.map(error => `- ${error}`).join('\n')}
 - 斜材（上向き）: 1→6, 2→7, 3→8, 4→9
 - 斜材（下向き）: 6→2, 7→3, 8→4, 9→5
 
-重要: この形状が「W」字のジグザグパターンを作ります。
+重要: この形状が「W」字のジグザグパターンを作ります。`;
+    }
+    
+    correctionPrompt += `
 
 JSON形式で出力してください。`;
 
@@ -4014,14 +4078,9 @@ function validateTrussStructure(model, userPrompt) {
         const errors = [];
         let fixedModel = JSON.parse(JSON.stringify(model));
         
-        // 基本構造の検証
-        if (!fixedModel.nodes || fixedModel.nodes.length < 4) {
-            errors.push(`トラス構造の節点が不足: ${fixedModel.nodes?.length || 0}個（最低4個必要）`);
-        }
-        
-        if (!fixedModel.members || fixedModel.members.length < 3) {
-            errors.push(`トラス構造の部材が不足: ${fixedModel.members?.length || 0}個（最低3個必要）`);
-        }
+        // トラス形式を検出
+        const trussType = detectTrussType(userPrompt);
+        console.error('検出されたトラス形式:', trussType);
         
         // 高さとスパン長を検出
         const height = extractHeightFromPrompt(userPrompt);
@@ -4029,19 +4088,74 @@ function validateTrussStructure(model, userPrompt) {
         
         // 下弦材・上弦材の検証
         const bottomNodes = fixedModel.nodes.filter(node => node.y === 0);
-        const topNodes = fixedModel.nodes.filter(node => node.y === height);
+        const tolerance = 0.1; // 許容誤差
+        const topNodes = fixedModel.nodes.filter(node => Math.abs(node.y - height) < tolerance);
         
-        if (bottomNodes.length < 2) {
-            errors.push(`下弦材の節点が不足: ${bottomNodes.length}個（最低2個必要）`);
-        }
-        
-        if (topNodes.length < 2) {
-            errors.push(`上弦材の節点が不足: ${topNodes.length}個（最低2個必要）`);
+        // トラス形式別の基本構造検証
+        if (trussType === 'kingpost') {
+            // キングポストトラス: 3節点、3部材
+            console.error('キングポストトラスの検証（3節点、3部材）');
+            
+            if (!fixedModel.nodes || fixedModel.nodes.length !== 3) {
+                errors.push(`キングポストトラスの節点数が不正: ${fixedModel.nodes?.length || 0}個（3個必要）`);
+            }
+            
+            if (!fixedModel.members || fixedModel.members.length !== 3) {
+                errors.push(`キングポストトラスの部材数が不正: ${fixedModel.members?.length || 0}個（3個必要）`);
+            }
+            
+            if (bottomNodes.length !== 2) {
+                errors.push(`キングポストトラスの下弦材節点が不正: ${bottomNodes.length}個（2個必要）`);
+            }
+            
+            if (topNodes.length !== 1) {
+                errors.push(`キングポストトラスの上弦材節点が不正: ${topNodes.length}個（1個必要）`);
+            }
+            
+        } else if (trussType === 'queenpost') {
+            // クイーンポストトラス: 6節点、8部材程度
+            console.error('クイーンポストトラスの検証（6節点程度、8部材程度）');
+            
+            if (!fixedModel.nodes || fixedModel.nodes.length < 4) {
+                errors.push(`クイーンポストトラスの節点が不足: ${fixedModel.nodes?.length || 0}個（最低4個必要）`);
+            }
+            
+            if (!fixedModel.members || fixedModel.members.length < 5) {
+                errors.push(`クイーンポストトラスの部材が不足: ${fixedModel.members?.length || 0}個（最低5個必要）`);
+            }
+            
+            if (bottomNodes.length < 2) {
+                errors.push(`下弦材の節点が不足: ${bottomNodes.length}個（最低2個必要）`);
+            }
+            
+            if (topNodes.length < 2) {
+                errors.push(`上弦材の節点が不足: ${topNodes.length}個（最低2個必要）`);
+            }
+            
+        } else {
+            // 一般的なトラス構造: 4節点以上、3部材以上
+            console.error('一般的なトラス構造の検証（4節点以上、3部材以上）');
+            
+            if (!fixedModel.nodes || fixedModel.nodes.length < 4) {
+                errors.push(`トラス構造の節点が不足: ${fixedModel.nodes?.length || 0}個（最低4個必要）`);
+            }
+            
+            if (!fixedModel.members || fixedModel.members.length < 3) {
+                errors.push(`トラス構造の部材が不足: ${fixedModel.members?.length || 0}個（最低3個必要）`);
+            }
+            
+            if (bottomNodes.length < 2) {
+                errors.push(`下弦材の節点が不足: ${bottomNodes.length}個（最低2個必要）`);
+            }
+            
+            if (topNodes.length < 2) {
+                errors.push(`上弦材の節点が不足: ${topNodes.length}個（最低2個必要）`);
+            }
         }
         
         // 境界条件の検証（支点はy=0の下弦材に配置）
-        const leftNode = fixedModel.nodes.find(node => node.x === 0 && node.y === 0);
-        const rightNode = fixedModel.nodes.find(node => node.x === spanLength && node.y === 0);
+        const leftNode = fixedModel.nodes.find(node => Math.abs(node.x - 0) < tolerance && Math.abs(node.y - 0) < tolerance);
+        const rightNode = fixedModel.nodes.find(node => Math.abs(node.x - spanLength) < tolerance && Math.abs(node.y - 0) < tolerance);
         
         if (!leftNode) {
             errors.push(`下弦材の左端節点（x=0,y=0）が見つかりません`);
@@ -4057,16 +4171,14 @@ function validateTrussStructure(model, userPrompt) {
         
         // 上弦材に支点が配置されていないかチェック
         const topNodesWithSupport = fixedModel.nodes.filter(node => 
-            node.y === height && (node.s === 'p' || node.s === 'r' || node.s === 'x')
+            Math.abs(node.y - height) < tolerance && (node.s === 'p' || node.s === 'r' || node.s === 'x')
         );
         
         if (topNodesWithSupport.length > 0) {
             errors.push(`上弦材（y=${height}）に支点が配置されています。支点は下弦材（y=0）のみに配置してください`);
         }
         
-        // トラス形式別の検証
-        const trussType = detectTrussType(userPrompt);
-        console.error('検出されたトラス形式:', trussType);
+        // トラス形式別の垂直材検証
         
         if (trussType === 'pratt' || trussType === 'howe') {
             // プラット/ハウトラスでは垂直材が必須

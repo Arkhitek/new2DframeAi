@@ -15286,7 +15286,8 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     const t1Value = getProp('t1', 't1', 't1');
     const t2Value = getProp('t2', 't2', 't2');
     
-    const sectionName = bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : steelInfo.spec;
+    // AIから提供された元の断面名を優先し、ライブラリの断面名はフォールバックとして使用
+    const sectionName = steelInfo.spec || (bestMatch.rowData[0] ? String(bestMatch.rowData[0]) : '');
     
     // 鋼材タイプからラベルを生成
     const getTypeLabel = (steelType) => {
@@ -15680,9 +15681,21 @@ function updateMemberSectionInTable(memberIndex, steelData) {
         return;
     }
     
-    // 断面名称を板厚情報まで含む完全な形式で生成
+    // 断面名称を設定（AIから提供された元の断面名を優先）
     let sectionName = '';
-    if (steelData.typeLabel && steelData.dimensions) {
+    
+    // 1. まずsteelData.sectionNameを優先（AIから提供された元の断面名）
+    if (steelData.sectionName) {
+        sectionName = steelData.sectionName;
+        console.log(`🔧 部材${memberIndex}の断面名称をsteelData.sectionNameから設定: ${sectionName}`);
+    }
+    // 2. steelData.sectionSpecも確認（AIから提供された元の断面仕様）
+    else if (steelData.sectionSpec) {
+        sectionName = steelData.sectionSpec;
+        console.log(`🔧 部材${memberIndex}の断面名称をsteelData.sectionSpecから設定: ${sectionName}`);
+    }
+    // 3. フォールバック: typeLabelとdimensionsから生成
+    else if (steelData.typeLabel && steelData.dimensions) {
         // 板厚情報まで含む完全な形式で生成
         const dims = steelData.dimensions;
         if (steelData.sectionType === 'hkatakou_hiro' || steelData.sectionType === 'hkatakou_naka' || 
@@ -15710,14 +15723,15 @@ function updateMemberSectionInTable(memberIndex, steelData) {
             }
         } else {
             // その他の場合は既存の形式
-            sectionName = steelData.sectionName || `${steelData.typeLabel} ${steelData.designation}`.trim();
+            sectionName = `${steelData.typeLabel} ${steelData.designation}`.trim();
         }
-    } else if (steelData.sectionName) {
-        sectionName = steelData.sectionName;
+        console.log(`🔧 部材${memberIndex}の断面名称をtypeLabelとdimensionsから生成: ${sectionName}`);
     } else if (steelData.typeLabel && steelData.designation) {
         sectionName = `${steelData.typeLabel} ${steelData.designation}`.trim();
+        console.log(`🔧 部材${memberIndex}の断面名称をtypeLabelとdesignationから生成: ${sectionName}`);
     } else if (steelData.typeLabel) {
         sectionName = steelData.typeLabel;
+        console.log(`🔧 部材${memberIndex}の断面名称をtypeLabelから設定: ${sectionName}`);
     }
     
     // 断面名称を更新 (cell 8)

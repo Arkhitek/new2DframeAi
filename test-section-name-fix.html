@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Section Name Fix Test</title>
+</head>
+<body>
+    <h1>Section Name Fix Test</h1>
+    <div id="results"></div>
+
+    <script src="steel_data.js"></script>
+    <script src="frame_analyzer.js"></script>
+    <script>
+        async function testSectionNameFix() {
+            const resultsDiv = document.getElementById('results');
+
+            // Test case: H-588×300×12×20 (中幅H形鋼)
+            const steelInfo1 = {
+                spec: "H-588×300×12×20",
+                dimensions: [588, 300, 12, 20],
+                type: "hkatakou_hiro" // Initial type might be wrong, but search should correct it
+            };
+            
+            console.log("--- Test Case 1: H-588×300×12×20 ---");
+            const properties1 = await findSteelPropertiesFromLibrary(steelInfo1);
+            
+            resultsDiv.innerHTML += `<h2>Test Case 1: H-588×300×12×20</h2>`;
+            if (properties1) {
+                resultsDiv.innerHTML += `<p>Found: ${properties1.steelType} - ${properties1.rowData[0]}</p>`;
+                resultsDiv.innerHTML += `<p>Section Name: ${properties1.sectionName || 'N/A'}</p>`;
+                resultsDiv.innerHTML += `<p>Section Spec: ${properties1.sectionSpec || 'N/A'}</p>`;
+                resultsDiv.innerHTML += `<pre>${JSON.stringify(properties1, null, 2)}</pre>`;
+            } else {
+                resultsDiv.innerHTML += `<p>Not Found</p>`;
+            }
+
+            // Test case: H-200×200×8×12 (広幅H形鋼)
+            const steelInfo2 = {
+                spec: "H-200×200×8×12",
+                dimensions: [200, 200, 8, 12],
+                type: "hkatakou_hoso" // Initial type might be wrong
+            };
+            
+            console.log("--- Test Case 2: H-200×200×8×12 ---");
+            const properties2 = await findSteelPropertiesFromLibrary(steelInfo2);
+            
+            resultsDiv.innerHTML += `<h2>Test Case 2: H-200×200×8×12</h2>`;
+            if (properties2) {
+                resultsDiv.innerHTML += `<p>Found: ${properties2.steelType} - ${properties2.rowData[0]}</p>`;
+                resultsDiv.innerHTML += `<p>Section Name: ${properties2.sectionName || 'N/A'}</p>`;
+                resultsDiv.innerHTML += `<p>Section Spec: ${properties2.sectionSpec || 'N/A'}</p>`;
+                resultsDiv.innerHTML += `<pre>${JSON.stringify(properties2, null, 2)}</pre>`;
+            } else {
+                resultsDiv.innerHTML += `<p>Not Found</p>`;
+            }
+        }
+
+        // Wait for the page to load
+        window.addEventListener('load', testSectionNameFix);
+    </script>
+</body>
+</html>

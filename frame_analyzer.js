@@ -16840,14 +16840,21 @@ function getEditModeExamples() {
 /**
  * 追加編集データを既存データに統合する関数
  * @param {Object} newState AIが生成した新しいデータ
+ * @param {String} userPrompt ユーザーの指示（荷重削除意図検出用）
  */
-function integrateEditData(newState) {
+function integrateEditData(newState, userPrompt = '') {
     console.log('🔍 データ統合開始:', newState);
+    console.log('🔍 ユーザープロンプト:', userPrompt);
     
     if (!newState || !newState.nodes) {
         console.error('Error: Invalid newState data provided to integrateEditData');
         return;
     }
+    
+    // 荷重削除意図を検出
+    const loadDeleteKeywords = /荷重.*削除|荷重.*消|荷重.*なし|荷重.*ゼロ|全.*削除.*荷重|荷重.*全.*削除|load.*delete|load.*remove|load.*clear/i;
+    const hasLoadDeleteIntent = loadDeleteKeywords.test(userPrompt);
+    console.log('🔍 荷重削除意図検出:', hasLoadDeleteIntent);
     
     // 既存のデータを取得
     const existingModelData = getCurrentModelData();
@@ -17040,13 +17047,25 @@ function integrateEditData(newState) {
         const existingMemberLoads = convertMemberLoads(existingModelData.memberLoads);
         const newMemberLoads = convertMemberLoads(newState.memberLoads);
 
+        console.log('🔍 荷重統合処理:');
+        console.log('  - 既存節点荷重数:', existingNodeLoads.length);
+        console.log('  - 新規節点荷重数:', newNodeLoads.length);
+        console.log('  - 既存部材荷重数:', existingMemberLoads.length);
+        console.log('  - 新規部材荷重数:', newMemberLoads.length);
+        console.log('  - 荷重削除意図:', hasLoadDeleteIntent);
+
         // 節点荷重の重複除去（同じ節点番号の荷重は新規で上書き）
         const nodeLoadMap = new Map();
         
-        // 既存の荷重を追加
-        existingNodeLoads.forEach(load => {
-            nodeLoadMap.set(load.node, load);
-        });
+        // 荷重削除の指示がない場合のみ既存の荷重を追加
+        if (!hasLoadDeleteIntent) {
+            existingNodeLoads.forEach(load => {
+                nodeLoadMap.set(load.node, load);
+            });
+            console.log('🔍 既存節点荷重を保持:', nodeLoadMap.size);
+        } else {
+            console.log('🔍 荷重削除の指示があるため、既存節点荷重を破棄');
+        }
         
         // 新規の荷重で上書き（0でない荷重のみ）
         newNodeLoads.forEach(load => {
@@ -17054,14 +17073,20 @@ function integrateEditData(newState) {
                 nodeLoadMap.set(load.node, load);
             }
         });
+        console.log('🔍 新規節点荷重追加後:', nodeLoadMap.size);
 
         // 部材荷重の重複除去（同じ部材番号の荷重は新規で上書き）
         const memberLoadMap = new Map();
         
-        // 既存の荷重を追加
-        existingMemberLoads.forEach(load => {
-            memberLoadMap.set(load.member, load);
-        });
+        // 荷重削除の指示がない場合のみ既存の荷重を追加
+        if (!hasLoadDeleteIntent) {
+            existingMemberLoads.forEach(load => {
+                memberLoadMap.set(load.member, load);
+            });
+            console.log('🔍 既存部材荷重を保持:', memberLoadMap.size);
+        } else {
+            console.log('🔍 荷重削除の指示があるため、既存部材荷重を破棄');
+        }
         
         // 新規の荷重で上書き（0でない荷重のみ）
         newMemberLoads.forEach(load => {
@@ -17069,6 +17094,7 @@ function integrateEditData(newState) {
                 memberLoadMap.set(load.member, load);
             }
         });
+        console.log('🔍 新規部材荷重追加後:', memberLoadMap.size);
 
         const integratedState = {
             nodes: integratedNodes, // 統合された節点データを使用
@@ -17510,7 +17536,7 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         if (mode === 'edit') {
             // 追加編集モード: 既存データと新しいデータを統合
             console.log('🔍 追加編集モード: データを統合します');
-            integrateEditData(state);
+            integrateEditData(state, naturalLanguageInput);
         } else {
             // 新規作成モード: 通常の復元処理
             window.restoreState(state);

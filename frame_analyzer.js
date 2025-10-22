@@ -16828,7 +16828,7 @@ function getEditModeExamples() {
         },
         {
             title: '荷重条件の変更',
-            text: '既存の荷重を全て削除し、新たに屋根荷重3kN/m²、床荷重5kN/m²を設定する。'
+            text: '既存の荷重を全て削除し、新たに屋根荷重3kN/m、床荷重5kN/mを設定する。'
         },
         {
             title: '材料の変更',

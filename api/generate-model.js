@@ -481,7 +481,8 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
 部材番号: 配列順序（1から開始）
-部材name: 指定された断面名称（例: "H-200×100×8×12"）`;
+部材name: 指定された断面名称（例: "H-200×100×8×12"）
+材料: デフォルトE=205000MPa、材料変更時は指示に従う（1GPa=1000MPa）`;
 
         // 鋼材情報が提供されているかチェック
         const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
@@ -493,10 +494,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         // 荷重指示の有無に基づいて条件分岐
         if (loadIntent.hasLoadIntent) {
             simplePrompt += `
-荷重: 指示に応じて適切な荷重を生成（等分布荷重はプラスの値で下向き）`;
+荷重: 等分布荷重は梁に設定、プラス値で下向き、「削除」指示時は空配列[]`;
         } else {
             simplePrompt += `
-荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
+荷重: nodeLoads=[], memberLoads=[]`;
         }
         
         simplePrompt += `
@@ -530,7 +531,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 節点番号: 配列順序（1から開始）
 - 部材番号: 配列順序（1から開始）
 - 座標: メートル単位で小数点以下1桁まで
-- 材料定数: E=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
+- 材料定数: デフォルトE=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
+  - 材料変更の指示がある場合は、指示に従ってE（弾性係数）を変更してください
+  - 単位変換: 1GPa = 1000MPa（例：193GPa = 193000MPa）
 - 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-300×150"など）
 
 重要制約:
@@ -553,8 +556,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // 荷重指示の有無に基づいて条件分岐
     if (loadIntent.hasLoadIntent) {
         prompt += `
-荷重: 指示に応じて適切な荷重を生成（集中荷重、等分布荷重、水平荷重など）
-等分布荷重: 特に指示がない場合はプラスの値（下向き）で生成`;
+
+荷重設定ルール:
+- 等分布荷重（memberLoads）: 梁部材（水平材）に設定、プラスの値で下向き
+- 集中荷重（nodeLoads）: 節点に設定、fx（水平）とfy（鉛直、負の値で下向き）
+- 屋根荷重: 最上層の梁に設定
+- 床荷重: 中間層の梁に設定
+- 地面の梁には荷重を設定しない
+- 「荷重を削除」「荷重をなし」の指示がある場合: nodeLoadsとmemberLoadsは空配列[]で出力`;
     } else {
         prompt += `
 荷重: 荷重の指示がない場合は、nodeLoadsとmemberLoadsは空配列[]で出力`;
@@ -1309,7 +1318,21 @@ function createEditPrompt(userPrompt, currentModel) {
         const columnSection = getMode(verticalMembers);
         const beamSection = getMode(horizontalMembers);
         
-        if (columnSection || beamSection) {
+        // 材料変更の意図を検出
+        const materialChangeKeywords = /材料.*(変更|設定)|断面.*(変更|設定)|弾性係数.*(変更|設定)|ヤング係数.*(変更|設定)|ステンレス|アルミ|material.*(change|set)|section.*(change|set)|modulus.*(change|set)|elastic/i;
+        const hasMaterialChangeIntent = materialChangeKeywords.test(userPrompt);
+        
+        if (hasMaterialChangeIntent) {
+            editPrompt += `**【重要】材料特性変更の指示**:\n`;
+            editPrompt += `- 全ての部材の材料特性（E、I、A、Z）を指示に従って変更してください\n`;
+            editPrompt += `- 弾性係数（E）の単位はMPaです（例：193GPa = 193000MPa）\n`;
+            editPrompt += `- 既存の部材と同じ接続関係を保持してください\n`;
+            if (currentModel.members && currentModel.members.length > 0) {
+                const currentE = currentModel.members[0].E;
+                editPrompt += `- 現在の弾性係数: E=${currentE}MPa\n`;
+            }
+            editPrompt += `\n`;
+        } else if (columnSection || beamSection) {
             editPrompt += `**【重要】部材断面情報（新しい部材も同じ断面を使用してください）**:\n`;
             if (columnSection) {
                 editPrompt += `- 柱（垂直材）の断面: ${columnSection}\n`;
@@ -1322,29 +1345,80 @@ function createEditPrompt(userPrompt, currentModel) {
         }
     }
     
+    // 荷重変更・削除の意図を検出
+    const loadDeleteKeywords = /荷重.*削除|荷重.*消|荷重.*なし|荷重.*ゼロ|load.*delete|load.*remove|load.*clear/i;
+    const loadChangeKeywords = /荷重.*変更|荷重.*設定|荷重.*追加|load.*change|load.*set|load.*add/i;
+    const hasLoadDeleteIntent = loadDeleteKeywords.test(userPrompt);
+    const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt);
+    
     // 荷重情報を追加
     if (currentModel && (currentModel.nodeLoads?.length > 0 || currentModel.memberLoads?.length > 0)) {
-        editPrompt += `現在の荷重情報（必ず保持してください）:\n`;
-        
-        if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
-            editPrompt += `集中荷重:\n`;
-            currentModel.nodeLoads.forEach((load, index) => {
-                const node = currentModel.nodes[load.n - 1];
-                editPrompt += `  節点${load.n}(${node.x}, ${node.y}): px=${load.px || 0}, py=${load.py || 0}\n`;
-            });
+        // 荷重削除の指示がある場合
+        if (hasLoadDeleteIntent || (hasLoadChangeIntent && userPrompt.includes('全て削除'))) {
+            editPrompt += `**【重要】荷重削除の指示**:\n`;
+            editPrompt += `- 既存の全ての荷重（集中荷重・等分布荷重）を削除してください\n`;
+            editPrompt += `- nodeLoads配列とmemberLoads配列は空にするか、新たに指示された荷重のみを設定してください\n`;
+            editPrompt += `- 元の荷重を保持しないでください\n\n`;
+            
+            editPrompt += `参考：削除対象の既存荷重:\n`;
+            if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
+                editPrompt += `  - 集中荷重: ${currentModel.nodeLoads.length}個\n`;
+            }
+            if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
+                editPrompt += `  - 等分布荷重: ${currentModel.memberLoads.length}個\n`;
+            }
+            editPrompt += `\n`;
         }
-        
-        if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
-            editPrompt += `等分布荷重:\n`;
-            currentModel.memberLoads.forEach((load, index) => {
-                const member = currentModel.members[load.m - 1];
-                const startNode = currentModel.nodes[member.i - 1];
-                const endNode = currentModel.nodes[member.j - 1];
-                editPrompt += `  部材${load.m}[節点(${startNode.x},${startNode.y})→節点(${endNode.x},${endNode.y})]: w=${load.w}\n`;
-            });
+        // 荷重変更の指示があるが削除ではない場合
+        else if (hasLoadChangeIntent) {
+            editPrompt += `**【荷重変更の指示】**:\n`;
+            editPrompt += `- 指示に従って荷重を変更してください\n`;
+            editPrompt += `- 指示されていない既存の荷重は保持してください\n\n`;
+            
+            editPrompt += `現在の荷重情報:\n`;
+            if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
+                editPrompt += `集中荷重:\n`;
+                currentModel.nodeLoads.forEach((load, index) => {
+                    const node = currentModel.nodes[load.n - 1];
+                    editPrompt += `  節点${load.n}(${node.x}, ${node.y}): px=${load.px || 0}, py=${load.py || 0}\n`;
+                });
+            }
+            
+            if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
+                editPrompt += `等分布荷重:\n`;
+                currentModel.memberLoads.forEach((load, index) => {
+                    const member = currentModel.members[load.m - 1];
+                    const startNode = currentModel.nodes[member.i - 1];
+                    const endNode = currentModel.nodes[member.j - 1];
+                    editPrompt += `  部材${load.m}[節点(${startNode.x},${startNode.y})→節点(${endNode.x},${endNode.y})]: w=${load.w}\n`;
+                });
+            }
+            editPrompt += `\n`;
         }
-        
-        editPrompt += `\n**重要**: 上記の荷重は必ず保持してください。新しい節点・部材を追加する場合でも、既存の荷重は元の節点・部材番号で保持してください。\n\n`;
+        // 荷重変更の指示がない場合のみ保持
+        else {
+            editPrompt += `現在の荷重情報（必ず保持してください）:\n`;
+            
+            if (currentModel.nodeLoads && currentModel.nodeLoads.length > 0) {
+                editPrompt += `集中荷重:\n`;
+                currentModel.nodeLoads.forEach((load, index) => {
+                    const node = currentModel.nodes[load.n - 1];
+                    editPrompt += `  節点${load.n}(${node.x}, ${node.y}): px=${load.px || 0}, py=${load.py || 0}\n`;
+                });
+            }
+            
+            if (currentModel.memberLoads && currentModel.memberLoads.length > 0) {
+                editPrompt += `等分布荷重:\n`;
+                currentModel.memberLoads.forEach((load, index) => {
+                    const member = currentModel.members[load.m - 1];
+                    const startNode = currentModel.nodes[member.i - 1];
+                    const endNode = currentModel.nodes[member.j - 1];
+                    editPrompt += `  部材${load.m}[節点(${startNode.x},${startNode.y})→節点(${endNode.x},${endNode.y})]: w=${load.w}\n`;
+                });
+            }
+            
+            editPrompt += `\n**重要**: 上記の荷重は必ず保持してください。新しい節点・部材を追加する場合でも、既存の荷重は元の節点・部材番号で保持してください。\n\n`;
+        }
     }
     
     editPrompt += `上記の現在のモデルに対して、指示された編集を適用してください。\n\n`;
@@ -1727,10 +1801,13 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
     
     console.error('=== 荷重データ保持処理開始 ===');
     
-    // 荷重変更の指示を検出
-    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add/i;
-    const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt);
+    // 荷重削除・変更の指示を検出
+    const loadDeleteKeywords = /荷重.*削除|荷重.*消|荷重.*なし|荷重.*ゼロ|全.*削除.*荷重|荷重.*全.*削除|load.*delete|load.*remove|load.*clear/i;
+    const loadChangeKeywords = /荷重.*変更|荷重.*追加|荷重.*設定|load.*change|load.*set|load.*add/i;
+    const hasLoadDeleteIntent = loadDeleteKeywords.test(userPrompt);
+    const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt) || hasLoadDeleteIntent;
     
+    console.error('荷重削除意図検出:', hasLoadDeleteIntent);
     console.error('荷重変更意図検出:', hasLoadChangeIntent);
     
     // 元のモデルに荷重データがあるか確認
@@ -1757,6 +1834,32 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
         memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
     });
+    
+    // 荷重削除の指示がある場合、AIの生成結果を確認して強制削除
+    if (hasLoadDeleteIntent) {
+        console.error('荷重削除の指示が検出されました');
+        
+        // 「全て削除」と指示があるのに荷重が残っている場合は強制削除
+        if (userPrompt.includes('全て削除') || userPrompt.includes('すべて削除')) {
+            console.error('「全て削除」の指示があるため、荷重を強制的に削除します');
+            const cleanedModel = JSON.parse(JSON.stringify(generatedModel));
+            cleanedModel.nodeLoads = [];
+            cleanedModel.memberLoads = [];
+            console.error('=== 荷重データ保持処理完了（全て削除） ===');
+            return cleanedModel;
+        } else {
+            console.error('荷重削除の指示があるため、AIの生成を尊重します');
+            console.error('=== 荷重データ保持処理完了 ===');
+            return generatedModel;
+        }
+    }
+    
+    // 荷重変更の指示がある場合は、AIの生成を尊重
+    if (hasLoadChangeIntent) {
+        console.error('荷重変更の指示があるため、AIの生成を尊重します');
+        console.error('=== 荷重データ保持処理完了 ===');
+        return generatedModel;
+    }
     
     // 荷重変更の指示がない場合は、元の荷重データを保持
     if (!hasLoadChangeIntent) {
@@ -1875,8 +1978,26 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         
         // 部材のname（断面名）の保持（部材接続でマッピング）
         // 材料変更・断面変更の指示がない場合のみ適用
-        const materialChangeKeywords = /材料.*変更|断面.*変更|弾性係数.*変更|ステンレス|アルミ|material.*change|section.*change|modulus.*change/i;
+        const materialChangeKeywords = /材料.*(変更|設定)|断面.*(変更|設定)|弾性係数.*(変更|設定)|ヤング係数.*(変更|設定)|ステンレス|アルミ|material.*(change|set)|section.*(change|set)|modulus.*(change|set)|elastic/i;
         const hasMaterialChangeIntent = materialChangeKeywords.test(userPrompt);
+        
+        console.error('材料変更意図検出:', hasMaterialChangeIntent);
+        
+        // 材料変更の場合、生成されたモデルの材料特性を確認
+        if (hasMaterialChangeIntent && preservedModel.members && preservedModel.members.length > 0) {
+            const firstMemberE = preservedModel.members[0].E;
+            const allSameE = preservedModel.members.every(m => m.E === firstMemberE);
+            console.error(`材料変更が検出されました。生成されたモデルの弾性係数: 最初の部材E=${firstMemberE}, 全部材同じE=${allSameE}`);
+            if (originalModel.members && originalModel.members.length > 0) {
+                const originalE = originalModel.members[0].E;
+                console.error(`元のモデルの弾性係数: E=${originalE}`);
+                if (firstMemberE === originalE) {
+                    console.error('⚠️ 警告: AIが材料特性を変更していない可能性があります');
+                } else {
+                    console.error(`✓ 材料特性が変更されました: ${originalE} → ${firstMemberE}`);
+                }
+            }
+        }
         
         if (!hasMaterialChangeIntent) {
             console.error('部材断面名（name）のマッピング開始（材料変更の指示なし）');
@@ -1932,10 +2053,6 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         
         console.error('=== 荷重データ保持処理完了 ===');
         return preservedModel;
-    } else {
-        console.error('荷重変更の指示があるため、AIの生成を尊重します');
-        console.error('=== 荷重データ保持処理完了 ===');
-        return generatedModel;
     }
 }
 

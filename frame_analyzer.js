@@ -15170,10 +15170,99 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         
                         const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
                         
+                        // 断面性能を取得
+                        const actualHeaders = window.steelData[category].headers;
+                        const normalizedHeaders = actualHeaders.map(normalizeHeaderKey);
+                        const getProp = (...keys) => findRowValueByKeys(actualHeaders, normalizedHeaders, rowData, ...keys);
+                        
+                        const areaValue = getProp('断面積', '面積', 'A');
+                        const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
+                        const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
+                        const zxValue = getProp('Zx', '強軸断面係数', 'Z');
+                        const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
+                        const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
+                        const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+                        const t1Value = getProp('t1', 't1', 't1');
+                        const t2Value = getProp('t2', 't2', 't2');
+                        
+                        // AIから提供された元の断面名を優先
+                        const sectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
+                        
+                        // 鋼材タイプからラベルを生成
+                        const getTypeLabel = (steelType) => {
+                            const typeLabels = {
+                                'hkatakou_hiro': 'H形鋼（広幅）',
+                                'hkatakou_naka': 'H形鋼（中幅）',
+                                'hkatakou_hoso': 'H形鋼（細幅）',
+                                'ikatakou': 'I形鋼',
+                                'keiryouhkatakou': '軽量H形鋼',
+                                'keiryourippuhkatakou': '軽量リップH形鋼',
+                                'mizogatakou': 'みぞ形鋼',
+                                'keimizogatakou': '軽みぞ形鋼',
+                                'rippumizokatakou': 'リップみぞ形鋼',
+                                'touhenyamakatakou': '等辺山形鋼',
+                                'futouhenyamagata': '不等辺山形鋼',
+                                'seihoukei': '角形鋼管（正方形）',
+                                'tyouhoukei': '角形鋼管（長方形）',
+                                'koukan': '丸形鋼管'
+                            };
+                            return typeLabels[steelType] || steelType;
+                        };
+                        
+                        const typeLabel = getTypeLabel(category);
+                        const designation = rowData[0] ? String(rowData[0]) : '';
+                        
+                        // 軸方向の判定
+                        const isStrongAxisX = (ixValue && iyValue) ? ixValue > iyValue : true;
+                        const axisDirection = isStrongAxisX ? 'X軸' : 'Y軸';
+                        
+                        // 板厚情報を含む完全な寸法情報を作成
+                        const fullDimensions = {
+                            ...rowDims,
+                            t1: t1Value,
+                            t2: t2Value
+                        };
+                        
                         return {
+                            sectionName: sectionName,
+                            sectionSpec: steelInfo.spec,
+                            sectionType: category,
+                            typeLabel: typeLabel,
+                            designation: designation,
+                            dimensions: fullDimensions,
+                            axisDirection: axisDirection,
+                            isStrongAxisX: isStrongAxisX,
+                            properties: {
+                                A: areaValue,
+                                Ix: ixValue,
+                                Iy: iyValue,
+                                Zx: zxValue,
+                                Zy: zyValue,
+                                ix: radiusXValue,
+                                iy: radiusYValue
+                            },
+                            matchDistance: 0,
+                            sectionInfo: {
+                                typeKey: category,
+                                typeLabel: typeLabel,
+                                designation: designation,
+                                dims: fullDimensions,
+                                properties: {
+                                    A: areaValue,
+                                    Ix: ixValue,
+                                    Iy: iyValue,
+                                    Zx: zxValue,
+                                    Zy: zyValue,
+                                    ix: radiusXValue,
+                                    iy: radiusYValue
+                                },
+                                label: `${typeLabel} ${designation}`,
+                                source: 'AI生成'
+                            },
+                            sectionInfoEncoded: '',
+                            sectionLabel: `${typeLabel} ${designation}`,
                             index: i,
                             rowData: rowData,
-                            dimensions: rowDims,
                             distance: 0,
                             steelType: category
                         };
@@ -15185,11 +15274,100 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         
                         const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
                         
+                        // 断面性能を取得
+                        const actualHeaders = window.steelData[category].headers;
+                        const normalizedHeaders = actualHeaders.map(normalizeHeaderKey);
+                        const getProp = (...keys) => findRowValueByKeys(actualHeaders, normalizedHeaders, rowData, ...keys);
+                        
+                        const areaValue = getProp('断面積', '面積', 'A');
+                        const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
+                        const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
+                        const zxValue = getProp('Zx', '強軸断面係数', 'Z');
+                        const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
+                        const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
+                        const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+                        const t1Value = getProp('t1', 't1', 't1');
+                        const t2Value = getProp('t2', 't2', 't2');
+                        
+                        // AIから提供された元の断面名を優先
+                        const sectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
+                        
+                        // 鋼材タイプからラベルを生成
+                        const getTypeLabel = (steelType) => {
+                            const typeLabels = {
+                                'hkatakou_hiro': 'H形鋼（広幅）',
+                                'hkatakou_naka': 'H形鋼（中幅）',
+                                'hkatakou_hoso': 'H形鋼（細幅）',
+                                'ikatakou': 'I形鋼',
+                                'keiryouhkatakou': '軽量H形鋼',
+                                'keiryourippuhkatakou': '軽量リップH形鋼',
+                                'mizogatakou': 'みぞ形鋼',
+                                'keimizogatakou': '軽みぞ形鋼',
+                                'rippumizokatakou': 'リップみぞ形鋼',
+                                'touhenyamakatakou': '等辺山形鋼',
+                                'futouhenyamagata': '不等辺山形鋼',
+                                'seihoukei': '角形鋼管（正方形）',
+                                'tyouhoukei': '角形鋼管（長方形）',
+                                'koukan': '丸形鋼管'
+                            };
+                            return typeLabels[steelType] || steelType;
+                        };
+                        
+                        const typeLabel = getTypeLabel(category);
+                        const designation = rowData[0] ? String(rowData[0]) : '';
+                        
+                        // 軸方向の判定
+                        const isStrongAxisX = (ixValue && iyValue) ? ixValue > iyValue : true;
+                        const axisDirection = isStrongAxisX ? 'X軸' : 'Y軸';
+                        
+                        // 板厚情報を含む完全な寸法情報を作成
+                        const fullDimensions = {
+                            ...rowDims,
+                            t1: t1Value,
+                            t2: t2Value
+                        };
+                        
                         return {
+                            sectionName: sectionName,
+                            sectionSpec: steelInfo.spec,
+                            sectionType: category,
+                            typeLabel: typeLabel,
+                            designation: designation,
+                            dimensions: fullDimensions,
+                            axisDirection: axisDirection,
+                            isStrongAxisX: isStrongAxisX,
+                            properties: {
+                                A: areaValue,
+                                Ix: ixValue,
+                                Iy: iyValue,
+                                Zx: zxValue,
+                                Zy: zyValue,
+                                ix: radiusXValue,
+                                iy: radiusYValue
+                            },
+                            matchDistance: 0.1, // 部分一致は低い距離
+                            sectionInfo: {
+                                typeKey: category,
+                                typeLabel: typeLabel,
+                                designation: designation,
+                                dims: fullDimensions,
+                                properties: {
+                                    A: areaValue,
+                                    Ix: ixValue,
+                                    Iy: iyValue,
+                                    Zx: zxValue,
+                                    Zy: zyValue,
+                                    ix: radiusXValue,
+                                    iy: radiusYValue
+                                },
+                                label: `${typeLabel} ${designation}`,
+                                source: 'AI生成'
+                            },
+                            sectionInfoEncoded: '',
+                            sectionLabel: `${typeLabel} ${designation}`,
                             index: i,
                             rowData: rowData,
-                            dimensions: rowDims,
-                            distance: 0.1, // 部分一致は低い距離
+                            distance: 0.1,
                             steelType: category
                         };
                     }

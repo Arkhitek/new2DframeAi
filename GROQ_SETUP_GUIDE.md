@@ -34,7 +34,8 @@ GROQ_API_KEY=your_groq_api_key_here
 
 ## 4. 利用可能なGroqモデル
 
-- `llama-3.1-70b-versatile` (推奨) - 高性能で汎用性が高い
+- `openai/gpt-oss-120b` (推奨) - 高性能で汎用性が高い
+- `llama-3.1-70b-versatile` - 高性能で汎用性が高い
 - `llama-3.1-8b-instant` - 高速だが性能はやや劣る
 - `mixtral-8x7b-32768` - 中程度の性能と速度
 

@@ -21,14 +21,12 @@ export default async function handler(req, res) {
             return;
         }
 
-        // API設定（容量制限エラー時に自動切り替え）
-        let API_KEY = process.env.GROQ_API_KEY;
-        let API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-        let apiProvider = 'groq';
-        
+        const API_KEY = process.env.GROQ_API_KEY;
         if (!API_KEY) {
             throw new Error("Groq AIのAPIキーがサーバーに設定されていません。");
         }
+        
+        const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
         
         // retryCount変数を先に定義
         let retryCount = 0;
@@ -45,12 +43,8 @@ export default async function handler(req, res) {
             userMessage = createEditPrompt(userPrompt, currentModel);
         }
 
-        // モデル設定（容量制限エラー時に自動切り替え）
-        let aiModel = "llama-3.3-70b-versatile";
-        let modelSwitched = false;
-        
         const requestBody = {
-            model: aiModel,
+            model: "openai/gpt-oss-120b",
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -85,53 +79,16 @@ export default async function handler(req, res) {
                 clearTimeout(timeoutId);
                 data = await groqResponse.json();
                 console.error('AIレスポンス受信: ステータス=', groqResponse.status);
-                console.error('AIレスポンス詳細:', JSON.stringify(data, null, 2));
 
                 // 成功した場合はループを抜ける
                 if (groqResponse.ok) {
-                    console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目) - 使用プロバイダー: ${apiProvider}, モデル: ${aiModel}`);
+                    console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目)`);
                     break;
                 }
                 
                 // 容量制限エラーの場合
                 if (groqResponse.status === 429) {
-                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1}) - 現在のプロバイダー: ${apiProvider}`);
-                    
-                    // まだモデルを切り替えていない場合、llama-3.1-8b-instantに切り替え
-                    if (!modelSwitched && aiModel === "llama-3.3-70b-versatile") {
-                        console.error('🔄 容量制限のため、モデルをllama-3.1-8b-instantに切り替えます');
-                        aiModel = "llama-3.1-8b-instant";
-                        modelSwitched = true;
-                        requestBody.model = aiModel;
-                        
-                        // モデル切り替え後は即座に再試行
-                        retryCount++;
-                        continue;
-                    }
-                    
-                    // llama-3.1-8b-instantでも容量制限の場合、Mistral APIに切り替え
-                    if (apiProvider === 'groq' && aiModel === "llama-3.1-8b-instant") {
-                        console.error('🔄 Groq APIの容量制限のため、Mistral APIに切り替えます');
-                        
-                        // Mistral APIに切り替え
-                        const mistralApiKey = process.env.MISTRAL_API_KEY;
-                        if (!mistralApiKey) {
-                            console.error('❌ Mistral APIキーが設定されていません');
-                            throw new Error("Mistral APIキーがサーバーに設定されていません。容量制限回避のためMistral APIへの切り替えができません。");
-                        }
-                        
-                        API_KEY = mistralApiKey;
-                        API_URL = 'https://api.mistral.ai/v1/chat/completions';
-                        apiProvider = 'mistral';
-                        aiModel = "mistral-large-latest";
-                        requestBody.model = aiModel;
-                        
-                        console.error('✅ Mistral APIに切り替え完了');
-                        
-                        // API切り替え後は即座に再試行
-                        retryCount++;
-                        continue;
-                    }
+                    console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
                     
                     if (retryCount < maxRetries) {
                         // リトライ前に待機（より長い待機時間）
@@ -151,7 +108,7 @@ export default async function handler(req, res) {
                 }
                 
                 // その他のエラーは記録してスロー
-                lastError = new Error(data.message || 'Groq AIでエラーが発生しました。');
+                lastError = new Error(data.message || 'Mistral AIでエラーが発生しました。');
                 throw lastError;
                 
             } catch (error) {
@@ -522,9 +479,8 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
         let simplePrompt = `2D構造生成。JSON出力のみ。
 {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f","p","r","x"
-節点番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-部材番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-荷重単位: kNで指定された場合はそのまま使用
+節点番号: 配列順序（1から開始）
+部材番号: 配列順序（1から開始）
 部材name: 指定された断面名称（例: "H-200×100×8×12"）`;
 
         // 鋼材情報が提供されているかチェック
@@ -571,10 +527,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 
 基本ルール:
 - 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-- 節点番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-- 部材番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-- 座標: メートル単位で小数点以下1桁まで、必ず数値型で指定（文字列禁止）
-- 荷重単位: kN（キロニュートン）で指定された場合はそのまま使用、N（ニュートン）の場合は1000で割る
+- 節点番号: 配列順序（1から開始）
+- 部材番号: 配列順序（1から開始）
+- 座標: メートル単位で小数点以下1桁まで
 - 材料定数: E=205000MPa, I=0.00011m⁴, A=0.005245m², Z=0.000638m³
 - 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-300×150"など）
 
@@ -592,9 +547,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 部材のnameフィールドには、必ず「- 指定断面: 」に続く値を使用してください
 - 例: 「- 指定断面: H-200×100×8×12」 → 部材のname: "H-200×100×8×12"
 - 柱部材と梁部材で異なる断面が指定されている場合、それぞれ適切な断面名称を使用
-- 部材のI、A、Zの値は提供された断面性能値を正確に使用してください
-- 断面性能値は上記の【鋼材】セクションに記載されている値をそのまま使用
-- 例: H-200×200×8×12の場合、I=0.0472, A=0.006353, Z=0.00472を使用`;
+- 部材のI、A、Zの値は提供された断面性能値を使用`;
     }
     
     // 荷重指示の有無に基づいて条件分岐
@@ -856,7 +809,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     
     // 全構造タイプに共通の例を追加
     prompt += `
-重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）、0は絶対に使用禁止
+重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）`;
 
     return prompt;
@@ -1534,34 +1487,9 @@ function validateNodeReferences(model) {
             errors.push(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
                 console.error(`節点${index + 1}に必須プロパティ（x, y, s）が不足しています`);
         }
-        // 座標の型チェックと変換
         if (typeof node.x !== 'number' || typeof node.y !== 'number') {
-            // 文字列の場合は数値に変換を試行
-            if (typeof node.x === 'string') {
-                const xNum = parseFloat(node.x);
-                if (!isNaN(xNum)) {
-                    node.x = xNum;
-                } else {
-                    errors.push(`節点${index + 1}のX座標（${node.x}）が数値に変換できません`);
-                    console.error(`節点${index + 1}のX座標（${node.x}）が数値に変換できません`);
-                }
-            } else {
-                errors.push(`節点${index + 1}のX座標が数値ではありません`);
-                console.error(`節点${index + 1}のX座標が数値ではありません`);
-            }
-            
-            if (typeof node.y === 'string') {
-                const yNum = parseFloat(node.y);
-                if (!isNaN(yNum)) {
-                    node.y = yNum;
-                } else {
-                    errors.push(`節点${index + 1}のY座標（${node.y}）が数値に変換できません`);
-                    console.error(`節点${index + 1}のY座標（${node.y}）が数値に変換できません`);
-                }
-            } else {
-                errors.push(`節点${index + 1}のY座標が数値ではありません`);
-                console.error(`節点${index + 1}のY座標が数値ではありません`);
-            }
+            errors.push(`節点${index + 1}の座標が数値ではありません`);
+                console.error(`節点${index + 1}の座標が数値ではありません`);
         }
         // 境界条件のチェック（短い形式と長い形式の両方を許容）
         const validBoundaryConditions = ['f', 'p', 'r', 'x', 'free', 'pin', 'pinned', 'roller', 'fixed', 'fix', 'hinge'];
@@ -1800,7 +1728,7 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
     console.error('=== 荷重データ保持処理開始 ===');
     
     // 荷重変更の指示を検出
-    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add|節点.*荷重|部材.*荷重|水平荷重|鉛直荷重|等分布荷重|kN|N|荷重.*kN|荷重.*N|fx|fy|q.*=|荷重.*作用|荷重.*加える|荷重.*与える/i;
+    const loadChangeKeywords = /荷重.*変更|荷重.*削除|荷重.*追加|荷重.*設定|load.*change|load.*delete|load.*add/i;
     const hasLoadChangeIntent = loadChangeKeywords.test(userPrompt);
     
     console.error('荷重変更意図検出:', hasLoadChangeIntent);
@@ -1830,18 +1758,9 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
     });
     
-    // 荷重変更の指示がある場合は、AIが生成した荷重データを使用
-    if (hasLoadChangeIntent) {
-        console.error('荷重変更の指示があるため、AIが生成した荷重データを使用します');
-        console.error('AI生成荷重データ:', {
-            nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
-            memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
-        });
-        return generatedModel;
-    }
-    
     // 荷重変更の指示がない場合は、元の荷重データを保持
-    console.error('荷重変更の指示がないため、元の荷重データを保持します');
+    if (!hasLoadChangeIntent) {
+        console.error('荷重変更の指示がないため、元の荷重データを保持します');
         
         const preservedModel = JSON.parse(JSON.stringify(generatedModel));
         preservedModel.nodeLoads = [];
@@ -2013,6 +1932,11 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         
         console.error('=== 荷重データ保持処理完了 ===');
         return preservedModel;
+    } else {
+        console.error('荷重変更の指示があるため、AIの生成を尊重します');
+        console.error('=== 荷重データ保持処理完了 ===');
+        return generatedModel;
+    }
 }
 
 // 境界条件を強制的に保持する関数
@@ -2541,7 +2465,7 @@ async function validateAndFixStructure(model, userPrompt, originalModel = null, 
                 const correctionResult = await callAIWithCorrectionPrompt(correctionPrompt, 0);
                 
                 if (correctionResult && correctionResult.nodes && correctionResult.members) {
-                    console.error(`AI修正成功 (使用プロバイダー: ${correctionResult._usedProvider || 'unknown'}, モデル: ${correctionResult._usedModel || 'unknown'}):`, {
+                    console.error('AI修正成功:', {
                         nodeCount: correctionResult.nodes.length,
                         memberCount: correctionResult.members.length
                     });
@@ -3003,7 +2927,7 @@ ${errors.map(error => `- ${error}`).join('\n')}
 
     correctionPrompt += `
 
-重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）、0は絶対に使用禁止
+重要: 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 部材配置: 同じ節点間には1本の部材のみ配置（重複禁止）
 
 JSON形式で出力してください。`;
@@ -3139,8 +3063,7 @@ ${errors.map(error => `- ${error}`).join('\n')}${missingMembersDetail}
 【重要】既存のモデルから拡張する場合の制約:
 既存の節点座標:
 - X座標: ${uniqueX.join(', ')} m
-- Y座標: ${uniqueY.join(', ')} m
-- スパン長: 既存モデルのスパン長（${uniqueX.length > 1 ? uniqueX[1] - uniqueX[0] : 8} m）を使用（ユーザー指定のスパン長は無視）`;
+- Y座標: ${uniqueY.join(', ')} m`;
         
         if (isSpanAddition) {
             correctionPrompt += `
@@ -3191,13 +3114,13 @@ ${errors.map(error => `- ${error}`).join('\n')}${missingMembersDetail}
         correctionPrompt += `
 
 【3層4スパンの完全な例】
-節点: 20個（4行×5列）、節点番号は1から20まで（0は使用禁止、必ず整数）
+節点: 20個（4行×5列）
 - 地面（Y=0）: 節点1～5（X=0,8,16,24,32）、全て境界条件"x"
 - 1階（Y=4）: 節点6～10（X=0,8,16,24,32）、全て境界条件"f"
 - 2階（Y=8）: 節点11～15（X=0,8,16,24,32）、全て境界条件"f"
 - 3階（Y=12）: 節点16～20（X=0,8,16,24,32）、全て境界条件"f"
 
-部材: 27本（柱15本+梁12本）、部材番号は1から27まで（0は使用禁止、必ず整数）
+部材: 27本（柱15本+梁12本）
 柱（15本、垂直方向、5通り×3階分）:
 - 1通り目（X=0）: 1→6, 6→11, 11→16
 - 2通り目（X=8）: 2→7, 7→12, 12→17
@@ -3210,14 +3133,7 @@ ${errors.map(error => `- ${error}`).join('\n')}${missingMembersDetail}
 - 3階（Y=12）: 16→17, 17→18, 18→19, 19→20
 
 重要: 上記のように全ての柱（5通り×3階分=15本）と全ての梁（3階×4スパン=12本）を必ず配置してください。
-各柱通りには3本の柱が必要です。各階には4本の梁が必要です。
-
-【部材生成の重要ポイント】
-- 柱は各柱通り（X=0,8,16,24,32）に3本ずつ、合計15本必要
-- 梁は各階（Y=4,8,12）に4本ずつ、合計12本必要
-- 部材番号は1から27まで連続で使用（0は使用禁止、必ず整数）
-- 同じ節点間には1本の部材のみ配置（重複禁止）
-- 全ての部材に同じ断面性能（E=205000, I=0.00011, A=0.005245, Z=0.000638）を設定`;
+各柱通りには3本の柱が必要です。各階には4本の梁が必要です。`;
     }
     
     correctionPrompt += `
@@ -3236,10 +3152,8 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
         try {
             console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) ===`);
             
-            // 修正API用のAPI設定（容量制限エラー時に自動切り替え）
-            let API_KEY = process.env.GROQ_API_KEY;
-            let API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-            let apiProvider = 'groq';
+            const API_KEY = process.env.GROQ_API_KEY;
+            const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
             
             // 修正用の最適化されたシステムプロンプト
             const systemPrompt = `2D構造モデル生成。JSON出力のみ。
@@ -3248,32 +3162,22 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 
 基本ルール:
 - 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
-- 節点番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-- 部材番号: 配列順序（1から開始、0は使用禁止、必ず整数）
-- 座標: メートル単位で小数点以下1桁まで、必ず数値型で指定（文字列禁止）
-- 荷重単位: kN（キロニュートン）で指定された場合はそのまま使用、N（ニュートン）の場合は1000で割る
-- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-588×300×12×20"など）
-- 断面性能値は上記の【鋼材】セクションの値を正確に使用
-- H-200×200×8×12の場合: I=0.0472, A=0.006353, Z=0.00472
-- H-588×300×12×20の場合: I=1.14, A=0.01872, Z=0.00389
+- 節点番号: 配列順序（1から開始）
+- 部材番号: 配列順序（1から開始）
+- 座標: メートル単位で小数点以下1桁まで
+- 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"）
 
 重要: 鋼材断面情報が提供されている場合
 - 部材のnameフィールドには「- 指定断面: 」に続く値を使用
 - 柱部材と梁部材で異なる断面を適切に割り当て
-- 部材のI、A、Zの値は提供された断面性能値を正確に使用
-- 断面性能値は【鋼材】セクションに記載されている値をそのまま使用
 
 重要制約:
 - 同じ節点間には1本の部材のみ配置（重複禁止）
 - 節点番号・部材番号は必ず1から開始（配列のインデックス+1）
 - 存在しない節点番号を部材で参照しない`;
 
-            // 修正API用のモデル設定（容量制限エラー時に自動切り替え）
-            let correctionModel = "llama-3.3-70b-versatile";
-            let correctionModelSwitched = false;
-            
             const requestBody = {
-                model: correctionModel,
+                model: "openai/gpt-oss-120b",
                 messages: [
                     { "role": "system", "content": systemPrompt },
                     { "role": "user", "content": correctionPrompt }
@@ -3300,44 +3204,6 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 
             if (!response.ok) {
                 if (response.status === 429 && correctionRetryCount < maxCorrectionRetries) {
-                    console.error(`修正API容量制限エラー検出 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) - 現在のプロバイダー: ${apiProvider}`);
-                    
-                    // まだモデルを切り替えていない場合、llama-3.1-8b-instantに切り替え
-                    if (!correctionModelSwitched && correctionModel === "llama-3.3-70b-versatile") {
-                        console.error('🔄 修正API容量制限のため、モデルをllama-3.1-8b-instantに切り替えます');
-                        correctionModel = "llama-3.1-8b-instant";
-                        correctionModelSwitched = true;
-                        requestBody.model = correctionModel;
-                        
-                        // モデル切り替え後は即座に再試行
-                        correctionRetryCount++;
-                        continue;
-                    }
-                    
-                    // llama-3.1-8b-instantでも容量制限の場合、Mistral APIに切り替え
-                    if (apiProvider === 'groq' && correctionModel === "llama-3.1-8b-instant") {
-                        console.error('🔄 修正API Groq容量制限のため、Mistral APIに切り替えます');
-                        
-                        // Mistral APIに切り替え
-                        const mistralApiKey = process.env.MISTRAL_API_KEY;
-                        if (!mistralApiKey) {
-                            console.error('❌ 修正API用Mistral APIキーが設定されていません');
-                            throw new Error("Mistral APIキーがサーバーに設定されていません。容量制限回避のためMistral APIへの切り替えができません。");
-                        }
-                        
-                        API_KEY = mistralApiKey;
-                        API_URL = 'https://api.mistral.ai/v1/chat/completions';
-                        apiProvider = 'mistral';
-                        correctionModel = "mistral-large-latest";
-                        requestBody.model = correctionModel;
-                        
-                        console.error('✅ 修正API Mistral APIに切り替え完了');
-                        
-                        // API切り替え後は即座に再試行
-                        correctionRetryCount++;
-                        continue;
-                    }
-                    
                     // 容量制限の場合は待機してリトライ
                     const waitTime = 2000 + (correctionRetryCount * 1000);
                     console.error(`修正呼び出し容量制限: ${waitTime}ms待機後にリトライ`);
@@ -3362,18 +3228,13 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
                 throw new Error("修正後のモデルに節点または部材データが不足");
             }
             
-            console.error(`AI修正呼び出し成功 (使用プロバイダー: ${apiProvider}, モデル: ${correctionModel})`);
+            console.error('AI修正呼び出し成功');
             console.error('修正後のモデル:', {
                 nodeCount: correctedModel.nodes.length,
                 memberCount: correctedModel.members.length
             });
             
-            // モデル情報を含めて返す
-            return {
-                ...correctedModel,
-                _usedModel: correctionModel,
-                _usedProvider: apiProvider
-            };
+            return correctedModel;
             
         } catch (error) {
             console.error(`AI修正呼び出しエラー (試行 ${correctionRetryCount + 1}):`, error.message);

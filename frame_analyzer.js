@@ -15201,7 +15201,7 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         const t2Value = getProp('t2', 't2', 't2');
                         
                         // AIから提供された元の断面名を優先
-                        const sectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
+                        const finalSectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
                         
                         // 鋼材タイプからラベルを生成
                         const getTypeLabel = (steelType) => {
@@ -15239,7 +15239,7 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         };
                         
                         return {
-                            sectionName: sectionName,
+                            sectionName: finalSectionName,
                             sectionSpec: steelInfo.spec,
                             sectionType: category,
                             typeLabel: typeLabel,
@@ -15305,7 +15305,7 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         const t2Value = getProp('t2', 't2', 't2');
                         
                         // AIから提供された元の断面名を優先
-                        const sectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
+                        const finalSectionName = steelInfo.spec || (rowData[0] ? String(rowData[0]) : '');
                         
                         // 鋼材タイプからラベルを生成
                         const getTypeLabel = (steelType) => {
@@ -15343,7 +15343,7 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         };
                         
                         return {
-                            sectionName: sectionName,
+                            sectionName: finalSectionName,
                             sectionSpec: steelInfo.spec,
                             sectionType: category,
                             typeLabel: typeLabel,

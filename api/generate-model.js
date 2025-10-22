@@ -477,12 +477,13 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     if (retryCount >= 2) {
         // 3回目以降は極限まで簡潔
         let simplePrompt = `2D構造生成。JSON出力のみ。
-{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
+{"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称", "i_conn": "接合", "j_conn": "接合"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 境界条件: "f","p","r","x"
 節点番号: 配列順序（1から開始）
 部材番号: 配列順序（1から開始）
 部材name: 指定された断面名称（例: "H-200×100×8×12"）
-材料: デフォルトE=205000MPa、材料変更時は指示に従う（1GPa=1000MPa）`;
+材料: デフォルトE=205000MPa、材料変更時は指示に従う（1GPa=1000MPa）
+部材接合: ラーメンは"rigid"、トラスは"pin"（両端）`;
 
         // 鋼材情報が提供されているかチェック
         const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
@@ -552,7 +553,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
     // 通常のプロンプト
     let prompt = `2D構造モデル生成。JSON出力のみ。
 
-形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
+形式: {"nodes": [{"x": X, "y": Y, "s": 境界条件}], "members": [{"i": 始点, "j": 終点, "E": 205000, "I": 0.00011, "A": 0.005245, "Z": 0.000638, "name": "断面名称", "i_conn": "接合条件i", "j_conn": "接合条件j"}], "nodeLoads": [{"n": 節点番号, "fx": 水平力, "fy": 鉛直力}], "memberLoads": [{"m": 部材番号, "q": 等分布荷重}]}
 
 基本ルール:
 - 境界条件: "f"(自由), "p"(ピン), "r"(ローラー), "x"(固定)
@@ -563,6 +564,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
   - 材料変更の指示がある場合は、指示に従ってE（弾性係数）を変更してください
   - 単位変換: 1GPa = 1000MPa（例：193GPa = 193000MPa）
 - 部材name: 指定された断面名称を必ず含める（例: "H-200×100×8×12"、"H-300×150"など）
+- 部材接合条件:
+  * ラーメン構造: i_conn="rigid", j_conn="rigid"（剛接合）
+  * トラス構造: i_conn="pin", j_conn="pin"（ピン接合、**必須**）
+  * 梁構造: i_conn="rigid", j_conn="rigid"（剛接合）
 
 重要制約:
 - 同じ節点間には1本の部材のみ配置（重複禁止）

@@ -79,6 +79,7 @@ export default async function handler(req, res) {
                 clearTimeout(timeoutId);
                 data = await groqResponse.json();
                 console.error('AIレスポンス受信: ステータス=', groqResponse.status);
+                console.error('AIレスポンス詳細:', JSON.stringify(data, null, 2));
 
                 // 成功した場合はループを抜ける
                 if (groqResponse.ok) {
@@ -108,7 +109,7 @@ export default async function handler(req, res) {
                 }
                 
                 // その他のエラーは記録してスロー
-                lastError = new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                lastError = new Error(data.message || 'Groq AIでエラーが発生しました。');
                 throw lastError;
                 
             } catch (error) {

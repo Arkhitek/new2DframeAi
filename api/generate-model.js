@@ -21,12 +21,12 @@ export default async function handler(req, res) {
             return;
         }
 
-        const API_KEY = process.env.MISTRAL_API_KEY;
+        const API_KEY = process.env.GROQ_API_KEY;
         if (!API_KEY) {
-            throw new Error("Mistral AIのAPIキーがサーバーに設定されていません。");
+            throw new Error("Groq AIのAPIキーがサーバーに設定されていません。");
         }
         
-        const API_URL = 'https://api.mistral.ai/v1/chat/completions';
+        const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
         
         // retryCount変数を先に定義
         let retryCount = 0;
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
         }
 
         const requestBody = {
-            model: "mistral-large-latest",
+            model: "llama-3.1-70b-versatile",
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
         };
 
         // 最適化されたリトライ機能付きAI呼び出し
-        let mistralResponse;
+        let groqResponse;
         let data;
         const maxRetries = 3; // リトライ回数を3回に最適化
         let lastError = null;
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒タイムアウト
                 
-                mistralResponse = await fetch(API_URL, {
+                groqResponse = await fetch(API_URL, {
             method: 'POST',
             headers: { 
                 'Authorization': `Bearer ${API_KEY}`,
@@ -77,17 +77,17 @@ export default async function handler(req, res) {
                 });
                 
                 clearTimeout(timeoutId);
-                data = await mistralResponse.json();
-                console.error('AIレスポンス受信: ステータス=', mistralResponse.status);
+                data = await groqResponse.json();
+                console.error('AIレスポンス受信: ステータス=', groqResponse.status);
 
                 // 成功した場合はループを抜ける
-                if (mistralResponse.ok) {
+                if (groqResponse.ok) {
                     console.error(`✅ AI呼び出し成功 (${retryCount + 1}回目)`);
                     break;
                 }
                 
                 // 容量制限エラーの場合
-                if (mistralResponse.status === 429 && data.code === '3505') {
+                if (groqResponse.status === 429) {
                     console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
                     
                     if (retryCount < maxRetries) {
@@ -3152,8 +3152,8 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
         try {
             console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) ===`);
             
-            const API_KEY = process.env.MISTRAL_API_KEY;
-            const API_URL = 'https://api.mistral.ai/v1/chat/completions';
+            const API_KEY = process.env.GROQ_API_KEY;
+            const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
             
             // 修正用の最適化されたシステムプロンプト
             const systemPrompt = `2D構造モデル生成。JSON出力のみ。
@@ -3177,7 +3177,7 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 - 存在しない節点番号を部材で参照しない`;
 
             const requestBody = {
-                model: "mistral-large-latest",
+                model: "llama-3.1-70b-versatile",
                 messages: [
                     { "role": "system", "content": systemPrompt },
                     { "role": "user", "content": correctionPrompt }

@@ -1835,13 +1835,26 @@ function preserveLoadData(originalModel, generatedModel, userPrompt) {
         memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
     });
     
-    // 荷重削除の指示がある場合、AIの生成結果を確認して強制削除
+    // 荷重削除の指示がある場合、AIの生成結果を確認
     if (hasLoadDeleteIntent) {
         console.error('荷重削除の指示が検出されました');
         
-        // 「全て削除」と指示があるのに荷重が残っている場合は強制削除
-        if (userPrompt.includes('全て削除') || userPrompt.includes('すべて削除')) {
-            console.error('「全て削除」の指示があるため、荷重を強制的に削除します');
+        // 「新たに設定」「新しい」などの新規荷重設定の指示を検出
+        const newLoadKeywords = /新た.*設定|新.*荷重|新規.*荷重|屋根荷重|床荷重|new.*load/i;
+        const hasNewLoadInstruction = newLoadKeywords.test(userPrompt);
+        
+        if (hasNewLoadInstruction) {
+            // 「全て削除」+「新たに設定」の場合は、AIが生成した新しい荷重を尊重
+            console.error('「全て削除」+「新しい荷重設定」の指示が検出されました。AIが生成した新しい荷重を尊重します。');
+            console.error('AI生成荷重:', {
+                nodeLoads: generatedModel.nodeLoads ? generatedModel.nodeLoads.length : 0,
+                memberLoads: generatedModel.memberLoads ? generatedModel.memberLoads.length : 0
+            });
+            console.error('=== 荷重データ保持処理完了（AI生成を尊重） ===');
+            return generatedModel;
+        } else if (userPrompt.includes('全て削除') || userPrompt.includes('すべて削除')) {
+            // 「全て削除」のみで新しい荷重の指示がない場合は強制削除
+            console.error('「全て削除」のみの指示があるため、荷重を強制的に削除します');
             const cleanedModel = JSON.parse(JSON.stringify(generatedModel));
             cleanedModel.nodeLoads = [];
             cleanedModel.memberLoads = [];

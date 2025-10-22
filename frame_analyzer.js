@@ -15153,19 +15153,34 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     if (steelType.startsWith('hkatakou') && spec) {
         console.log('🔍 H形鋼の正確な断面名で検索:', spec);
         
+        // AIから提供された断面名から寸法を抽出（例: "H-200×200×8×12" → "200×200"）
+        let targetDimensions = '';
+        if (spec.startsWith('H-')) {
+            // "H-200×200×8×12" → "200×200"
+            const parts = spec.substring(2).split('×');
+            if (parts.length >= 2) {
+                targetDimensions = `${parts[0]}×${parts[1]}`;
+            }
+        } else {
+            // 既に寸法のみの形式の場合
+            targetDimensions = spec;
+        }
+        
+        console.log('🔍 抽出された寸法:', targetDimensions);
+        
         // 全てのH形鋼カテゴリを検索
         const hBeamCategories = ['hkatakou_hiro', 'hkatakou_naka', 'hkatakou_hoso'];
         
         for (const category of hBeamCategories) {
             if (window.steelData[category]) {
-                console.log(`🔍 ${category} で断面名 "${spec}" を検索`);
+                console.log(`🔍 ${category} で断面名 "${targetDimensions}" を検索`);
                 
                 for (let i = 0; i < window.steelData[category].data.length; i++) {
                     const rowData = window.steelData[category].data[i];
                     const sectionName = rowData[0] ? String(rowData[0]) : '';
                     
-                    // 断面名が完全一致する場合
-                    if (sectionName === spec) {
+                    // 断面名が完全一致する場合（寸法のみで比較）
+                    if (sectionName === targetDimensions) {
                         console.log(`✅ 正確な断面名で発見: ${category} - ${sectionName}`);
                         
                         const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);
@@ -15268,8 +15283,8 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         };
                     }
                     
-                    // 断面名に含まれる場合（部分一致）
-                    if (sectionName.includes(spec) || spec.includes(sectionName)) {
+                    // 断面名に含まれる場合（部分一致）- 抽出された寸法を使用
+                    if (sectionName.includes(targetDimensions) || targetDimensions.includes(sectionName)) {
                         console.log(`🔍 部分一致発見: ${category} - ${sectionName}`);
                         
                         const rowDims = getDimensionsFromRow(category, rowData, window.steelData[category].headers);

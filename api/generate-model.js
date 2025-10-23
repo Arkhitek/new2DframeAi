@@ -55,9 +55,17 @@ export default async function handler(req, res) {
         const systemPrompt = createSystemPromptForBackend(mode, currentModel, userPrompt, retryCount);
         
         // 追加編集モードの場合は現在のモデル情報を含めてプロンプトを作成
+
+        // プロンプトが短い場合は自動で「JSON形式で出力してください」を付加
         let userMessage = userPrompt;
         if (mode === 'edit' && currentModel) {
             userMessage = createEditPrompt(userPrompt, currentModel);
+        } else {
+            // 20文字以下かつ「JSON」や「節点」などが含まれていない場合のみ付加
+            const mustAppend = userPrompt.length <= 20 && !/json|JSON|節点|部材|出力|構成|形式/.test(userPrompt);
+            if (mustAppend) {
+                userMessage = userPrompt.trim().replace(/[。.]?$/, '') + '。節点・部材をJSON形式で出力してください。';
+            }
         }
 
         const requestBody = {

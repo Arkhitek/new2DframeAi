@@ -514,7 +514,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
                 simplePrompt += `
 重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦と下弦の節点は同じx座標。垂直材必須（同じx座標の下弦→上弦）`;
                 if (trussType === 'pratt') {
-                    simplePrompt += `。プラット: 斜材は中央で反転（左半分は中央向き、右半分は外向き）`;
+                    simplePrompt += `。プラット: 斜材は中央で反転（左半分は中央向き下向き∧、右半分は外側向き下向き∧）`;
+                } else if (trussType === 'howe') {
+                    simplePrompt += `。ハウ: 斜材は外側向きV字形状（7→2, 8→3, 9→4, 10→5）`;
                 } else if (trussType === 'pennsylvania') {
                     simplePrompt += `。ペンシルヴァニア: サブダイアゴナル追加`;
                 } else if (trussType === 'baltimore') {
@@ -524,7 +526,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
                 }
             } else if (trussType === 'warren' || trussType === 'curvedwarren') {
                 simplePrompt += `
-重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦節点は下弦節点の中間位置。**垂直材絶対禁止**、斜材のみ。同じx座標の節点同士を接続しない`;
+重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦節点は下弦節点の中間位置。**垂直材絶対禁止**、斜材のみ。同じx座標の節点同士を接続しない。上弦と下弦のx座標は必ず異なる`;
                 if (trussType === 'curvedwarren') {
                     simplePrompt += `。曲弦: 上弦y座標は放物線`;
                 }
@@ -710,8 +712,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 3. 上弦材の節点は下弦材の節点の中間位置に配置
 
 **重要な制約**:
-- **垂直材禁止**: 同じx座標の節点同士を接続する部材は配置しない
+- **垂直材絶対禁止**: 同じx座標の節点同士を接続する部材は絶対に配置しない
 - **斜材のみ**: 全ての部材は異なるx座標の節点を接続する
+- **上弦と下弦のx座標は必ず異なる**: 上弦節点は下弦節点の中間位置に配置
+
+**絶対に守るべきルール**:
+- 同じx座標の節点同士を接続する部材は一切配置しない
+- 上弦材と下弦材の節点は必ず異なるx座標に配置する
+- 斜材のみでW字形状を形成する
 
 節点配置:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3.75, 7.5, 11.25, 15）
@@ -735,7 +743,11 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 斜材（上向き）: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
 - 斜材（下向き）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
 
-**重要**: トラス構造では全ての部材がi_conn="pin", j_conn="pin"（ピン接合）である必要があります。`;
+**確認**: 
+- 垂直材が一切含まれていない（同じx座標の節点同士を接続する部材なし）
+- 上弦と下弦の節点のx座標が異なっている
+- 斜材のみでW字形状を形成している
+- 全ての部材がピン接合（i_conn="pin", j_conn="pin"）`;
             
         } else if (trussType === 'pratt') {
             prompt += `**プラットトラス（Pratt Truss）**の特徴:
@@ -744,6 +756,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 3. 上弦材と下弦材の節点位置は一致（同じx座標）
 
 **重要**: プラットトラスでは垂直材が必須で、斜材は中央を境に向きが反転します。
+**斜材の向きの詳細**:
+- 左半分の斜材: 上弦から下弦へ、中央方向に向かって下向き（∧形状）
+- 右半分の斜材: 上弦から下弦へ、外側方向に向かって下向き（∧形状）
+- 中央（x=6）を境に、斜材の向きが反転する
 
 節点配置の詳細:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
@@ -761,12 +777,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
    - 節点3→8（x=6の中央垂直材）
    - 節点4→9（x=9の垂直材）
 4. **斜材（6本、中央で反転）**: 
-   **左半分（中央に向かって下向き）:**
-   - 節点6→2（上弦左端から下弦2へ、右下がり）
-   - 節点7→3（上弦から下弦中央へ、右下がり）
-   **右半分（中央から外に向かって下向き）:**
-   - 節点8→4（上弦中央から下弦へ、右下がり）
-   - 節点9→5（上弦から下弦右端へ、右下がり）
+   **左半分（中央に向かって下向き∧）:**
+   - 節点6→2（上弦左端から下弦2へ、中央向き下向き）
+   - 節点7→3（上弦から下弦中央へ、中央向き下向き）
+   **右半分（中央から外に向かって下向き∧）:**
+   - 節点8→4（上弦中央から下弦へ、外側向き下向き）
+   - 節点9→5（上弦から下弦右端へ、外側向き下向き）
    **端部斜材:**
    - 節点1→6（下弦左端から上弦左端へ、右上がり）
    - 節点5→10（下弦右端から上弦右端へ、左上がり）
@@ -787,7 +803,9 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 
 **確認**: 
 - 垂直材（2→7, 3→8, 4→9）が必ず含まれている
-- 斜材が中央（x=6）を境に向きが反転している（左：6→2, 7→3、右：8→4, 9→5）
+- 斜材が中央（x=6）を境に向きが反転している
+  * 左半分: 6→2, 7→3（中央向き下向き∧）
+  * 右半分: 8→4, 9→5（外側向き下向き∧）
 - 全ての部材がピン接合（i_conn="pin", j_conn="pin"）`;
             
         } else if (trussType === 'howe') {
@@ -798,6 +816,10 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 4. プラットトラスの逆パターン（垂直材と斜材の位置が逆）
 
 **重要**: ハウトラスでは垂直材が必須です。プラットトラスとは逆に配置してください。
+**斜材の向きの詳細**:
+- 主要斜材: 上弦から下弦へ、外側方向に向かって下向き（V字形状）
+- 端部斜材: 下弦から上弦へ、右上がり
+- プラットトラスとは逆の斜材パターン（外側向き vs 中央向き）
 
 節点配置の詳細:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
@@ -813,13 +835,15 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
    - 節点1→6（x=0の垂直材）
    - 節点2→7（x=3の垂直材）
    - 節点3→8（x=6の垂直材）
-4. **斜材（6本）**: 上弦の節点から左下の下弦の節点へ下向き
-   - 節点7→2（左から1番目の斜材、逆向き）
-   - 節点8→3（左から2番目の斜材、逆向き）
-   - 節点9→4（左から3番目の斜材、逆向き）
-   - 節点10→5（左から4番目の斜材、逆向き）
-   - 節点4→9（右から2番目の端部斜材）
-   - 節点5→10（右端部の斜材）
+4. **斜材（6本）**: 上弦から下弦へ、外側向きに下向き（V字形状）
+   **主要斜材（4本）:**
+   - 節点7→2（上弦から下弦へ、外側向き下向き）
+   - 節点8→3（上弦から下弦へ、外側向き下向き）
+   - 節点9→4（上弦から下弦へ、外側向き下向き）
+   - 節点10→5（上弦から下弦へ、外側向き下向き）
+   **端部斜材（2本）:**
+   - 節点4→9（下弦から上弦へ、右上がり）
+   - 節点5→10（下弦から上弦へ、右上がり）
 
 例: 高さ3m、スパン12mのハウトラス（4パネル）
 節点（10個）:
@@ -832,7 +856,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 3. 垂直材（3本、必須）: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}
 4. 斜材（6本）: {"i":7,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":10,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
 
-**確認**: 垂直材（1→6, 2→7, 3→8）が必ず含まれ、全ての部材がピン接合（i_conn="pin", j_conn="pin"）であることを確認してください。`;
+**確認**: 
+- 垂直材（1→6, 2→7, 3→8）が必ず含まれている
+- 斜材がハウトラスパターン（外側向きV字形状）になっている
+  * 主要斜材: 7→2, 8→3, 9→4, 10→5（外側向き下向きV）
+  * 端部斜材: 4→9, 5→10（右上がり）
+- 全ての部材がピン接合（i_conn="pin", j_conn="pin"）`;
             
         } else if (trussType === 'k') {
             prompt += `**K型トラス（K Truss）**の特徴:
@@ -1430,7 +1459,7 @@ function detectTrussType(userPrompt) {
     }
     
     // ワーレントラスのキーワード
-    const warrenKeywords = ['ワーレン', 'warren', 'w字', 'wパターン', 'ジグザグ'];
+    const warrenKeywords = ['ワーレン', 'warren', 'w字', 'wパターン', 'ジグザグ', '斜材のみ', '垂直材なし'];
     if (warrenKeywords.some(keyword => prompt.includes(keyword))) {
         console.error('ワーレントラス形式を検出');
         return 'warren';

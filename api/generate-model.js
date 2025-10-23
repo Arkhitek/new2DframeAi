@@ -4915,41 +4915,50 @@ function validateAndFixMemberOverlap(model) {
                 // 重複部材の中で、斜材（異なるx座標、異なるy座標）を優先的に保持
                 const indicesToRemove = [];
                 
+                // ハウトラス必須斜材ペア
+                const howeDiagonalPairs = [
+                    [7,2],[8,3],[9,4],[10,5],
+                    [2,7],[3,8],[4,9],[5,10]
+                ];
+                function isHoweDiagonal(i, j) {
+                    return howeDiagonalPairs.some(pair => (i === pair[0] && j === pair[1]));
+                }
                 duplicateMembers.forEach(duplicate => {
                     const member = duplicate.member;
                     const duplicateWith = duplicate.duplicateWith.member;
-                    
+                    // 必須斜材なら絶対に削除しない
+                    if (isHoweDiagonal(member.i, member.j)) {
+                        console.error(`ハウトラス必須斜材(${member.i}->${member.j})は絶対に削除しない`);
+                        return;
+                    }
+                    if (isHoweDiagonal(duplicateWith.i, duplicateWith.j)) {
+                        console.error(`ハウトラス必須斜材(${duplicateWith.i}->${duplicateWith.j})は絶対に削除しない`);
+                        return;
+                    }
                     // 節点の座標を取得
                     const startNode = fixedModel.nodes[member.i - 1];
                     const endNode = fixedModel.nodes[member.j - 1];
                     const duplicateStartNode = fixedModel.nodes[duplicateWith.i - 1];
                     const duplicateEndNode = fixedModel.nodes[duplicateWith.j - 1];
-                    
                     if (startNode && endNode && duplicateStartNode && duplicateEndNode) {
                         const tolerance = 0.1;
-                        
                         // 斜材かどうかを判定（異なるx座標、異なるy座標）
                         const isDiagonal = Math.abs(startNode.x - endNode.x) > tolerance && 
                                           Math.abs(startNode.y - endNode.y) > tolerance;
                         const isDuplicateDiagonal = Math.abs(duplicateStartNode.x - duplicateEndNode.x) > tolerance && 
                                                    Math.abs(duplicateStartNode.y - duplicateEndNode.y) > tolerance;
-                        
                         // 斜材を優先的に保持
                         if (isDiagonal && !isDuplicateDiagonal) {
-                            // 現在の部材が斜材で、重複相手が斜材でない場合、重複相手を削除
                             indicesToRemove.push(duplicate.duplicateWith.index);
                             console.error(`斜材を保持、重複相手を削除: 部材${duplicate.duplicateWith.index + 1}`);
                         } else if (!isDiagonal && isDuplicateDiagonal) {
-                            // 現在の部材が斜材でなく、重複相手が斜材の場合、現在の部材を削除
                             indicesToRemove.push(duplicate.index);
                             console.error(`斜材を保持、現在の部材を削除: 部材${duplicate.index + 1}`);
                         } else {
-                            // 両方とも斜材または両方とも斜材でない場合、後から追加された方を削除
                             indicesToRemove.push(duplicate.index);
                             console.error(`後から追加された部材を削除: 部材${duplicate.index + 1}`);
                         }
                     } else {
-                        // 座標が取得できない場合、後から追加された方を削除
                         indicesToRemove.push(duplicate.index);
                         console.error(`座標取得失敗、後から追加された部材を削除: 部材${duplicate.index + 1}`);
                     }

@@ -3732,15 +3732,10 @@ JSON形式で出力してください。`;
 1. **下弦材（4本）**: 下弦の節点を順に接続
 2. **上弦材（4本）**: 上弦の節点を順に接続
 3. **垂直材（3本、必須）**: 同じx座標の下弦→上弦を垂直接続
-4. **斜材（6本）**: 上弦から下弦へ、外側向きに下向き（V字形状）
-   **主要斜材（4本）:**
-   - 節点7→2（上弦から下弦へ、外側向き下向き）
-   - 節点8→3（上弦から下弦へ、外側向き下向き）
+4. **斜材（2本）**: 上弦から下弦へ、外側向きに下向き（V字形状）
+   **斜材（2本、重複なし）:**
    - 節点9→4（上弦から下弦へ、外側向き下向き）
    - 節点10→5（上弦から下弦へ、外側向き下向き）
-   **端部斜材（2本）:**
-   - 節点4→9（下弦から上弦へ、右上がり）
-   - 節点5→10（下弦から上弦へ、右上がり）
 
 例: 高さ${height}m、スパン${spanLength}mのハウトラス（4パネル）
 節点（10個）:
@@ -4641,15 +4636,74 @@ function validateAndFixMemberOverlap(model) {
         if (duplicateMembers.length > 0) {
             console.error(`重複部材を検出: ${duplicateMembers.length}個`);
             
-            // 重複部材のインデックスを降順でソート（後ろから削除）
-            const indicesToRemove = duplicateMembers.map(d => d.index).sort((a, b) => b - a);
-            
-            indicesToRemove.forEach(index => {
-                console.error(`重複部材${index + 1}を削除: 節点${fixedModel.members[index].i}-${fixedModel.members[index].j}`);
-                fixedModel.members.splice(index, 1);
-            });
-            
-            console.error(`重複部材削除完了: ${indicesToRemove.length}個の部材を削除`);
+            // ハウトラスの場合、斜材を優先的に保持する
+            const trussType = detectTrussType(JSON.stringify(model));
+            if (trussType === 'howe') {
+                console.error('ハウトラス検出: 斜材を優先的に保持');
+                
+                // 重複部材の中で、斜材（異なるx座標、異なるy座標）を優先的に保持
+                const indicesToRemove = [];
+                
+                duplicateMembers.forEach(duplicate => {
+                    const member = duplicate.member;
+                    const duplicateWith = duplicate.duplicateWith.member;
+                    
+                    // 節点の座標を取得
+                    const startNode = fixedModel.nodes[member.i - 1];
+                    const endNode = fixedModel.nodes[member.j - 1];
+                    const duplicateStartNode = fixedModel.nodes[duplicateWith.i - 1];
+                    const duplicateEndNode = fixedModel.nodes[duplicateWith.j - 1];
+                    
+                    if (startNode && endNode && duplicateStartNode && duplicateEndNode) {
+                        const tolerance = 0.1;
+                        
+                        // 斜材かどうかを判定（異なるx座標、異なるy座標）
+                        const isDiagonal = Math.abs(startNode.x - endNode.x) > tolerance && 
+                                          Math.abs(startNode.y - endNode.y) > tolerance;
+                        const isDuplicateDiagonal = Math.abs(duplicateStartNode.x - duplicateEndNode.x) > tolerance && 
+                                                   Math.abs(duplicateStartNode.y - duplicateEndNode.y) > tolerance;
+                        
+                        // 斜材を優先的に保持
+                        if (isDiagonal && !isDuplicateDiagonal) {
+                            // 現在の部材が斜材で、重複相手が斜材でない場合、重複相手を削除
+                            indicesToRemove.push(duplicate.duplicateWith.index);
+                            console.error(`斜材を保持、重複相手を削除: 部材${duplicate.duplicateWith.index + 1}`);
+                        } else if (!isDiagonal && isDuplicateDiagonal) {
+                            // 現在の部材が斜材でなく、重複相手が斜材の場合、現在の部材を削除
+                            indicesToRemove.push(duplicate.index);
+                            console.error(`斜材を保持、現在の部材を削除: 部材${duplicate.index + 1}`);
+                        } else {
+                            // 両方とも斜材または両方とも斜材でない場合、後から追加された方を削除
+                            indicesToRemove.push(duplicate.index);
+                            console.error(`後から追加された部材を削除: 部材${duplicate.index + 1}`);
+                        }
+                    } else {
+                        // 座標が取得できない場合、後から追加された方を削除
+                        indicesToRemove.push(duplicate.index);
+                        console.error(`座標取得失敗、後から追加された部材を削除: 部材${duplicate.index + 1}`);
+                    }
+                });
+                
+                // 重複部材のインデックスを降順でソート（後ろから削除）
+                const sortedIndicesToRemove = indicesToRemove.sort((a, b) => b - a);
+                
+                sortedIndicesToRemove.forEach(index => {
+                    console.error(`重複部材${index + 1}を削除: 節点${fixedModel.members[index].i}-${fixedModel.members[index].j}`);
+                    fixedModel.members.splice(index, 1);
+                });
+                
+                console.error(`ハウトラス重複部材削除完了: ${sortedIndicesToRemove.length}個の部材を削除`);
+            } else {
+                // 通常の重複部材削除（後から追加された方を削除）
+                const indicesToRemove = duplicateMembers.map(d => d.index).sort((a, b) => b - a);
+                
+                indicesToRemove.forEach(index => {
+                    console.error(`重複部材${index + 1}を削除: 節点${fixedModel.members[index].i}-${fixedModel.members[index].j}`);
+                    fixedModel.members.splice(index, 1);
+                });
+                
+                console.error(`重複部材削除完了: ${indicesToRemove.length}個の部材を削除`);
+            }
         }
         
         // 部材荷重の参照も修正

@@ -4802,6 +4802,13 @@ function validateTrussStructure(model, userPrompt) {
 
 // 部材重複検出・修正関数
 function validateAndFixMemberOverlap(model) {
+        // --- トラスの場合は全membersのi_conn/j_connを必ず'pin'に強制 ---
+        if (detectTrussType(JSON.stringify(model))) {
+            for (const m of fixedModel.members) {
+                m.i_conn = 'pin';
+                m.j_conn = 'pin';
+            }
+        }
         // --- 斜材ペアがなければ必ず追加 ---
         // ハウトラス斜材ペア（7→2,8→3,9→4,10→5）
         const howeDiagonalPairs = [
@@ -4921,18 +4928,19 @@ function validateAndFixMemberOverlap(model) {
                     [2,7],[3,8],[4,9],[5,10]
                 ];
                 function isHoweDiagonal(i, j) {
-                    return howeDiagonalPairs.some(pair => (i === pair[0] && j === pair[1]));
+                    // 必須斜材ペア（7→2,8→3,9→4,10→5,および逆順）
+                    const mustPairs = [
+                        [7,2],[8,3],[9,4],[10,5],
+                        [2,7],[3,8],[4,9],[5,10]
+                    ];
+                    return mustPairs.some(pair => (i === pair[0] && j === pair[1]));
                 }
                 duplicateMembers.forEach(duplicate => {
                     const member = duplicate.member;
                     const duplicateWith = duplicate.duplicateWith.member;
-                    // 必須斜材なら絶対に削除しない
-                    if (isHoweDiagonal(member.i, member.j)) {
-                        console.error(`ハウトラス必須斜材(${member.i}->${member.j})は絶対に削除しない`);
-                        return;
-                    }
-                    if (isHoweDiagonal(duplicateWith.i, duplicateWith.j)) {
-                        console.error(`ハウトラス必須斜材(${duplicateWith.i}->${duplicateWith.j})は絶対に削除しない`);
+                    // 必須斜材なら絶対に削除しない（どちらかが必須斜材なら両方残す）
+                    if (isHoweDiagonal(member.i, member.j) || isHoweDiagonal(duplicateWith.i, duplicateWith.j)) {
+                        console.error(`ハウトラス必須斜材(${member.i}->${member.j} または ${duplicateWith.i}->${duplicateWith.j})は絶対に削除しない`);
                         return;
                     }
                     // 節点の座標を取得

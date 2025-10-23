@@ -47,8 +47,7 @@ export default async function handler(req, res) {
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
-            ],
-            response_format: { "type": "json_object" }
+            ]
         };
 
         // 最適化されたリトライ機能付きAI呼び出し

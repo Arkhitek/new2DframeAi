@@ -4986,11 +4986,35 @@ function validateAndFixMemberOverlap(model) {
             }
         }
         
+        // --- 重複削除後に必須斜材が1本もなければ必ず追加 ---
+        const howeDiagonalPairsFinal = [
+            [7,2],[8,3],[9,4],[10,5]
+        ];
+        if (detectTrussType(JSON.stringify(model)) === 'howe') {
+            howeDiagonalPairsFinal.forEach(pair => {
+                const exists = fixedModel.members.some(m =>
+                    (m.i === pair[0] && m.j === pair[1]) || (m.i === pair[1] && m.j === pair[0])
+                );
+                if (!exists) {
+                    fixedModel.members.push({
+                        i: pair[0],
+                        j: pair[1],
+                        E: 205000,
+                        I: 0.00011,
+                        A: 0.005245,
+                        Z: 0.000638,
+                        name: "H-200x100x8x12",
+                        i_conn: "pin",
+                        j_conn: "pin"
+                    });
+                    console.error(`重複削除後に必須斜材(${pair[0]}→${pair[1]})がなかったため追加`);
+                }
+            });
+        }
         // 部材荷重の参照も修正
         if (fixedModel.memberLoads && Array.isArray(fixedModel.memberLoads)) {
             // 削除された部材の荷重を除去
             const validMemberIndices = new Set(fixedModel.members.map((_, index) => index + 1));
-            
             fixedModel.memberLoads = fixedModel.memberLoads.filter(load => {
                 const memberIndex = load.m || load.member;
                 if (validMemberIndices.has(memberIndex)) {

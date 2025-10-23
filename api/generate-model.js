@@ -23,12 +23,13 @@ export default async function handler(req, res) {
 
         const API_KEY1 = process.env.GROQ_API_KEY1;
         const API_KEY2 = process.env.GROQ_API_KEY2;
-        if (!API_KEY1 && !API_KEY2) {
+        const API_KEY3 = process.env.GROQ_API_KEY3;
+        if (!API_KEY1 && !API_KEY2 && !API_KEY3) {
             throw new Error("Groq AIのAPIキーがサーバーに設定されていません。");
         }
         const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
         let retryCount = 0;
-        let useSecondKey = false;
+        let keyIndex = 0; // 0:KEY1, 1:KEY2, 2:KEY3
         
         // 構造の次元を事前に検出（検証時に再利用）
         const detectedDimensions = detectStructureDimensions(userPrompt, mode === 'edit' ? currentModel : null);
@@ -50,12 +51,26 @@ export default async function handler(req, res) {
             ]
         };
 
+        // 現在のAPIキーを取得する関数
+        function getCurrentApiKey() {
+            if (keyIndex === 0) return API_KEY1;
+            if (keyIndex === 1) return API_KEY2;
+            if (keyIndex === 2) return API_KEY3;
+            return null;
+        }
+        // 現在のAPIキー名
+        function getCurrentApiKeyName() {
+            if (keyIndex === 0) return 'GROQ_API_KEY1';
+            if (keyIndex === 1) return 'GROQ_API_KEY2';
+            if (keyIndex === 2) return 'GROQ_API_KEY3';
+            return 'UNKNOWN_KEY';
+        }
         // GROQリクエスト送信内容を詳細にログ出力
         console.error('[GROQリクエスト送信内容]', {
             url: API_URL,
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${(useSecondKey ? API_KEY2 : API_KEY1)?.slice(0, 8) + '...'}`
+                'Authorization': `Bearer ${getCurrentApiKey()?.slice(0, 8) + '...'}`
             },
             body: requestBody
         });
@@ -68,11 +83,11 @@ export default async function handler(req, res) {
         
         while (retryCount <= maxRetries) {
             try {
-                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} (APIキー: ${useSecondKey ? 'GROQ_API_KEY2' : 'GROQ_API_KEY1'})`);
+                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} (APIキー: ${getCurrentApiKeyName()})`);
                 // タイムアウト設定を追加
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒タイムアウト
-                const apiKeyToUse = useSecondKey ? API_KEY2 : API_KEY1;
+                const apiKeyToUse = getCurrentApiKey();
                 groqResponse = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 
@@ -111,10 +126,15 @@ export default async function handler(req, res) {
                 // 容量制限エラーの場合
                 if (groqResponse.status === 429) {
                     console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
-                    // 1回目のAPIキーで容量制限なら2つ目のキーで再試行
-                    if (!useSecondKey && API_KEY2) {
+                    // 1つ目→2つ目→3つ目のAPIキーで順次再試行
+                    if (keyIndex === 0 && API_KEY2) {
                         console.error('GROQ_API_KEY1で容量制限。GROQ_API_KEY2で再試行します。');
-                        useSecondKey = true;
+                        keyIndex = 1;
+                        retryCount++;
+                        continue;
+                    } else if (keyIndex === 1 && API_KEY3) {
+                        console.error('GROQ_API_KEY2で容量制限。GROQ_API_KEY3で再試行します。');
+                        keyIndex = 2;
                         retryCount++;
                         continue;
                     }
@@ -195,11 +215,22 @@ export default async function handler(req, res) {
         const generatedText = data.choices[0].message.content;
         console.error('AI生成テキスト受信:', generatedText.substring(0, 100) + '...');
 
+        // コードブロック（```json ... ```）を除去
+        let cleanedText = generatedText.trim();
+        if (cleanedText.startsWith('```json')) {
+            cleanedText = cleanedText.replace(/^```json[\r\n]*/i, '');
+        }
+        if (cleanedText.startsWith('```')) {
+            cleanedText = cleanedText.replace(/^```[\r\n]*/i, '');
+        }
+        if (cleanedText.endsWith('```')) {
+            cleanedText = cleanedText.replace(/```\s*$/i, '');
+        }
         // 生成されたモデルの検証と修正
-        let finalGeneratedText = generatedText;
+        let finalGeneratedText = cleanedText;
         
         try {
-            let generatedModel = JSON.parse(generatedText);
+            let generatedModel = JSON.parse(cleanedText);
             
             // 編集モードの場合、境界条件を保持
                     if (mode === 'edit' && currentModel) {

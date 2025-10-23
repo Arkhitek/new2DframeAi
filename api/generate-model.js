@@ -4819,17 +4819,25 @@ function validateAndFixMemberOverlap(model) {
             const n1 = nodes[member.i - 1];
             const n2 = nodes[member.j - 1];
             if (!n1 || !n2) return 'unknown';
-            const tolerance = 0.01; // より厳密に
-            // 上弦節点(6-10)→下弦節点(1-5)のペアは必ず斜材扱い
+            const tolerance = 0.01;
+            // ハウトラス斜材ペア（7-2,8-3,9-4,10-5,および逆順）は必ずdiagonal
+            const howeDiagonals = [
+                [7,2],[8,3],[9,4],[10,5],
+                [2,7],[3,8],[4,9],[5,10]
+            ];
+            for (const pair of howeDiagonals) {
+                if ((member.i === pair[0] && member.j === pair[1]) || (member.i === pair[1] && member.j === pair[0])) {
+                    return 'diagonal';
+                }
+            }
+            // 上弦節点(6-10)→下弦節点(1-5)のペアは、x座標が完全一致かつy座標が異なる場合のみvertical
             if (
                 ((member.i >= 6 && member.i <= 10) && (member.j >= 1 && member.j <= 5)) ||
                 ((member.j >= 6 && member.j <= 10) && (member.i >= 1 && member.i <= 5))
             ) {
-                // ただしx座標が完全一致かつy座標が異なる場合は垂直材
                 if (Math.abs(n1.x - n2.x) <= tolerance && Math.abs(n1.y - n2.y) > tolerance) {
                     return 'vertical';
                 }
-                // それ以外は斜材
                 return 'diagonal';
             }
             if (Math.abs(n1.x - n2.x) <= tolerance && Math.abs(n1.y - n2.y) > tolerance) {

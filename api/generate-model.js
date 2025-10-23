@@ -4802,6 +4802,35 @@ function validateTrussStructure(model, userPrompt) {
 
 // 部材重複検出・修正関数
 function validateAndFixMemberOverlap(model) {
+        // --- 斜材ペアがなければ必ず追加 ---
+        // ハウトラス斜材ペア（7→2,8→3,9→4,10→5）
+        const howeDiagonalPairs = [
+            [7,2],[8,3],[9,4],[10,5]
+        ];
+        let addedHoweDiagonal = false;
+        if (detectTrussType(JSON.stringify(model)) === 'howe') {
+            howeDiagonalPairs.forEach(pair => {
+                const exists = fixedModel.members.some(m =>
+                    (m.i === pair[0] && m.j === pair[1]) || (m.i === pair[1] && m.j === pair[0])
+                );
+                if (!exists) {
+                    // 斜材を追加
+                    fixedModel.members.push({
+                        i: pair[0],
+                        j: pair[1],
+                        E: 205000,
+                        I: 0.00011,
+                        A: 0.005245,
+                        Z: 0.000638,
+                        name: "H-200x100x8x12",
+                        i_conn: "pin",
+                        j_conn: "pin"
+                    });
+                    addedHoweDiagonal = true;
+                    console.error(`斜材ペア(${pair[0]}→${pair[1]})がなかったため追加`);
+                }
+            });
+        }
     try {
         console.error('=== 部材重複検証開始 ===');
         console.error('検証対象モデル:', JSON.stringify(model, null, 2));

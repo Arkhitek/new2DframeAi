@@ -4814,26 +4814,41 @@ function validateAndFixMemberOverlap(model) {
             return { isValid: true, errors: [], fixedModel: fixedModel };
         }
         
-        // 重複部材を検出
+        // 部材タイプ判定関数
+        function getMemberType(member, nodes) {
+            const n1 = nodes[member.i - 1];
+            const n2 = nodes[member.j - 1];
+            if (!n1 || !n2) return 'unknown';
+            const tolerance = 0.1;
+            if (Math.abs(n1.x - n2.x) <= tolerance && Math.abs(n1.y - n2.y) > tolerance) {
+                return 'vertical'; // 垂直材
+            } else if (Math.abs(n1.y - n2.y) <= tolerance && Math.abs(n1.x - n2.x) > tolerance) {
+                return 'horizontal'; // 水平材
+            } else if (Math.abs(n1.x - n2.x) > tolerance && Math.abs(n1.y - n2.y) > tolerance) {
+                return 'diagonal'; // 斜材
+            } else {
+                return 'other';
+            }
+        }
+
+        // 重複部材を検出（部材タイプも含めて判定）
         const memberMap = new Map();
         const duplicateMembers = [];
-        
+
         fixedModel.members.forEach((member, index) => {
             if (!member.i || !member.j) {
                 errors.push(`部材${index + 1}に節点番号が設定されていません`);
                 return;
             }
-            
-            // 部材のキーを作成（小さい番号を先に）
-            const key = member.i < member.j ? `${member.i}-${member.j}` : `${member.j}-${member.i}`;
-            
+            const type = getMemberType(member, fixedModel.nodes);
+            const key = type + ':' + (member.i < member.j ? `${member.i}-${member.j}` : `${member.j}-${member.i}`);
             if (memberMap.has(key)) {
                 duplicateMembers.push({
                     index: index,
                     member: member,
                     duplicateWith: memberMap.get(key)
                 });
-                errors.push(`部材${index + 1}が部材${memberMap.get(key).index + 1}と重複しています（節点${member.i}-${member.j}）`);
+                errors.push(`部材${index + 1}が部材${memberMap.get(key).index + 1}と重複しています（${type} 節点${member.i}-${member.j}）`);
             } else {
                 memberMap.set(key, { index: index, member: member });
             }

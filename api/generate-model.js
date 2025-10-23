@@ -542,6 +542,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 部材name: 指定された断面名称（例: "H-200×100×8×12"）
 材料: デフォルトE=205000MPa、材料変更時は指示に従う（1GPa=1000MPa）
 部材接合: ラーメンは"rigid"、トラスは"pin"（両端）`;
+    simplePrompt += `\n\n【厳守】JSON以外の説明文・Markdown記法・見出し・コードブロック・注釈は一切出力しないこと。JSON本体のみを返すこと。`;
 
         // 鋼材情報が提供されているかチェック
         const hasSteelSections = userPrompt.includes('【鋼材') || userPrompt.includes('指定断面:');
@@ -3642,7 +3643,7 @@ function createTrussCorrectionPrompt(originalPrompt, currentModel, errors) {
 ${errors.map(error => `- ${error}`).join('\n')}
 
 修正要求:
-`;
+\n【厳守】JSON以外の説明文・Markdown記法・見出し・コードブロック・注釈は一切出力しないこと。JSON本体のみを返すこと。`;
 
     // トラス形式別の修正プロンプト
     if (trussType === 'kingpost') {

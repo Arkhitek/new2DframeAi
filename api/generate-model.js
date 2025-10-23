@@ -1,3 +1,20 @@
+// AIレスポンスから最初のJSONオブジェクトのみを抽出する関数
+function extractFirstJsonObject(text) {
+    // コードブロック "```json ... ```" を優先的に抽出
+    const codeBlockMatch = text.match(/```json[\s\r\n]*({[\s\S]*?})[\s\r\n]*```/i);
+    if (codeBlockMatch) return codeBlockMatch[1];
+    // 最初の { ... } を抽出（ネスト対応）
+    let start = text.indexOf('{');
+    if (start === -1) return text;
+    let depth = 0, end = -1;
+    for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        if (text[i] === '}') depth--;
+        if (depth === 0) { end = i + 1; break; }
+    }
+    if (end !== -1) return text.slice(start, end);
+    return text;
+}
 // 外部と通信するための道具をインポートします
 import fetch from 'node-fetch';
 
@@ -230,7 +247,9 @@ export default async function handler(req, res) {
         let finalGeneratedText = cleanedText;
         
         try {
-            let generatedModel = JSON.parse(cleanedText);
+            // AIレスポンスから最初のJSONのみ抽出してパース
+            let jsonText = extractFirstJsonObject(cleanedText);
+            let generatedModel = JSON.parse(jsonText);
             
             // 編集モードの場合、境界条件を保持
                     if (mode === 'edit' && currentModel) {

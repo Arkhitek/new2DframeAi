@@ -4986,28 +4986,31 @@ function validateAndFixMemberOverlap(model) {
             }
         }
         
-        // --- 重複削除後に必須斜材が1本もなければ必ず追加 ---
-        const howeDiagonalPairsFinal = [
-            [7,2],[8,3],[9,4],[10,5]
-        ];
+        // --- 最後に必須斜材がなければ必ず追加 ---
         if (detectTrussType(JSON.stringify(model)) === 'howe') {
+            const howeDiagonalPairsFinal = [
+                [7,2],[8,3],[9,4],[10,5]
+            ];
             howeDiagonalPairsFinal.forEach(pair => {
                 const exists = fixedModel.members.some(m =>
                     (m.i === pair[0] && m.j === pair[1]) || (m.i === pair[1] && m.j === pair[0])
                 );
                 if (!exists) {
+                    // 既存部材からnameやE等を流用
+                    let template = fixedModel.members.find(m => m.i_conn === "pin" && m.j_conn === "pin");
+                    if (!template) template = {};
                     fixedModel.members.push({
                         i: pair[0],
                         j: pair[1],
-                        E: 205000,
-                        I: 0.00011,
-                        A: 0.005245,
-                        Z: 0.000638,
-                        name: "H-200x100x8x12",
+                        E: template.E || 205000,
+                        I: template.I || 0.00011,
+                        A: template.A || 0.005245,
+                        Z: template.Z || 0.000638,
+                        name: template.name || "H-200×100×8×12",
                         i_conn: "pin",
                         j_conn: "pin"
                     });
-                    console.error(`重複削除後に必須斜材(${pair[0]}→${pair[1]})がなかったため追加`);
+                    console.error(`最終チェックで必須斜材(${pair[0]}→${pair[1]})がなかったため追加`);
                 }
             });
         }

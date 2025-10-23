@@ -43,7 +43,7 @@ export default async function handler(req, res) {
         }
 
         const requestBody = {
-            model: "llama-3-70b-8192",
+            model: "llama3-70b-8192",
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -110,7 +110,7 @@ export default async function handler(req, res) {
                 }
                 
                 // その他のエラーは記録してスロー
-                lastError = new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                lastError = new Error(data.message || 'GROQ AIでエラーが発生しました。');
                 throw lastError;
                 
             } catch (error) {

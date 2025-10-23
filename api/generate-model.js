@@ -4819,7 +4819,19 @@ function validateAndFixMemberOverlap(model) {
             const n1 = nodes[member.i - 1];
             const n2 = nodes[member.j - 1];
             if (!n1 || !n2) return 'unknown';
-            const tolerance = 0.1;
+            const tolerance = 0.01; // より厳密に
+            // 上弦節点(6-10)→下弦節点(1-5)のペアは必ず斜材扱い
+            if (
+                ((member.i >= 6 && member.i <= 10) && (member.j >= 1 && member.j <= 5)) ||
+                ((member.j >= 6 && member.j <= 10) && (member.i >= 1 && member.i <= 5))
+            ) {
+                // ただしx座標が完全一致かつy座標が異なる場合は垂直材
+                if (Math.abs(n1.x - n2.x) <= tolerance && Math.abs(n1.y - n2.y) > tolerance) {
+                    return 'vertical';
+                }
+                // それ以外は斜材
+                return 'diagonal';
+            }
             if (Math.abs(n1.x - n2.x) <= tolerance && Math.abs(n1.y - n2.y) > tolerance) {
                 return 'vertical'; // 垂直材
             } else if (Math.abs(n1.y - n2.y) <= tolerance && Math.abs(n1.x - n2.x) > tolerance) {

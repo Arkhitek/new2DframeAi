@@ -3659,10 +3659,12 @@ ${errors.map(error => `- ${error}`).join('\n')}
 3. 上弦材と下弦材の節点位置は一致（同じx座標）
 
 **重要**: プラットトラスでは垂直材が必須で、斜材は中央を境に向きが反転します。
-**斜材の向きの詳細**:
+**斜材の向きの詳細（中央で反転）**:
 - 左半分の斜材: 上弦から下弦へ、中央方向に向かって下向き（∧形状）
+  * 上弦のx座標 < 下弦のx座標（中央に向かって下向き）
 - 右半分の斜材: 上弦から下弦へ、外側方向に向かって下向き（∧形状）
-- 中央（x=6）を境に、斜材の向きが反転する
+  * 上弦のx座標 > 下弦のx座標（外側に向かって下向き）
+- 中央（x=${spanLength/2}）を境に、斜材の向きが必ず反転する
 - 端部斜材: 下弦から上弦へ、上向き（端部の三角形を形成）
 
 節点配置:
@@ -4478,6 +4480,92 @@ function validateTrussStructure(model, userPrompt) {
                 errors.push(`ワーレントラスには垂直材を配置してはいけません。${verticalMembers.length}本の垂直材が検出されました。ワーレントラスは斜材のみで構成されます。`);
             } else {
                 console.error('✓ ワーレントラスに垂直材はありません（正常）');
+            }
+        }
+        
+        // プラットトラス特有の斜材向き反転検証
+        if (trussType === 'pratt') {
+            console.error('プラットトラスの斜材向き反転検証を開始');
+            
+            // プラットトラスの斜材パターンを検証
+            const diagonalMembers = [];
+            fixedModel.members.forEach((member, index) => {
+                const startNode = fixedModel.nodes[member.i - 1];
+                const endNode = fixedModel.nodes[member.j - 1];
+                
+                if (startNode && endNode) {
+                    // 斜材（異なるx座標、異なるy座標）
+                    const tolerance = 0.1;
+                    if (Math.abs(startNode.x - endNode.x) > tolerance && 
+                        Math.abs(startNode.y - endNode.y) > tolerance) {
+                        diagonalMembers.push({
+                            memberIndex: index + 1,
+                            i: member.i,
+                            j: member.j,
+                            startNode: startNode,
+                            endNode: endNode
+                        });
+                    }
+                }
+            });
+            
+            console.error(`斜材の数: ${diagonalMembers.length}`);
+            
+            // プラットトラスの斜材向き反転を検証
+            let prattPatternValid = true;
+            const prattErrors = [];
+            
+            // 中央（x=6）を基準に斜材の向きを検証
+            const centerX = spanLength / 2; // 中央のx座標
+            const leftDiagonals = [];
+            const rightDiagonals = [];
+            
+            diagonalMembers.forEach(member => {
+                const startNode = member.startNode;
+                const endNode = member.endNode;
+                
+                // 上弦から下弦への斜材かどうかを判定
+                if (Math.abs(startNode.y - height) < tolerance && Math.abs(endNode.y - 0) < tolerance) {
+                    // 左半分（x < centerX）の斜材
+                    if (startNode.x < centerX) {
+                        leftDiagonals.push(member);
+                    } else {
+                        rightDiagonals.push(member);
+                    }
+                }
+            });
+            
+            console.error(`左半分の斜材: ${leftDiagonals.length}本`);
+            console.error(`右半分の斜材: ${rightDiagonals.length}本`);
+            
+            // 左半分の斜材は中央に向かって下向き（∧形状）
+            leftDiagonals.forEach(member => {
+                const startNode = member.startNode;
+                const endNode = member.endNode;
+                
+                // 左半分では、上弦のx座標 < 下弦のx座標（中央に向かって下向き）
+                if (startNode.x >= endNode.x) {
+                    prattPatternValid = false;
+                    prattErrors.push(`左半分の斜材（節点${member.i}-${member.j}）が中央向き下向きになっていません`);
+                }
+            });
+            
+            // 右半分の斜材は中央から外に向かって下向き（∧形状）
+            rightDiagonals.forEach(member => {
+                const startNode = member.startNode;
+                const endNode = member.endNode;
+                
+                // 右半分では、上弦のx座標 > 下弦のx座標（外側に向かって下向き）
+                if (startNode.x <= endNode.x) {
+                    prattPatternValid = false;
+                    prattErrors.push(`右半分の斜材（節点${member.i}-${member.j}）が外側向き下向きになっていません`);
+                }
+            });
+            
+            if (!prattPatternValid) {
+                errors.push(...prattErrors);
+            } else {
+                console.error(`✓ プラットトラスの斜材向き反転が正しく検出されました`);
             }
         }
         

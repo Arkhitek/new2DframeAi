@@ -514,7 +514,7 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
                 simplePrompt += `
 重要: 下弦左端(x=0,y=0)は"p"、右端は"r"。上弦と下弦の節点は同じx座標。垂直材必須（同じx座標の下弦→上弦）`;
                 if (trussType === 'pratt') {
-                    simplePrompt += `。プラット: 斜材は中央で反転（左半分は中央向き下向き∧、右半分は外側向き下向き∧）`;
+                    simplePrompt += `。プラット: 斜材は中央で反転（左半分は中央向き下向き∧、右半分は外側向き下向き∧）。中央x=6を境に斜材の向きが反転`;
                 } else if (trussType === 'howe') {
                     simplePrompt += `。ハウ: 斜材は外側向きV字形状（7→2, 8→3, 9→4, 10→5）`;
                 } else if (trussType === 'pennsylvania') {
@@ -760,6 +760,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 - 左半分の斜材: 上弦から下弦へ、中央方向に向かって下向き（∧形状）
 - 右半分の斜材: 上弦から下弦へ、外側方向に向かって下向き（∧形状）
 - 中央（x=6）を境に、斜材の向きが反転する
+- 端部斜材: 下弦から上弦へ、上向き（端部の三角形を形成）
+
+**絶対に守るべきルール**:
+- 左半分の斜材は中央（x=6）に向かって下向き
+- 右半分の斜材は中央（x=6）から外に向かって下向き
+- 中央を境に斜材の向きが必ず反転する
 
 節点配置の詳細:
 - 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
@@ -787,6 +793,12 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
    - 節点1→6（下弦左端から上弦左端へ、右上がり）
    - 節点5→10（下弦右端から上弦右端へ、左上がり）
 
+**斜材の向きの重要なポイント**:
+- 左半分の斜材は中央（x=6）に向かって下向き（∧形状）
+- 右半分の斜材は中央（x=6）から外に向かって下向き（∧形状）
+- 中央（x=6）を境に斜材の向きが反転する
+- 端部斜材は上向き（端部の三角形を形成）
+
 例: 高さ3m、スパン12mのプラットトラス（4パネル、中央x=6）
 節点（10個）:
 - 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
@@ -797,9 +809,14 @@ function createSystemPromptForBackend(mode = 'new', currentModel = null, userPro
 2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
 3. 垂直材（3本、必須）: {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
 4. 斜材（6本、中央で反転）:
-   - 左半分: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}
-   - 右半分: {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
+   - 左半分（中央向き∧）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}
+   - 右半分（外側向き∧）: {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
    - 端部: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
+
+**斜材の向きの確認**:
+- 左半分: 6→2, 7→3（中央x=6に向かって下向き∧）
+- 右半分: 8→4, 9→5（中央x=6から外に向かって下向き∧）
+- 中央（x=6）を境に斜材の向きが反転している
 
 **確認**: 
 - 垂直材（2→7, 3→8, 4→9）が必ず含まれている
@@ -3633,6 +3650,118 @@ ${errors.map(error => `- ${error}`).join('\n')}
 3. 垂直材（2本、必須）
 4. 斜材（4本）`;
         
+    } else if (trussType === 'pratt') {
+        correctionPrompt += `高さ${height}m、スパン長${spanLength}mのプラットトラス構造を生成してください
+
+プラットトラスの重要な特徴:
+1. **必ず垂直材を配置する**（同じx座標の下弦節点と上弦節点を接続）
+2. **斜材は中央で反転する**（左半分は中央に向かって下向き∧、右半分は中央から外に向かって下向き∧）
+3. 上弦材と下弦材の節点位置は一致（同じx座標）
+
+**重要**: プラットトラスでは垂直材が必須で、斜材は中央を境に向きが反転します。
+**斜材の向きの詳細**:
+- 左半分の斜材: 上弦から下弦へ、中央方向に向かって下向き（∧形状）
+- 右半分の斜材: 上弦から下弦へ、外側方向に向かって下向き（∧形状）
+- 中央（x=6）を境に、斜材の向きが反転する
+- 端部斜材: 下弦から上弦へ、上向き（端部の三角形を形成）
+
+節点配置:
+- 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
+- 上弦材（y=${height}）: **必ず下弦材と同じx座標**（x=0, 3, 6, 9, 12）
+- 境界条件: 左端(x=0,y=0)は"p"、右端は"r"、その他は"f"
+
+部材配置:
+1. **下弦材（4本）**: 下弦の節点を順に接続
+2. **上弦材（4本）**: 上弦の節点を順に接続
+3. **垂直材（3本、必須）**: 同じx座標の下弦→上弦を垂直接続
+4. **斜材（6本、中央で反転）**: 
+   **左半分（中央に向かって下向き∧）:**
+   - 節点6→2（上弦左端から下弦2へ、中央向き下向き）
+   - 節点7→3（上弦から下弦中央へ、中央向き下向き）
+   **右半分（中央から外に向かって下向き∧）:**
+   - 節点8→4（上弦中央から下弦へ、外側向き下向き）
+   - 節点9→5（上弦から下弦右端へ、外側向き下向き）
+   **端部斜材:**
+   - 節点1→6（下弦左端から上弦左端へ、右上がり）
+   - 節点5→10（下弦右端から上弦右端へ、左上がり）
+
+例: 高さ${height}m、スパン${spanLength}mのプラットトラス（4パネル）
+節点（10個）:
+- 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
+- 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
+
+部材（17本、必ず全て配置、全てピン接合）:
+1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（3本、必須）: {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}
+4. 斜材（6本、中央で反転）:
+   - 左半分（中央向き∧）: {"i":6,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":3,"i_conn":"pin","j_conn":"pin"}
+   - 右半分（外側向き∧）: {"i":8,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":5,"i_conn":"pin","j_conn":"pin"}
+   - 端部: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
+
+**確認**: 
+- 垂直材（2→7, 3→8, 4→9）が必ず含まれている
+- 斜材が中央（x=6）を境に向きが反転している
+  * 左半分: 6→2, 7→3（中央向き下向き∧）
+  * 右半分: 8→4, 9→5（外側向き下向き∧）
+- 全ての部材がピン接合（i_conn="pin", j_conn="pin"）
+
+JSON形式で出力してください。`;
+        
+    } else if (trussType === 'howe') {
+        correctionPrompt += `高さ${height}m、スパン長${spanLength}mのハウトラス構造を生成してください
+
+ハウトラスの重要な特徴:
+1. **必ず垂直材を配置する**（同じx座標の下弦節点と上弦節点を接続）
+2. 斜材は中央から外側に向かって下向き（V字形状の連続）
+3. 上弦材と下弦材の節点位置は一致（同じx座標）
+4. プラットトラスの逆パターン（垂直材と斜材の位置が逆）
+
+**重要**: ハウトラスでは垂直材が必須です。プラットトラスとは逆に配置してください。
+**斜材の向きの詳細**:
+- 主要斜材: 上弦から下弦へ、外側方向に向かって下向き（V字形状）
+- 端部斜材: 下弦から上弦へ、右上がり
+- プラットトラスとは逆の斜材パターン（外側向き vs 中央向き）
+
+節点配置:
+- 下弦材（y=0）: スパンを等分割（例: 4パネルなら x=0, 3, 6, 9, 12）
+- 上弦材（y=${height}）: **必ず下弦材と同じx座標**（x=0, 3, 6, 9, 12）
+- 境界条件: 左端(x=0,y=0)は"p"、右端は"r"、その他は"f"
+
+部材配置:
+1. **下弦材（4本）**: 下弦の節点を順に接続
+2. **上弦材（4本）**: 上弦の節点を順に接続
+3. **垂直材（3本、必須）**: 同じx座標の下弦→上弦を垂直接続
+4. **斜材（6本）**: 上弦から下弦へ、外側向きに下向き（V字形状）
+   **主要斜材（4本）:**
+   - 節点7→2（上弦から下弦へ、外側向き下向き）
+   - 節点8→3（上弦から下弦へ、外側向き下向き）
+   - 節点9→4（上弦から下弦へ、外側向き下向き）
+   - 節点10→5（上弦から下弦へ、外側向き下向き）
+   **端部斜材（2本）:**
+   - 節点4→9（下弦から上弦へ、右上がり）
+   - 節点5→10（下弦から上弦へ、右上がり）
+
+例: 高さ${height}m、スパン${spanLength}mのハウトラス（4パネル）
+節点（10個）:
+- 下弦材: 節点1(0,0,"p"), 節点2(3,0,"f"), 節点3(6,0,"f"), 節点4(9,0,"f"), 節点5(12,0,"r")
+- 上弦材: 節点6(0,3,"f"), 節点7(3,3,"f"), 節点8(6,3,"f"), 節点9(9,3,"f"), 節点10(12,3,"f")
+
+部材（17本、必ず全て配置、全てピン接合）:
+1. 下弦材（4本）: {"i":1,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":5,"i_conn":"pin","j_conn":"pin"}
+2. 上弦材（4本）: {"i":6,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":7,"j":8,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":10,"i_conn":"pin","j_conn":"pin"}
+3. 垂直材（3本、必須）: {"i":1,"j":6,"i_conn":"pin","j_conn":"pin"}, {"i":2,"j":7,"i_conn":"pin","j_conn":"pin"}, {"i":3,"j":8,"i_conn":"pin","j_conn":"pin"}
+4. 斜材（6本）: {"i":7,"j":2,"i_conn":"pin","j_conn":"pin"}, {"i":8,"j":3,"i_conn":"pin","j_conn":"pin"}, {"i":9,"j":4,"i_conn":"pin","j_conn":"pin"}, {"i":10,"j":5,"i_conn":"pin","j_conn":"pin"}, {"i":4,"j":9,"i_conn":"pin","j_conn":"pin"}, {"i":5,"j":10,"i_conn":"pin","j_conn":"pin"}
+
+**確認**: 
+- 垂直材（1→6, 2→7, 3→8）が必ず含まれている
+- 斜材がハウトラスパターン（外側向きV字形状）になっている
+  * 主要斜材: 7→2, 8→3, 9→4, 10→5（外側向き下向きV）
+  * 端部斜材: 4→9, 5→10（右上がり）
+- 全ての部材がピン接合（i_conn="pin", j_conn="pin"）
+
+JSON形式で出力してください。`;
+        
     } else {
         // デフォルトはワーレントラス
         correctionPrompt += `高さ${height}m、スパン長${spanLength}mのワーレントラス構造を生成してください
@@ -4354,6 +4483,63 @@ function validateTrussStructure(model, userPrompt) {
                 errors.push(`ワーレントラスには垂直材を配置してはいけません。${verticalMembers.length}本の垂直材が検出されました。ワーレントラスは斜材のみで構成されます。`);
             } else {
                 console.error('✓ ワーレントラスに垂直材はありません（正常）');
+            }
+        }
+        
+        // ハウトラス特有の斜材パターン検証
+        if (trussType === 'howe') {
+            console.error('ハウトラスの斜材パターン検証を開始');
+            
+            // ハウトラスの斜材パターンを検証
+            const diagonalMembers = [];
+            fixedModel.members.forEach((member, index) => {
+                const startNode = fixedModel.nodes[member.i - 1];
+                const endNode = fixedModel.nodes[member.j - 1];
+                
+                if (startNode && endNode) {
+                    // 斜材（異なるx座標、異なるy座標）
+                    const tolerance = 0.1;
+                    if (Math.abs(startNode.x - endNode.x) > tolerance && 
+                        Math.abs(startNode.y - endNode.y) > tolerance) {
+                        diagonalMembers.push({
+                            memberIndex: index + 1,
+                            i: member.i,
+                            j: member.j,
+                            startNode: startNode,
+                            endNode: endNode
+                        });
+                    }
+                }
+            });
+            
+            console.error(`斜材の数: ${diagonalMembers.length}`);
+            
+            // ハウトラスの斜材パターンを検証
+            let howePatternValid = true;
+            const howeErrors = [];
+            
+            // 主要斜材（上弦から下弦へ、外側向き下向き）の検証
+            const outwardDiagonals = diagonalMembers.filter(member => {
+                const startNode = member.startNode;
+                const endNode = member.endNode;
+                
+                // 上弦から下弦への斜材
+                if (Math.abs(startNode.y - height) < tolerance && Math.abs(endNode.y - 0) < tolerance) {
+                    // 外側向き下向き（V字形状）
+                    return startNode.x > endNode.x; // 上弦の方が右側（外側向き）
+                }
+                return false;
+            });
+            
+            if (outwardDiagonals.length === 0) {
+                howePatternValid = false;
+                howeErrors.push('ハウトラスの主要斜材（上弦から下弦へ、外側向き下向き）が見つかりません');
+            } else {
+                console.error(`✓ ハウトラスの主要斜材が${outwardDiagonals.length}本検出されました`);
+            }
+            
+            if (!howePatternValid) {
+                errors.push(...howeErrors);
             }
         }
         

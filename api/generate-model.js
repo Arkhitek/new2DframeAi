@@ -4121,14 +4121,26 @@ JSON形式で出力してください。`;
 async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
     const maxCorrectionRetries = 2; // 修正呼び出しのリトライ回数を制限
     let correctionRetryCount = 0;
-    
+    let keyIndex = 0; // 0:KEY1, 1:KEY2, 2:KEY3
+    const API_KEY1 = process.env.GROQ_API_KEY1;
+    const API_KEY2 = process.env.GROQ_API_KEY2;
+    const API_KEY3 = process.env.GROQ_API_KEY3;
+    const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+    function getCurrentApiKey() {
+        if (keyIndex === 0) return API_KEY1;
+        if (keyIndex === 1) return API_KEY2;
+        if (keyIndex === 2) return API_KEY3;
+        return null;
+    }
+    function getCurrentApiKeyName() {
+        if (keyIndex === 0) return 'GROQ_API_KEY1';
+        if (keyIndex === 1) return 'GROQ_API_KEY2';
+        if (keyIndex === 2) return 'GROQ_API_KEY3';
+        return 'UNKNOWN_KEY';
+    }
     while (correctionRetryCount <= maxCorrectionRetries) {
         try {
-            console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) ===`);
-            
-            const API_KEY = process.env.GROQ_API_KEY;
-            const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-            
+            console.error(`=== AI修正呼び出し開始 (試行 ${correctionRetryCount + 1}/${maxCorrectionRetries + 1}) (APIキー: ${getCurrentApiKeyName()}) ===`);
             // 修正用の最適化されたシステムプロンプト
             const systemPrompt = `2D構造モデル生成。JSON出力のみ。
 
@@ -4151,12 +4163,11 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
 - 存在しない節点番号を部材で参照しない`;
 
             const requestBody = {
-                model: "openai/gpt-oss-120b",
+                model: "llama-3.3-70b-versatile",
                 messages: [
                     { "role": "system", "content": systemPrompt },
                     { "role": "user", "content": correctionPrompt }
                 ],
-                response_format: { "type": "json_object" },
                 temperature: 0.3, // 修正時は低い温度で一貫性を重視
                 max_tokens: 4000 // トークン数を制限
             };
@@ -4167,7 +4178,7 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 
-                    'Authorization': `Bearer ${API_KEY}`,
+                    'Authorization': `Bearer ${getCurrentApiKey()}`,
                     'Content-Type': 'application/json' 
                 },
                 body: JSON.stringify(requestBody),
@@ -4181,6 +4192,28 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
                     // 容量制限の場合は待機してリトライ
                     const waitTime = 2000 + (correctionRetryCount * 1000);
                     console.error(`修正呼び出し容量制限: ${waitTime}ms待機後にリトライ`);
+                    // APIキー切り替え
+                    if (keyIndex === 0 && API_KEY2) {
+                        keyIndex = 1;
+                        console.error('GROQ_API_KEY1で容量制限。GROQ_API_KEY2で再試行します。');
+                    } else if (keyIndex === 1 && API_KEY3) {
+                        keyIndex = 2;
+                        console.error('GROQ_API_KEY2で容量制限。GROQ_API_KEY3で再試行します。');
+                    }
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    correctionRetryCount++;
+                    continue;
+                }
+                if (response.status === 401 && correctionRetryCount < maxCorrectionRetries) {
+                    // 認証エラー時もAPIキー切り替え
+                    if (keyIndex === 0 && API_KEY2) {
+                        keyIndex = 1;
+                        console.error('GROQ_API_KEY1で401。GROQ_API_KEY2で再試行します。');
+                    } else if (keyIndex === 1 && API_KEY3) {
+                        keyIndex = 2;
+                        console.error('GROQ_API_KEY2で401。GROQ_API_KEY3で再試行します。');
+                    }
+                    const waitTime = 1000 + (correctionRetryCount * 500);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     correctionRetryCount++;
                     continue;
@@ -4189,30 +4222,39 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
             }
 
             const data = await response.json();
-            
             if (!data.choices || !data.choices[0] || !data.choices[0].message.content) {
                 throw new Error("AI修正から予期しない形式のレスポンス");
             }
 
-            const correctedText = data.choices[0].message.content;
+            // コードブロック除去
+            let correctedText = data.choices[0].message.content.trim();
+            if (correctedText.startsWith('```json')) {
+                correctedText = correctedText.replace(/^```json[\r\n]*/i, '');
+            }
+            if (correctedText.startsWith('```')) {
+                correctedText = correctedText.replace(/^```[\r\n]*/i, '');
+            }
+            if (correctedText.endsWith('```')) {
+                correctedText = correctedText.replace(/```\s*$/i, '');
+            }
             const correctedModel = JSON.parse(correctedText);
-            
+
             // 修正後のモデルの基本検証
             if (!correctedModel.nodes || !correctedModel.members) {
                 throw new Error("修正後のモデルに節点または部材データが不足");
             }
-            
+
             console.error('AI修正呼び出し成功');
             console.error('修正後のモデル:', {
                 nodeCount: correctedModel.nodes.length,
                 memberCount: correctedModel.members.length
             });
-            
+
             return correctedModel;
-            
+
         } catch (error) {
             console.error(`AI修正呼び出しエラー (試行 ${correctionRetryCount + 1}):`, error.message);
-            
+
             if (correctionRetryCount < maxCorrectionRetries) {
                 const waitTime = 1000 + (correctionRetryCount * 500);
                 console.error(`${waitTime}ms待機後にリトライ`);
@@ -4220,7 +4262,7 @@ async function callAIWithCorrectionPrompt(correctionPrompt, retryCount) {
                 correctionRetryCount++;
                 continue;
             }
-            
+
             console.error('AI修正呼び出し失敗: 最大リトライ回数に達しました');
             return null;
         }

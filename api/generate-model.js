@@ -50,6 +50,16 @@ export default async function handler(req, res) {
             ]
         };
 
+        // GROQリクエスト送信内容を詳細にログ出力
+        console.error('[GROQリクエスト送信内容]', {
+            url: API_URL,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${(useSecondKey ? API_KEY2 : API_KEY1)?.slice(0, 8) + '...'}`
+            },
+            body: requestBody
+        });
+
         // 最適化されたリトライ機能付きAI呼び出し
         let groqResponse;
         let data;
@@ -73,7 +83,23 @@ export default async function handler(req, res) {
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
-                data = await groqResponse.json();
+
+                // レスポンスbodyをテキストで取得し詳細ログ
+                let responseText = await groqResponse.text();
+                let responseJson = null;
+                try {
+                    responseJson = JSON.parse(responseText);
+                } catch (e) {
+                    // JSONでなければそのまま
+                }
+                console.error('[GROQレスポンス詳細]', {
+                    status: groqResponse.status,
+                    statusText: groqResponse.statusText,
+                    body: responseJson || responseText
+                });
+
+                // 既存処理と互換のためdataにセット
+                data = responseJson || {};
                 console.error('AIレスポンス受信: ステータス=', groqResponse.status);
 
                 // 成功した場合はループを抜ける

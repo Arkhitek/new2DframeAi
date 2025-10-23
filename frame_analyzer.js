@@ -13851,11 +13851,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================================================
-// Gemini APIによるAIモデル生成機能
+// llama-3.3-70b-versatileによるAIモデル生成機能
 // ==========================================================================
 
 /**
- * Gemini APIを使用して自然言語からモデルを生成するメイン関数
+ * llama-3.3-70b-versatileを使用して自然言語からモデルを生成するメイン関数
  * @param {string} userPrompt ユーザーが入力した指示
  */
 // AI生成キャンセル用のグローバル変数
@@ -14008,7 +14008,7 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
     }
     
     const aiGenerateBtn = document.getElementById('generate-model-btn');
-    const aiStatus = document.getElementById('gemini-status-indicator');
+    const aiStatus = document.getElementById('ai-status-indicator');
 
     // Check if required elements exist
     if (!aiGenerateBtn) {
@@ -14018,11 +14018,12 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
     }
 
     if (!aiStatus) {
-        console.error('Error: Could not find element with id "gemini-status-indicator"');
+        console.error('Error: Could not find element with id "ai-status-indicator"');
         safeAlert('AIステータス表示要素が見つかりません。ページを再読み込みしてください。');
         return;
     }
 
+    // llama-3.3-70b-versatile専用API
     const API_URL = '/api/generate-model';
     const MAX_RETRIES = 5; // サーバーサイドと合わせて5回に増加
     const BASE_DELAY = 3000; // 3秒に増加
@@ -14137,9 +14138,9 @@ async function generateModelWithAIInternal(userPrompt, mode = 'new', retryCount 
             throw new Error(errorMessage);
         }
 
-        // 仲介役が転送してくれたGeminiの応答から、JSON部分だけを安全に取り出します
+        // llama-3.3-70b-versatileの応答からJSON部分だけを安全に取り出します
         let modelData;
-        
+    
         // AI生成のレスポンスを処理
         console.log('🔍 AI生成のレスポンスを処理中...');
         const jsonText = extractJsonFromResponse(data);

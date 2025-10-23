@@ -21,15 +21,14 @@ export default async function handler(req, res) {
             return;
         }
 
-        const API_KEY = process.env.GROQ_API_KEY;
-        if (!API_KEY) {
+        const API_KEY1 = process.env.GROQ_API_KEY1;
+        const API_KEY2 = process.env.GROQ_API_KEY2;
+        if (!API_KEY1 && !API_KEY2) {
             throw new Error("Groq AIのAPIキーがサーバーに設定されていません。");
         }
-        
         const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-        
-        // retryCount変数を先に定義
         let retryCount = 0;
+        let useSecondKey = false;
         
         // 構造の次元を事前に検出（検証時に再利用）
         const detectedDimensions = detectStructureDimensions(userPrompt, mode === 'edit' ? currentModel : null);
@@ -44,7 +43,7 @@ export default async function handler(req, res) {
         }
 
         const requestBody = {
-            model: "openai/gpt-oss-120b",
+            model: "llama-3-70b-8192",
             messages: [
                 { "role": "system", "content": systemPrompt },
                 { "role": "user", "content": userMessage }
@@ -60,22 +59,20 @@ export default async function handler(req, res) {
         
         while (retryCount <= maxRetries) {
             try {
-                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1}`);
-                
+                console.error(`AI呼び出し試行 ${retryCount + 1}/${maxRetries + 1} (APIキー: ${useSecondKey ? 'GROQ_API_KEY2' : 'GROQ_API_KEY1'})`);
                 // タイムアウト設定を追加
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒タイムアウト
-                
+                const apiKeyToUse = useSecondKey ? API_KEY2 : API_KEY1;
                 groqResponse = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json' 
-            },
-            body: JSON.stringify(requestBody),
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${apiKeyToUse}`,
+                        'Content-Type': 'application/json' 
+                    },
+                    body: JSON.stringify(requestBody),
                     signal: controller.signal
                 });
-                
                 clearTimeout(timeoutId);
                 data = await groqResponse.json();
                 console.error('AIレスポンス受信: ステータス=', groqResponse.status);
@@ -89,13 +86,18 @@ export default async function handler(req, res) {
                 // 容量制限エラーの場合
                 if (groqResponse.status === 429) {
                     console.error(`容量制限エラー検出 (試行 ${retryCount + 1}/${maxRetries + 1})`);
-                    
+                    // 1回目のAPIキーで容量制限なら2つ目のキーで再試行
+                    if (!useSecondKey && API_KEY2) {
+                        console.error('GROQ_API_KEY1で容量制限。GROQ_API_KEY2で再試行します。');
+                        useSecondKey = true;
+                        retryCount++;
+                        continue;
+                    }
                     if (retryCount < maxRetries) {
                         // リトライ前に待機（より長い待機時間）
                         const baseWaitTime = 3000; // 基本3秒
                         const exponentialWaitTime = Math.pow(2, retryCount) * 1000; // 指数バックオフ
                         const waitTime = Math.min(baseWaitTime + exponentialWaitTime, 30000); // 最大30秒
-                        
                         console.error(`容量制限のため ${waitTime}ms 待機後にリトライします (${retryCount + 1}/${maxRetries}回目)`);
                         await new Promise(resolve => setTimeout(resolve, waitTime));
                         retryCount++;

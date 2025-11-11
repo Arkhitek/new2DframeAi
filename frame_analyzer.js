@@ -8476,7 +8476,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 const snappedX=Math.round(modelCoords.x/spacing)*spacing, snappedY=Math.round(modelCoords.y/spacing)*spacing;
                 const dist=Math.sqrt((modelCoords.x-snappedX)**2+(modelCoords.y-snappedY)**2);
                 if (elements.gridToggle.checked && dist < snapTolerance) { modelCoords.x=snappedX; modelCoords.y=snappedY; }
-                addRow(elements.nodesTable, [`#`,`<input type="number" value="${modelCoords.x.toFixed(2)}">`,`<input type="number" value="${modelCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]); 
+                
+                // 既存節点との重複チェック
+                const tolerance = 0.001; // 1mm未満の差は同一とみなす
+                let isDuplicate = false;
+                try {
+                    const { nodes } = parseInputs();
+                    isDuplicate = nodes.some(node => 
+                        Math.abs(node.x - modelCoords.x) < tolerance && 
+                        Math.abs(node.y - modelCoords.y) < tolerance
+                    );
+                } catch (error) {
+                    // parseInputsエラー時は重複チェックをスキップ
+                }
+                
+                if (isDuplicate) {
+                    console.log('⚠️ 既存節点と同一座標のため、新規節点の追加をスキップしました');
+                    utils.showMessage('既存の節点と同じ位置です。新規節点は追加されません。', 'warning', 2000);
+                } else {
+                    addRow(elements.nodesTable, [`#`,`<input type="number" value="${modelCoords.x.toFixed(2)}">`,`<input type="number" value="${modelCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]); 
+                }
             }
         } else if (canvasMode === 'addMember') {
             let targetNodeIndex = clickedNodeIndex;
@@ -8515,14 +8534,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // 新規節点をテーブルに追加
-                addRow(elements.nodesTable, [`#`, `<input type="number" value="${snappedX.toFixed(2)}">`, `<input type="number" value="${snappedY.toFixed(2)}">`, `<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
+                // 既存節点との重複チェック
+                const tolerance = 0.001; // 1mm未満の差は同一とみなす
+                let existingNodeIndex = -1;
+                try {
+                    const { nodes } = parseInputs();
+                    existingNodeIndex = nodes.findIndex(node => 
+                        Math.abs(node.x - snappedX) < tolerance && 
+                        Math.abs(node.y - snappedY) < tolerance
+                    );
+                } catch (error) {
+                    // parseInputsエラー時は重複チェックをスキップ
+                }
                 
-                // 新規作成された節点のインデックスを取得（テーブルの最後の行）
-                const nodeRows = elements.nodesTable.getElementsByTagName('tr');
-                targetNodeIndex = nodeRows.length - 1;
-                
-                console.log('✅ 新規節点を作成しました:', { index: targetNodeIndex, x: snappedX, y: snappedY });
+                if (existingNodeIndex !== -1) {
+                    // 既存節点が見つかった場合、その節点を使用
+                    targetNodeIndex = existingNodeIndex;
+                    console.log('✅ 既存節点を使用します:', { index: targetNodeIndex, x: snappedX, y: snappedY });
+                } else {
+                    // 新規節点をテーブルに追加
+                    addRow(elements.nodesTable, [`#`, `<input type="number" value="${snappedX.toFixed(2)}">`, `<input type="number" value="${snappedY.toFixed(2)}">`, `<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
+                    
+                    // 新規作成された節点のインデックスを取得（テーブルの最後の行）
+                    const nodeRows = elements.nodesTable.getElementsByTagName('tr');
+                    targetNodeIndex = nodeRows.length - 1;
+                    
+                    console.log('✅ 新規節点を作成しました:', { index: targetNodeIndex, x: snappedX, y: snappedY });
+                }
             }
             
             if (targetNodeIndex !== -1) {

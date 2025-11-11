@@ -8569,12 +8569,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('🔍 部材の始点を設定:', firstMemberNode);
                 } else {
                     if (firstMemberNode !== targetNodeIndex) {
-                        const I_m4 = parseFloat(newMemberDefaults.I)*1e-8, A_m2 = parseFloat(newMemberDefaults.A)*1e-4, Z_m3 = parseFloat(newMemberDefaults.Z)*1e-6;
-                        const sectionName = newMemberDefaults.sectionName || '';
-                        const sectionAxis = newMemberDefaults.sectionAxis || '';
-                        console.log('🔍 部材追加: newMemberDefaults:', { sectionName, sectionAxis, I: newMemberDefaults.I, A: newMemberDefaults.A, Z: newMemberDefaults.Z });
-                        addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis)]);
-                        console.log('✅ 部材を作成しました:', { from: firstMemberNode, to: targetNodeIndex });
+                        // 部材の長さが0にならないか事前チェック
+                        let canAddMember = true;
+                        try {
+                            const { nodes } = parseInputs();
+                            const node1 = nodes[firstMemberNode];
+                            const node2 = nodes[targetNodeIndex];
+                            const length = Math.sqrt((node2.x - node1.x) ** 2 + (node2.y - node1.y) ** 2);
+                            const minLength = 0.001; // 最小部材長 1mm
+                            
+                            if (length < minLength) {
+                                console.log('⚠️ 部材の長さが0または非常に短いため、追加をスキップしました:', { from: firstMemberNode, to: targetNodeIndex, length });
+                                utils.showMessage('部材の長さが短すぎます。始点と終点が同じ位置にあります。', 'warning', 2000);
+                                canAddMember = false;
+                            }
+                        } catch (error) {
+                            console.error('❌ 部材長チェック時にエラー:', error);
+                            canAddMember = false;
+                        }
+                        
+                        if (canAddMember) {
+                            const I_m4 = parseFloat(newMemberDefaults.I)*1e-8, A_m2 = parseFloat(newMemberDefaults.A)*1e-4, Z_m3 = parseFloat(newMemberDefaults.Z)*1e-6;
+                            const sectionName = newMemberDefaults.sectionName || '';
+                            const sectionAxis = newMemberDefaults.sectionAxis || '';
+                            console.log('🔍 部材追加: newMemberDefaults:', { sectionName, sectionAxis, I: newMemberDefaults.I, A: newMemberDefaults.A, Z: newMemberDefaults.Z });
+                            addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis)]);
+                            console.log('✅ 部材を作成しました:', { from: firstMemberNode, to: targetNodeIndex });
+                        }
                     }
                     firstMemberNode = null;
                 }

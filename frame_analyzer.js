@@ -8477,23 +8477,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dist=Math.sqrt((modelCoords.x-snappedX)**2+(modelCoords.y-snappedY)**2);
                 if (elements.gridToggle.checked && dist < snapTolerance) { modelCoords.x=snappedX; modelCoords.y=snappedY; }
                 
-                // 既存節点との重複チェック
-                const tolerance = 0.001; // 1mm未満の差は同一とみなす
+                // 既存節点との重複チェック（グリッドスナップ後の座標で確認）
+                const tolerance = 0.01; // 10mm未満の差は同一とみなす（小数点以下2桁の表示精度に対応）
                 let isDuplicate = false;
+                let duplicateNodeIndex = -1;
                 try {
                     const { nodes } = parseInputs();
-                    isDuplicate = nodes.some(node => 
-                        Math.abs(node.x - modelCoords.x) < tolerance && 
-                        Math.abs(node.y - modelCoords.y) < tolerance
-                    );
+                    console.log('🔍 節点追加チェック: 追加予定座標', { x: modelCoords.x, y: modelCoords.y });
+                    console.log('🔍 既存節点数:', nodes.length);
+                    
+                    for (let i = 0; i < nodes.length; i++) {
+                        const node = nodes[i];
+                        const dx = Math.abs(node.x - modelCoords.x);
+                        const dy = Math.abs(node.y - modelCoords.y);
+                        
+                        if (dx < tolerance && dy < tolerance) {
+                            isDuplicate = true;
+                            duplicateNodeIndex = i + 1;
+                            console.log('⚠️ 重複検出:', { 
+                                existingNode: { index: i + 1, x: node.x, y: node.y },
+                                newCoords: { x: modelCoords.x, y: modelCoords.y },
+                                diff: { dx, dy }
+                            });
+                            break;
+                        }
+                    }
                 } catch (error) {
+                    console.error('❌ parseInputsエラー:', error);
                     // parseInputsエラー時は重複チェックをスキップ
                 }
                 
                 if (isDuplicate) {
                     console.log('⚠️ 既存節点と同一座標のため、新規節点の追加をスキップしました');
-                    utils.showMessage('既存の節点と同じ位置です。新規節点は追加されません。', 'warning', 2000);
+                    utils.showMessage(`既存の節点${duplicateNodeIndex}と同じ位置です。新規節点は追加されません。`, 'warning', 2000);
                 } else {
+                    console.log('✅ 新規節点を追加します:', { x: modelCoords.x, y: modelCoords.y });
                     addRow(elements.nodesTable, [`#`,`<input type="number" value="${modelCoords.x.toFixed(2)}">`,`<input type="number" value="${modelCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]); 
                 }
             }
@@ -8535,15 +8553,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // 既存節点との重複チェック
-                const tolerance = 0.001; // 1mm未満の差は同一とみなす
+                const tolerance = 0.01; // 10mm未満の差は同一とみなす（小数点以下2桁の表示精度に対応）
                 let existingNodeIndex = -1;
                 try {
                     const { nodes } = parseInputs();
+                    console.log('🔍 部材追加モード: 節点チェック中', { x: snappedX, y: snappedY });
                     existingNodeIndex = nodes.findIndex(node => 
                         Math.abs(node.x - snappedX) < tolerance && 
                         Math.abs(node.y - snappedY) < tolerance
                     );
+                    if (existingNodeIndex !== -1) {
+                        console.log('🔍 既存節点を発見:', { index: existingNodeIndex, node: nodes[existingNodeIndex] });
+                    }
                 } catch (error) {
+                    console.error('❌ parseInputsエラー:', error);
                     // parseInputsエラー時は重複チェックをスキップ
                 }
                 
@@ -8576,7 +8599,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const node1 = nodes[firstMemberNode];
                             const node2 = nodes[targetNodeIndex];
                             const length = Math.sqrt((node2.x - node1.x) ** 2 + (node2.y - node1.y) ** 2);
-                            const minLength = 0.001; // 最小部材長 1mm
+                            const minLength = 0.01; // 最小部材長 10mm（節点の重複判定と同じ）
                             
                             if (length < minLength) {
                                 console.log('⚠️ 部材の長さが0または非常に短いため、追加をスキップしました:', { from: firstMemberNode, to: targetNodeIndex, length });

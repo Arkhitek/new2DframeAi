@@ -8417,7 +8417,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (canvasMode === 'addNode') {
             const targetMemberIndex = getMemberAt(mouseX, mouseY);
             let modelCoords = inverseTransform(mouseX, mouseY); if (!modelCoords) return;
-            if (targetMemberIndex !== -1) {
+            // 節点をクリックした場合は、部材分割ではなく通常の節点追加処理を実行
+            // (既存節点と同じ位置なので重複チェックで弾かれる)
+            if (targetMemberIndex !== -1 && clickedNodeIndex === -1) {
                 pushState();
                 const { nodes } = parseInputs(), memberRow = elements.membersTable.rows[targetMemberIndex];
                 const startNodeId = parseInt(memberRow.cells[1].querySelector('input').value), endNodeId = parseInt(memberRow.cells[2].querySelector('input').value);

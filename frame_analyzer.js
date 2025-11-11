@@ -4673,7 +4673,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const ni = nodes[i], nj = nodes[j];
             if (!ni || !nj) throw new Error(`部材 ${index + 1} の節点データが無効です (i=${i}, j=${j})。`);
             const dx = nj.x - ni.x, dy = nj.y - ni.y, L = Math.sqrt(dx**2 + dy**2);
-            if(L === 0) throw new Error(`部材 ${index+1} の長さが0です。`);
+            if(L === 0) {
+                console.warn(`⚠️ 部材 ${index+1} の長さが0です。この部材をスキップします。`);
+                console.warn(`  始点節点${i+1}: (${ni.x}, ${ni.y}), 終点節点${j+1}: (${nj.x}, ${nj.y})`);
+                return null; // この部材をスキップ
+            }
             const c = dx/L, s = dy/L, T = [ [c,s,0,0,0,0], [-s,c,0,0,0,0], [0,0,1,0,0,0], [0,0,0,c,s,0], [0,0,0,-s,c,0], [0,0,0,0,0,1] ];
             const EAL=E*A/L, EIL=E*I/L, EIL2=E*I/L**2, EIL3=E*I/L**3;
             let k_local;
@@ -4715,7 +4719,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis };
-        });
+        }).filter(member => member !== null); // 長さ0の部材(null)を除外
+        
+        console.log(`📊 部材処理結果: 全${elements.membersTable.rows.length}行中、有効な部材${members.length}個`);
+        
         const nodeLoads = Array.from(elements.nodeLoadsTable.rows).map((r, i) => { 
             const n = parseInt(r.cells[0].querySelector('input').value) - 1; 
             if (n < 0 || n >= nodes.length) {

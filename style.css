@@ -1501,18 +1501,6 @@ select:focus {
     }
 }
 
-/* ダークモード対応の基礎 */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-background: #1a1a1a;
-        --color-surface: #2d2d2d;
-        --color-text-primary: #ffffff;
-        --color-text-secondary: #cccccc;
-        --color-border: #404040;
-        --color-border-light: #666666;
-    }
-}
-
 /* === インタラクティブツールチップスタイル === */
 #canvas-tooltip {
     position: fixed !important;
@@ -2582,4 +2570,436 @@ header {
     color: #6c757d;
     font-size: 0.9em;
     font-style: italic;
+}
+
+/* ==========================================================================
+   ダークモード完全対応
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        /* カラーパレット - ダークモード */
+        --color-primary: #4a9eff;
+        --color-primary-light: #6eb5ff;
+        --color-primary-dark: #3d8ce7;
+        --color-success: #4caf50;
+        --color-warning: #ffa726;
+        --color-danger: #ef5350;
+        --color-info: #42a5f5;
+        
+        /* グレースケール - ダークモード */
+        --color-text-primary: #e8e8e8;
+        --color-text-secondary: #b0b0b0;
+        --color-text-light: #cccccc;
+        --color-background: #1a1a1a;
+        --color-surface: #2d2d2d;
+        --color-border: #404040;
+        --color-border-light: #555555;
+        
+        /* 影 - ダークモード */
+        --shadow-light: 0 4px 20px rgba(0,0,0,0.3);
+        --shadow-medium: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    
+    /* 基本要素 */
+    body {
+        background-color: var(--color-background);
+        color: var(--color-text-light);
+    }
+    
+    .container {
+        background-color: var(--color-surface);
+        box-shadow: var(--shadow-light);
+    }
+    
+    /* 見出し */
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--color-text-primary);
+    }
+    
+    /* 説明文 */
+    .description {
+        background-color: #1e2a3a;
+        border-color: #2d3e50;
+        color: var(--color-text-light);
+    }
+    
+    /* セクション */
+    section {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+    }
+    
+    /* テーブル */
+    table {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+    }
+    
+    thead {
+        background-color: #1a1a1a;
+        color: var(--color-text-primary);
+    }
+    
+    tbody tr {
+        border-bottom-color: var(--color-border);
+    }
+    
+    tbody tr:hover {
+        background-color: #383838;
+    }
+    
+    /* 入力フィールド */
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    textarea,
+    select {
+        background-color: #1a1a1a;
+        color: var(--color-text-light);
+        border-color: var(--color-border);
+    }
+    
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    input[type="email"]:focus,
+    textarea:focus,
+    select:focus {
+        background-color: #252525;
+        border-color: var(--color-primary);
+    }
+    
+    /* ボタン */
+    button {
+        background-color: #383838;
+        color: var(--color-text-light);
+        border-color: var(--color-border);
+    }
+    
+    button:hover {
+        background-color: #454545;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #4a9eff, #3d8ce7);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #6eb5ff, #4a9eff);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #4caf50, #45a049);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef5350, #e53935);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #ffa726, #fb8c00);
+    }
+    
+    /* モーダル */
+    .modal-content {
+        background-color: #2d2d2d;
+        color: var(--color-text-light);
+    }
+    
+    .modal-header {
+        background: linear-gradient(135deg, #2d2d2d, #383838);
+        border-bottom-color: var(--color-border);
+    }
+    
+    .modal-footer {
+        background-color: #252525;
+        border-top-color: var(--color-border);
+    }
+    
+    .modal-title {
+        color: var(--color-text-primary);
+    }
+    
+    /* キャンバス背景 */
+    #modelCanvas {
+        background-color: #1a1a1a !important;
+    }
+    
+    /* メッセージボックス */
+    #message-box.error {
+        background-color: #3d1f1f;
+        border-color: #ef5350;
+        color: #ffcccc;
+    }
+    
+    #message-box.success {
+        background-color: #1f3d1f;
+        border-color: #4caf50;
+        color: #ccffcc;
+    }
+    
+    #message-box.warning {
+        background-color: #3d331f;
+        border-color: #ffa726;
+        color: #ffe0b3;
+    }
+    
+    #message-box.info {
+        background-color: #1f2d3d;
+        border-color: #42a5f5;
+        color: #cce5ff;
+    }
+    
+    /* コンテキストメニュー */
+    .context-menu {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .context-menu-item {
+        color: var(--color-text-light);
+    }
+    
+    .context-menu-item:hover {
+        background-color: #383838;
+    }
+    
+    /* ポップアップ */
+    .popup {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .popup h3 {
+        background-color: #1a1a1a;
+        color: var(--color-text-primary);
+    }
+    
+    /* タブ */
+    .tab-button {
+        background-color: #383838;
+        color: var(--color-text-secondary);
+        border-color: var(--color-border);
+    }
+    
+    .tab-button.active {
+        background-color: #2d2d2d;
+        color: var(--color-primary);
+    }
+    
+    .tab-button:hover {
+        background-color: #454545;
+    }
+    
+    /* カード */
+    .card {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+    }
+    
+    .card-header {
+        background-color: #252525;
+        color: var(--color-text-primary);
+        border-bottom-color: var(--color-border);
+    }
+    
+    /* プログレスバー */
+    .progress-bar {
+        background-color: #1a1a1a;
+    }
+    
+    .progress-bar-fill {
+        background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    }
+    
+    /* アラート */
+    .alert {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+        color: var(--color-text-light);
+    }
+    
+    .alert-success {
+        background-color: #1f3d1f;
+        border-color: #4caf50;
+        color: #a5d6a7;
+    }
+    
+    .alert-warning {
+        background-color: #3d331f;
+        border-color: #ffa726;
+        color: #ffcc80;
+    }
+    
+    .alert-danger {
+        background-color: #3d1f1f;
+        border-color: #ef5350;
+        color: #ef9a9a;
+    }
+    
+    .alert-info {
+        background-color: #1f2d3d;
+        border-color: #42a5f5;
+        color: #90caf9;
+    }
+    
+    /* バッジ */
+    .badge {
+        background-color: #383838;
+        color: var(--color-text-light);
+    }
+    
+    .badge-primary {
+        background-color: var(--color-primary);
+        color: white;
+    }
+    
+    /* リスト */
+    ul, ol {
+        color: var(--color-text-light);
+    }
+    
+    /* リンク */
+    a {
+        color: var(--color-primary);
+    }
+    
+    a:hover {
+        color: var(--color-primary-light);
+    }
+    
+    /* コード */
+    code, pre {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+        border-color: var(--color-border);
+    }
+    
+    /* スクロールバー（Webkit） */
+    ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #555555;
+        border-radius: 6px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #666666;
+    }
+    
+    /* セレクトメニュー（オプション） */
+    option {
+        background-color: #2d2d2d;
+        color: var(--color-text-light);
+    }
+    
+    /* フォームラベル */
+    label {
+        color: var(--color-text-light);
+    }
+    
+    /* HR（水平線） */
+    hr {
+        border-color: var(--color-border);
+    }
+    
+    /* 選択範囲 */
+    ::selection {
+        background-color: var(--color-primary);
+        color: white;
+    }
+    
+    /* チェックボックス・ラジオボタン */
+    input[type="checkbox"],
+    input[type="radio"] {
+        accent-color: var(--color-primary);
+    }
+    
+    /* ローディングスピナー */
+    .spinner {
+        border-color: var(--color-border);
+        border-top-color: var(--color-primary);
+    }
+    
+    /* ツールチップ（一般） */
+    .tooltip {
+        background-color: #1a1a1a;
+        color: var(--color-text-light);
+        border-color: var(--color-border);
+    }
+    
+    /* ドロップダウンメニュー */
+    .dropdown-menu {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .dropdown-item {
+        color: var(--color-text-light);
+    }
+    
+    .dropdown-item:hover {
+        background-color: #383838;
+    }
+    
+    /* パネル */
+    .panel {
+        background-color: #2d2d2d;
+        border-color: var(--color-border);
+    }
+    
+    .panel-header {
+        background-color: #252525;
+        border-bottom-color: var(--color-border);
+        color: var(--color-text-primary);
+    }
+    
+    /* ナビゲーションバー */
+    nav {
+        background-color: #252525;
+        border-bottom-color: var(--color-border);
+    }
+    
+    /* フッター */
+    footer {
+        background-color: #252525;
+        color: var(--color-text-secondary);
+        border-top-color: var(--color-border);
+    }
+    
+    /* 無効化された要素 */
+    :disabled,
+    .disabled {
+        opacity: 0.5;
+        color: var(--color-text-secondary);
+    }
+    
+    /* 節点・部材選択時のハイライト */
+    .selected {
+        background-color: rgba(74, 158, 255, 0.2);
+    }
+    
+    /* エラー表示 */
+    .error-message {
+        background-color: #3d1f1f;
+        color: #ffcccc;
+        border-color: #ef5350;
+    }
+    
+    /* 情報表示 */
+    .info-box {
+        background-color: #1f2d3d;
+        border-color: #42a5f5;
+        color: #cce5ff;
+    }
 }

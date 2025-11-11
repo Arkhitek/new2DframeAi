@@ -8481,6 +8481,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tolerance = 0.01; // 10mm未満の差は同一とみなす（小数点以下2桁の表示精度に対応）
                 let isDuplicate = false;
                 let duplicateNodeIndex = -1;
+                
+                console.log('🔍 節点追加モード: 重複チェック開始', { x: modelCoords.x, y: modelCoords.y });
+                
                 try {
                     const { nodes } = parseInputs();
                     console.log('🔍 節点追加チェック: 追加予定座標', { x: modelCoords.x, y: modelCoords.y });
@@ -8502,9 +8505,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             break;
                         }
                     }
+                    
+                    if (!isDuplicate) {
+                        console.log('✅ 重複なし: 節点追加可能');
+                    }
                 } catch (error) {
-                    console.error('❌ parseInputsエラー:', error);
-                    // parseInputsエラー時は重複チェックをスキップ
+                    console.error('❌ 重複チェック時にparseInputsエラー:', error);
+                    console.error('エラー詳細:', error.message);
+                    if (error.stack) console.error('スタックトレース:', error.stack);
+                    // parseInputsエラー時は安全のため、節点追加をスキップ
+                    utils.showMessage('エラーが発生したため節点を追加できません。部材データを確認してください。', 'error', 3000);
+                    return; // 節点追加を中止
                 }
                 
                 if (isDuplicate) {

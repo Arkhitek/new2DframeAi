@@ -371,7 +371,7 @@
                                             <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
                                             <div class="spring-inputs" style="display:none; margin-top:6px;">
                                                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
                                                     <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
                                                     <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
                                                 </div>
@@ -383,7 +383,7 @@
                                             <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
                                             <div class="spring-inputs" style="display:none; margin-top:6px;">
                                                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
                                                     <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
                                                     <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
                                                 </div>
@@ -392,38 +392,7 @@
                                     </td>
                                 </tr>
                             </tbody>
-                        </table>
-                        <!-- グローバルなバネ剛性設定（始端 / 終端）。個別の部材接合はテーブル内の選択で制御します -->
-                        <div id="global-spring-settings" style="margin-top:8px; padding:8px; background:#f8f9fa; border-radius:4px;">
-                            <strong>バネ剛性（グローバル）</strong>
-                            <div style="display:flex; gap:12px; margin-top:6px; flex-wrap:wrap;">
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>始端 Kx</span>
-                                    <input type="number" id="global-spring-start-kx" min="0" step="0.01" style="width:100px;">
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>始端 Ky</span>
-                                    <input type="number" id="global-spring-start-ky" min="0" step="0.01" style="width:100px;">
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>始端 Kr</span>
-                                    <input type="number" id="global-spring-start-kr" min="0" step="0.01" style="width:100px;">
-                                </div>
-                                <div style="width:12px"></div>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>終端 Kx</span>
-                                    <input type="number" id="global-spring-end-kx" min="0" step="0.01" style="width:100px;">
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>終端 Ky</span>
-                                    <input type="number" id="global-spring-end-ky" min="0" step="0.01" style="width:100px;">
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span>終端 Kr</span>
-                                    <input type="number" id="global-spring-end-kr" min="0" step="0.01" style="width:100px;">
-                                </div>
-                            </div>
-                        </div>
+                            </table>
                         <button id="add-member-btn">部材を追加</button>
                     </div>
                 </div>
@@ -541,12 +510,32 @@
                  <option value="pinned">ピン</option>
                  <option value="spring">バネ</option>
             </select>
+                    <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <label style="font-size:12px;">Kx (N/mm)</label>
+                    <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Ky (N/mm)</label>
+                    <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
+                    <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                </div>
+            </div>
             <label for="popup-j-conn">終端接合</label>
             <select id="popup-j-conn">
                  <option value="rigid">剛</option>
                  <option value="pinned">ピン</option>
                  <option value="spring">バネ</option>
             </select>
+            <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <label style="font-size:12px;">Kx (N/mm)</label>
+                    <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Ky (N/mm)</label>
+                    <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
+                    <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                </div>
+            </div>
              <label for="popup-w">w (kN/m)</label>
             <input type="number" id="popup-w" title="等分布荷重">
         </div>
@@ -723,22 +712,6 @@
         </div>
     </div>
     <script src="steel_data.js"></script>
-    <script>
-        // グローバルなバネ剛性取得関数を定義
-        window.getSpringStiffness = function() {
-            const start = {
-                Kx: parseFloat(document.getElementById('global-spring-start-kx')?.value) || 0,
-                Ky: parseFloat(document.getElementById('global-spring-start-ky')?.value) || 0,
-                Kr: parseFloat(document.getElementById('global-spring-start-kr')?.value) || 0
-            };
-            const end = {
-                Kx: parseFloat(document.getElementById('global-spring-end-kx')?.value) || 0,
-                Ky: parseFloat(document.getElementById('global-spring-end-ky')?.value) || 0,
-                Kr: parseFloat(document.getElementById('global-spring-end-kr')?.value) || 0
-            };
-            return { start, end };
-        };
-    </script>
     <script src="frame_analyzer.js"></script>
     <script src="communication.js"></script>
 </body>

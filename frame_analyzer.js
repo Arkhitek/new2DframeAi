@@ -1621,6 +1621,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make elements object globally accessible
     window.elements = elements;
 
+    // ポップアップ内のバネ入力表示切替の初期設定
+    try {
+        const popupIConn = document.getElementById('popup-i-conn');
+        const popupJConn = document.getElementById('popup-j-conn');
+        const popupISpringBox = document.getElementById('popup-i-spring-box');
+        const popupJSpringBox = document.getElementById('popup-j-spring-box');
+        const toggleBox = (selectEl, boxEl) => {
+            if (!selectEl || !boxEl) return;
+            boxEl.style.display = (selectEl.value === 'spring') ? '' : 'none';
+        };
+        if (popupIConn && popupISpringBox) {
+            popupIConn.addEventListener('change', () => toggleBox(popupIConn, popupISpringBox));
+            toggleBox(popupIConn, popupISpringBox);
+        }
+        if (popupJConn && popupJSpringBox) {
+            popupJConn.addEventListener('change', () => toggleBox(popupJConn, popupJSpringBox));
+            toggleBox(popupJConn, popupJSpringBox);
+        }
+    } catch (e) {
+        console.warn('popup spring init error', e);
+    }
+
     // AI機能の表示切り替え設定
     setupAIFeaturesToggle();
     
@@ -3368,9 +3390,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const s = readSpringFromCell(iCell);
                     if (s) {
                         currentMember.spring_i = s;
-                    } else if (typeof window.getSpringStiffness === 'function') {
-                        const g = window.getSpringStiffness();
-                        if (g && g.start) currentMember.spring_i = g.start;
+                    } else {
+                        // グローバル入力を廃止したため、未指定はゼロ剛性とする
+                        currentMember.spring_i = { Kx: 0, Ky: 0, Kr: 0 };
                     }
                 }
             } catch (e) {
@@ -3384,9 +3406,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const s2 = readSpringFromCell(jCell);
                     if (s2) {
                         currentMember.spring_j = s2;
-                    } else if (typeof window.getSpringStiffness === 'function') {
-                        const g = window.getSpringStiffness();
-                        if (g && g.end) currentMember.spring_j = g.end;
+                    } else {
+                        currentMember.spring_j = { Kx: 0, Ky: 0, Kr: 0 };
                     }
                 }
             } catch (e) {
@@ -9457,6 +9478,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         memberRow.cells[iConnIndex].querySelector('select').value = document.getElementById('popup-i-conn').value;
         memberRow.cells[jConnIndex].querySelector('select').value = document.getElementById('popup-j-conn').value;
+        // ポップアップのバネ入力をテーブル行のspring-inputsへ反映
+        try {
+            const applyPopupToRowSpring = (connIndex, prefix) => {
+                const popupKx = document.getElementById(`${prefix}-spring-kx`);
+                const popupKy = document.getElementById(`${prefix}-spring-ky`);
+                const popupKr = document.getElementById(`${prefix}-spring-kr`);
+                const rowSpringBox = memberRow.cells[connIndex].querySelector('.spring-inputs');
+                if (!rowSpringBox) return;
+                const rowKx = rowSpringBox.querySelector('.spring-kx');
+                const rowKy = rowSpringBox.querySelector('.spring-ky');
+                const rowKr = rowSpringBox.querySelector('.spring-kr');
+                if (popupKx && rowKx) rowKx.value = popupKx.value || '0';
+                if (popupKy && rowKy) rowKy.value = popupKy.value || '0';
+                if (popupKr && rowKr) rowKr.value = popupKr.value || '0';
+            };
+
+            // 始端
+            applyPopupToRowSpring(iConnIndex, 'popup-i');
+            // 終端
+            applyPopupToRowSpring(jConnIndex, 'popup-j');
+        } catch (e) {
+            console.warn('popup->row spring apply error', e);
+        }
         const wValue = parseFloat(document.getElementById('popup-w').value) || 0;
         const memberLoadRow = Array.from(elements.memberLoadsTable.rows).find(row => parseInt(row.cells[0].querySelector('input').value) - 1 === selectedMemberIndex);
         if (wValue !== 0) {
@@ -10029,9 +10073,9 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
                 <select class="conn-select"><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'pin' || i_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${i_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
                 <div class="spring-inputs" style="display:none; margin-top:6px;">
                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
-                        <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
-                        <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Kx (N/mm)</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                        <label style="font-size:12px;">Ky (N/mm)</label><input class="spring-ky" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                        <label style="font-size:12px;">Kr (N·mm/rad)</label><input class="spring-kr" type="number" min="0" step="0.01" value="0" style="width:80px;">
                     </div>
                 </div>
             </div>
@@ -10041,9 +10085,9 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
                 <select class="conn-select"><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'pin' || j_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${j_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
                 <div class="spring-inputs" style="display:none; margin-top:6px;">
                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
-                        <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
-                        <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Kx (N/mm)</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                        <label style="font-size:12px;">Ky (N/mm)</label><input class="spring-ky" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                        <label style="font-size:12px;">Kr (N·mm/rad)</label><input class="spring-kr" type="number" min="0" step="0.01" value="0" style="width:80px;">
                     </div>
                 </div>
             </div>
@@ -13398,6 +13442,46 @@ const loadPreset = (index) => {
                 const jConnIndex = hasDensityColumn ? 13 : 12;
                 document.getElementById('popup-i-conn').value = memberRow.cells[iConnIndex].querySelector('select').value;
                 document.getElementById('popup-j-conn').value = memberRow.cells[jConnIndex].querySelector('select').value;
+
+                // ポップアップ内のバネ入力にテーブル行の値を反映（存在すれば）
+                    try {
+                        const iSpringBox = memberRow.cells[iConnIndex].querySelector('.spring-inputs');
+                        const piKx = document.getElementById('popup-i-spring-kx');
+                        const piKy = document.getElementById('popup-i-spring-ky');
+                        const piKr = document.getElementById('popup-i-spring-kr');
+                        if (iSpringBox) {
+                            const kx = iSpringBox.querySelector('.spring-kx')?.value || '0';
+                            const ky = iSpringBox.querySelector('.spring-ky')?.value || '0';
+                            const kr = iSpringBox.querySelector('.spring-kr')?.value || '0';
+                            if (piKx) piKx.value = kx;
+                            if (piKy) piKy.value = ky;
+                            if (piKr) piKr.value = kr;
+                        } else {
+                            // set defaults
+                            if (piKx) piKx.value = '0';
+                            if (piKy) piKy.value = '0';
+                            if (piKr) piKr.value = '0';
+                        }
+
+                        const jSpringBox = memberRow.cells[jConnIndex].querySelector('.spring-inputs');
+                        const pjKx = document.getElementById('popup-j-spring-kx');
+                        const pjKy = document.getElementById('popup-j-spring-ky');
+                        const pjKr = document.getElementById('popup-j-spring-kr');
+                        if (jSpringBox) {
+                            const kx = jSpringBox.querySelector('.spring-kx')?.value || '0';
+                            const ky = jSpringBox.querySelector('.spring-ky')?.value || '0';
+                            const kr = jSpringBox.querySelector('.spring-kr')?.value || '0';
+                            if (pjKx) pjKx.value = kx;
+                            if (pjKy) pjKy.value = ky;
+                            if (pjKr) pjKr.value = kr;
+                        } else {
+                            if (pjKx) pjKx.value = '0';
+                            if (pjKy) pjKy.value = '0';
+                            if (pjKr) pjKr.value = '0';
+                        }
+                    } catch (e) {
+                        console.warn('popup sync spring read error', e);
+                    }
 
                 // 部材荷重を設定
                 const memberLoadRow = Array.from(elements.memberLoadsTable.rows).find(row => parseInt(row.cells[0].querySelector('input').value)-1 === selectedMemberIndex);

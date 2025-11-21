@@ -3361,6 +3361,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMember.iy = row.dataset.iy;
 
             // 各行のバネ剛性を取得（該当セル内の .spring-inputs を探す）
+            // UIから読み取ったバネ値を内部計算用単位に変換する関数
+            // 現在の実装ではUIで表示している単位 (Kx,Ky: N/mm, Kr: N·mm/rad) を
+            // そのまま内部で使用している単位系 (N/mm, N·mm/rad) と一致させる前提とする。
+            // 将来的に内部単位が変わる場合はここで変換を行ってください。
+            const convertSpringFromUI = (Kx, Ky, Kr) => ({ Kx: Kx, Ky: Ky, Kr: Kr });
+
             const readSpringFromCell = (cell) => {
                 if (!cell) return null;
                 const container = cell.querySelector('.spring-inputs');
@@ -3376,9 +3382,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const Kx = parse(kxEl);
                 const Ky = parse(kyEl);
                 const Kr = parse(krEl);
-                // 少なくとも1つの値が数値ならオブジェクトとして返す
+                // 少なくとも1つの値が数値ならオブジェクトとして返す（UI単位→内部単位変換を適用）
                 if (Kx !== null || Ky !== null || Kr !== null) {
-                    return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0 };
+                    const out = convertSpringFromUI(Kx || 0, Ky || 0, Kr || 0);
+                    return { Kx: out.Kx, Ky: out.Ky, Kr: out.Kr };
                 }
                 return null;
             };
@@ -3747,6 +3754,52 @@ document.addEventListener('DOMContentLoaded', () => {
                             newRow.dataset.sectionInfo = JSON.stringify(sectionInfoToApply);
                         }
                         // その他のdataset属性はsetRowSectionInfoで処理されるため、個別設定は不要
+
+                        // ---- 部材のバネ情報が保存されている場合はテーブル行の表示を復元 ----
+                        try {
+                            // conn-select 要素は memberRowHTML で2つ作られる（始端, 終端）
+                            const connSelects = newRow.querySelectorAll('select.conn-select');
+                            const showSpringBoxFor = (selectEl) => {
+                                const box = selectEl.closest('.conn-cell')?.querySelector('.spring-inputs');
+                                if (box) box.style.display = (selectEl.value === 'spring') ? '' : 'none';
+                            };
+
+                            if (connSelects && connSelects.length >= 2) {
+                                const iSel = connSelects[0];
+                                const jSel = connSelects[1];
+                                if (m.i_conn) iSel.value = m.i_conn;
+                                if (m.j_conn) jSel.value = m.j_conn;
+                                // 表示切替
+                                try { showSpringBoxFor(iSel); } catch(e){}
+                                try { showSpringBoxFor(jSel); } catch(e){}
+
+                                // バネ値の復元（UI単位で保存されている想定）
+                                if (m.spring_i && iSel.value === 'spring') {
+                                    const iBox = iSel.closest('.conn-cell')?.querySelector('.spring-inputs');
+                                    if (iBox) {
+                                        const kx = iBox.querySelector('.spring-kx');
+                                        const ky = iBox.querySelector('.spring-ky');
+                                        const kr = iBox.querySelector('.spring-kr');
+                                        if (kx && m.spring_i.Kx !== undefined) kx.value = Number(m.spring_i.Kx);
+                                        if (ky && m.spring_i.Ky !== undefined) ky.value = Number(m.spring_i.Ky);
+                                        if (kr && m.spring_i.Kr !== undefined) kr.value = Number(m.spring_i.Kr);
+                                    }
+                                }
+                                if (m.spring_j && jSel.value === 'spring') {
+                                    const jBox = jSel.closest('.conn-cell')?.querySelector('.spring-inputs');
+                                    if (jBox) {
+                                        const kx = jBox.querySelector('.spring-kx');
+                                        const ky = jBox.querySelector('.spring-ky');
+                                        const kr = jBox.querySelector('.spring-kr');
+                                        if (kx && m.spring_j.Kx !== undefined) kx.value = Number(m.spring_j.Kx);
+                                        if (ky && m.spring_j.Ky !== undefined) ky.value = Number(m.spring_j.Ky);
+                                        if (kr && m.spring_j.Kr !== undefined) kr.value = Number(m.spring_j.Kr);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('restoreState: バネ表示復元中にエラー', e);
+                        }
 
                         // 既存の断面情報がない場合のみ、新しい断面情報を解析して適用
                         if (!existingSectionInfo[index] || !existingSectionInfo[index].sectionInfo) {
@@ -4346,6 +4399,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const indices = [i*3, i*3+1, i*3+2, j*3, j*3+1, j*3+2];
                 for (let row = 0; row < 6; row++) for (let col = 0; col < 6; col++) K_global[indices[row]][indices[col]] += k_global_member[row][col];
             });
+            // 各部材の端に設定されたバネ剛性を全体剛性行列に反映する
+            try {
+                members.forEach((member, idx) => {
+                    const ii = member.i, jj = member.j;
+                    // 始端バネ
+                    if (member.spring_i) {
+                        const s = member.spring_i;
+                        const Kx = Number(s.Kx) || 0;
+                        const Ky = Number(s.Ky) || 0;
+                        const Kr = Number(s.Kr) || 0;
+                        if (Kx !== 0) K_global[ii*3][ii*3] += Kx;
+                        if (Ky !== 0) K_global[ii*3+1][ii*3+1] += Ky;
+                        if (Kr !== 0) K_global[ii*3+2][ii*3+2] += Kr;
+                    }
+                    // 終端バネ
+                    if (member.spring_j) {
+                        const s2 = member.spring_j;
+                        const Kx2 = Number(s2.Kx) || 0;
+                        const Ky2 = Number(s2.Ky) || 0;
+                        const Kr2 = Number(s2.Kr) || 0;
+                        if (Kx2 !== 0) K_global[jj*3][jj*3] += Kx2;
+                        if (Ky2 !== 0) K_global[jj*3+1][jj*3+1] += Ky2;
+                        if (Kr2 !== 0) K_global[jj*3+2][jj*3+2] += Kr2;
+                    }
+                });
+            } catch (e) {
+                console.warn('バネ剛性の K_global への反映中にエラーが発生しました:', e);
+            }
             // ==========================================================
             // 強制変位を考慮した解析ロジック（自由節点も対応）
             // ==========================================================
@@ -11614,8 +11695,8 @@ const loadPreset = (index) => {
                 csvSections.push('#NODES\n' + header + '\n' + rows.join('\n'));
             }
             if (state.members.length > 0) {
-                const header = 'i,j,E,strengthType,strengthValue,I,A,Z,i_conn,j_conn,Zx,Zy,ix,iy,sectionLabel,sectionSummary,sectionSource,sectionInfo,sectionAxisKey,sectionAxisMode,sectionAxisLabel';
-                const rows = state.members.map(m => {
+                const header = 'i,j,E,strengthType,strengthValue,I,A,Z,i_conn,j_conn,Kx_i,Ky_i,Kr_i,Kx_j,Ky_j,Kr_j,Zx,Zy,ix,iy,sectionLabel,sectionSummary,sectionSource,sectionInfo,sectionAxisKey,sectionAxisMode,sectionAxisLabel';
+                    const rows = state.members.map(m => {
                     const sectionLabel = m.sectionLabel ? encodeURIComponent(m.sectionLabel) : '';
                     const sectionSummary = m.sectionSummary ? encodeURIComponent(m.sectionSummary) : '';
                     const sectionSource = m.sectionSource ? encodeURIComponent(m.sectionSource) : '';
@@ -11624,7 +11705,13 @@ const loadPreset = (index) => {
                     const sectionAxisMode = m.sectionAxisMode || (m.sectionAxis && m.sectionAxis.mode) || '';
                     const sectionAxisLabelRaw = m.sectionAxisLabel || (m.sectionAxis && m.sectionAxis.label) || '';
                     const sectionAxisLabel = sectionAxisLabelRaw ? encodeURIComponent(sectionAxisLabelRaw) : '';
-                    return `${m.i},${m.j},${m.E},${m.strengthType},${m.strengthValue},${m.I},${m.A},${m.Z},${m.i_conn},${m.j_conn},${m.Zx || ''},${m.Zy || ''},${m.ix || ''},${m.iy || ''},${sectionLabel},${sectionSummary},${sectionSource},${sectionInfoEncoded},${sectionAxisKey},${sectionAxisMode},${sectionAxisLabel}`;
+                        const kxi = m.spring_i && m.spring_i.Kx ? m.spring_i.Kx : '';
+                        const kyi = m.spring_i && m.spring_i.Ky ? m.spring_i.Ky : '';
+                        const kri = m.spring_i && m.spring_i.Kr ? m.spring_i.Kr : '';
+                        const kxj = m.spring_j && m.spring_j.Kx ? m.spring_j.Kx : '';
+                        const kyj = m.spring_j && m.spring_j.Ky ? m.spring_j.Ky : '';
+                        const krj = m.spring_j && m.spring_j.Kr ? m.spring_j.Kr : '';
+                        return `${m.i},${m.j},${m.E},${m.strengthType},${m.strengthValue},${m.I},${m.A},${m.Z},${m.i_conn},${m.j_conn},${kxi},${kyi},${kri},${kxj},${kyj},${krj},${m.Zx || ''},${m.Zy || ''},${m.ix || ''},${m.iy || ''},${sectionLabel},${sectionSummary},${sectionSource},${sectionInfoEncoded},${sectionAxisKey},${sectionAxisMode},${sectionAxisLabel}`;
                 });
                 csvSections.push('#MEMBERS\n' + header + '\n' + rows.join('\n'));
             }
@@ -11826,6 +11913,42 @@ const loadPreset = (index) => {
     
     // Make runFullAnalysis globally accessible
     window.runFullAnalysis = runFullAnalysis;
+
+    // 簡易テストプリセット: 2節点1部材、片端をバネ接続にしたサンプル
+    window.createSimpleSpringPreset = () => {
+        try {
+            const state = {
+                nodes: [
+                    { x: 0, y: 0, support: 'fixed', dx_forced: 0, dy_forced: 0, r_forced: 0 },
+                    { x: 1000, y: 0, support: 'free', dx_forced: 0, dy_forced: 0, r_forced: 0 }
+                ],
+                members: [
+                    {
+                        i: 1,
+                        j: 2,
+                        E: '205000',
+                        strengthType: '',
+                        strengthValue: '',
+                        I: '1.84e-5',
+                        A: '2.34e-3',
+                        Z: '1.23e-3',
+                        i_conn: 'rigid',
+                        j_conn: 'spring',
+                        spring_i: { Kx: 0, Ky: 0, Kr: 0 },
+                        spring_j: { Kx: 100, Ky: 0, Kr: 0 }
+                    }
+                ],
+                nodeLoads: [],
+                memberLoads: []
+            };
+            historyStack = [];
+            restoreState(state);
+            runFullAnalysis();
+            console.log('createSimpleSpringPreset: プリセットを読み込み、解析を実行しました。');
+        } catch (e) {
+            console.error('createSimpleSpringPreset エラー:', e);
+        }
+    };
     
     const runSectionCheck = () => {
         if (!lastResults) return;

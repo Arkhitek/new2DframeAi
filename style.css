@@ -135,7 +135,7 @@ select, input, button {
 }
 
 select, input[type="number"], input[type="text"] { 
-    width: auto; 
+    width: 100%; 
     box-sizing: border-box;
 }
 
@@ -2478,6 +2478,24 @@ header {
     color: #495057;
 }
 
+/* 断面算定結果ヘッダー内の文字サイズセレクトを確実に表示する */
+#result-font-size,
+label[for="result-font-size"] {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+#result-font-size {
+    min-width: 100px;
+    background-color: #ffffff;
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    appearance: auto;
+}
+
 .result-item .value {
     font-weight: 600;
     color: #212529;
@@ -2539,7 +2557,6 @@ header {
     }
 }
 
-<<<<<<< HEAD
 /* === 断面算定ボタンのスタイル === */
 .section-calc-controls {
     text-align: center;
@@ -2585,9 +2602,7 @@ header {
     color: #6c757d;
     font-size: 0.9em;
     font-style: italic;
-=======
-/* 断面算定関連のスタイルは削除済み */
-
+}
 
 /* ==========================================================================
    ダークモード無効化 - 常にライトモード表示
@@ -2595,5 +2610,4 @@ header {
 @media (prefers-color-scheme: dark) {
     /* ブラウザがダークモードでも、アプリケーションは常にライトモードで表示 */
     /* このメディアクエリは意図的に空にしています */
->>>>>>> parent of 9094257 (断面算定機能に関連する表示・実行ロジックを削除し、新しいスタイルを追加しました。)
 }

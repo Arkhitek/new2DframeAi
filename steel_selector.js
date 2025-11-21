@@ -1868,8 +1868,6 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         }
         console.log('Results displayed successfully');
     };
-
-<<<<<<< HEAD
     // 断面算定結果表示機能
     function updateSectionResultDisplay(result) {
         const statusElement = document.getElementById('section-status');
@@ -1976,9 +1974,6 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
     
     // 初期状態で断面算定結果をリセット
     updateSectionResultDisplay(null);
-=======
-    // 断面算定機能は削除されました（UIからの実行および結果表示は無効）
->>>>>>> parent of 9094257 (断面算定機能に関連する表示・実行ロジックを削除し、新しいスタイルを追加しました。)
 
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));

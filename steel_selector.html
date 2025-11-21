@@ -138,7 +138,16 @@
             
             <!-- 断面算定結果表示 -->
             <div class="section">
-                <h3>断面算定結果</h3>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <h3 style="margin: 0;">断面算定結果</h3>
+                    <label for="result-font-size" style="font-weight:normal;">文字サイズ:</label>
+                    <select id="result-font-size" style="padding:2px 8px;">
+                        <option value="14px">小</option>
+                        <option value="16px" selected>標準</option>
+                        <option value="18px">大</option>
+                        <option value="22px">特大</option>
+                    </select>
+                </div>
                 <div id="section-result" class="result-section">
                     <div class="result-item">
                         <span class="label">断面算定:</span>

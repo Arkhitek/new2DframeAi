@@ -1869,6 +1869,7 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         console.log('Results displayed successfully');
     };
 
+<<<<<<< HEAD
     // 断面算定結果表示機能
     function updateSectionResultDisplay(result) {
         const statusElement = document.getElementById('section-status');
@@ -1975,7 +1976,30 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
     
     // 初期状態で断面算定結果をリセット
     updateSectionResultDisplay(null);
+=======
+    // 断面算定機能は削除されました（UIからの実行および結果表示は無効）
+>>>>>>> parent of 9094257 (断面算定機能に関連する表示・実行ロジックを削除し、新しいスタイルを追加しました。)
 
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));
+
+    // 文字サイズ変更イベント
+    const fontSizeSelect = document.getElementById('result-font-size');
+    const resultSection = document.getElementById('section-result');
+    const pickupTables = document.querySelectorAll('.pickup-table');
+    if (fontSizeSelect && resultSection) {
+        fontSizeSelect.addEventListener('change', function() {
+            const size = fontSizeSelect.value;
+            resultSection.style.setProperty('--result-font-size', size);
+            pickupTables.forEach(table => {
+                table.style.setProperty('--result-font-size', size);
+            });
+        });
+        // 初期値反映
+        const initSize = fontSizeSelect.value;
+        resultSection.style.setProperty('--result-font-size', initSize);
+        pickupTables.forEach(table => {
+            table.style.setProperty('--result-font-size', initSize);
+        });
+    }
 });

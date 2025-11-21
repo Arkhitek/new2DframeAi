@@ -1069,6 +1069,7 @@ body.section-check-disabled .section-check-item {
 .pickup-table {
     width: 100%;
     border-collapse: collapse;
+    font-size: var(--result-font-size, 16px);
 }
 
 .pickup-table th,
@@ -2459,6 +2460,7 @@ header {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    font-size: var(--result-font-size, 16px);
 }
 
 .result-item {
@@ -2537,6 +2539,7 @@ header {
     }
 }
 
+<<<<<<< HEAD
 /* === 断面算定ボタンのスタイル === */
 .section-calc-controls {
     text-align: center;
@@ -2582,4 +2585,15 @@ header {
     color: #6c757d;
     font-size: 0.9em;
     font-style: italic;
+=======
+/* 断面算定関連のスタイルは削除済み */
+
+
+/* ==========================================================================
+   ダークモード無効化 - 常にライトモード表示
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+    /* ブラウザがダークモードでも、アプリケーションは常にライトモードで表示 */
+    /* このメディアクエリは意図的に空にしています */
+>>>>>>> parent of 9094257 (断面算定機能に関連する表示・実行ロジックを削除し、新しいスタイルを追加しました。)
 }

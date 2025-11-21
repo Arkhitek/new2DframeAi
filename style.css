@@ -2478,6 +2478,25 @@ header {
     color: #495057;
 }
 
+/* フォントサイズコントロール（各結果ウィンドウ内） */
+.result-font-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.95em;
+    color: var(--color-text-secondary);
+}
+
+.result-font-control input.result-font-input {
+    width: 72px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-border-light);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--color-text-primary);
+}
+
 /* 断面算定関連の UI は削除されました */
 
 .result-item .value {

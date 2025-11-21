@@ -1874,4 +1874,25 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
     typeSelect.dispatchEvent(new Event('change'));
 
     // 断面算定用のフォントサイズ制御は削除されました
+
+    // --- 各結果ウィンドウのフォントサイズ入力を初期化 ---
+    const fontInputs = document.querySelectorAll('.result-font-input');
+    fontInputs.forEach(input => {
+        const applyFont = () => {
+            const val = parseInt(input.value, 10);
+            const size = (Number.isFinite(val) ? val : 16) + 'px';
+            const wrapper = input.closest('.pickup-table-wrapper') || input.closest('.results-table-wrapper') || input.closest('.custom-results') || input.closest('.pickup-left');
+            if (wrapper) {
+                const table = wrapper.querySelector('.pickup-table') || wrapper.querySelector('table');
+                if (table) {
+                    table.style.setProperty('--result-font-size', size);
+                }
+                // ルートとしても設定しておく（必要な場合）
+                wrapper.style.setProperty('--result-font-size', size);
+            }
+        };
+        input.addEventListener('input', applyFont);
+        // 初期反映
+        applyFont();
+    });
 });

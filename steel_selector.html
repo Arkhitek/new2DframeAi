@@ -88,7 +88,8 @@
                         <h3>断面性能値一覧</h3>
                         <div class="result-font-control">
                             <label for="pickup-font-size">表示文字サイズ:</label>
-                            <input id="pickup-font-size" class="result-font-input" type="number" min="10" max="48" step="1" value="16"> px
+                            <input id="pickup-font-size" class="result-font-input" type="range" min="10" max="48" step="1" value="16">
+                            <span class="result-font-value" id="pickup-font-value">16</span>px
                         </div>
                         <table class="pickup-table">
                             <tbody></tbody>
@@ -167,7 +168,8 @@
                         <h3>計算結果</h3>
                             <div class="result-font-control">
                                 <label for="custom-font-size">表示文字サイズ:</label>
-                                <input id="custom-font-size" class="result-font-input" type="number" min="10" max="48" step="1" value="16"> px
+                                <input id="custom-font-size" class="result-font-input" type="range" min="10" max="48" step="1" value="16">
+                                <span class="result-font-value" id="custom-font-value">16</span>px
                             </div>
                         <div class="results-table-wrapper">
                             <table class="pickup-table" id="custom-results-table">

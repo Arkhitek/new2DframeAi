@@ -363,8 +363,36 @@
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody></tbody>
-                        </table>
+                            <tbody>
+                                <tr>
+                                    <td>1</td>
+                                    <td>
+                                        <div class="conn-cell">
+                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
+                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
+                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="conn-cell">
+                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
+                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
+                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
+                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            </table>
                         <button id="add-member-btn">部材を追加</button>
                     </div>
                 </div>
@@ -478,14 +506,36 @@
 <input type="number" id="popup-z" class="section-check-item">
             <label for="popup-i-conn">始端接合</label>
             <select id="popup-i-conn">
-                <option value="rigid">剛</option>
-                <option value="pinned">ピン</option>
+                 <option value="rigid">剛</option>
+                 <option value="pinned">ピン</option>
+                 <option value="spring">バネ</option>
             </select>
+                    <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <label style="font-size:12px;">Kx (N/mm)</label>
+                    <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Ky (N/mm)</label>
+                    <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
+                    <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                </div>
+            </div>
             <label for="popup-j-conn">終端接合</label>
             <select id="popup-j-conn">
-                <option value="rigid">剛</option>
-                <option value="pinned">ピン</option>
+                 <option value="rigid">剛</option>
+                 <option value="pinned">ピン</option>
+                 <option value="spring">バネ</option>
             </select>
+            <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <label style="font-size:12px;">Kx (N/mm)</label>
+                    <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Ky (N/mm)</label>
+                    <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
+                    <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+                </div>
+            </div>
              <label for="popup-w">w (kN/m)</label>
             <input type="number" id="popup-w" title="等分布荷重">
         </div>
@@ -555,11 +605,13 @@
             <select id="add-popup-i-conn">
                 <option value="rigid">剛</option>
                 <option value="pinned">ピン</option>
+                <option value="spring">バネ</option>
             </select>
             <label for="add-popup-j-conn">終端接合</label>
             <select id="add-popup-j-conn">
                 <option value="rigid">剛</option>
                 <option value="pinned">ピン</option>
+                <option value="spring">バネ</option>
             </select>
         </div>
         <div class="popup-buttons">

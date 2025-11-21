@@ -5030,6 +5030,16 @@ function validateAndFixMemberOverlap(model) {
                 }
             });
         }
+            // --- バネ接合条件の剛性値を部材データに反映 ---
+            // グローバル入力機能を廃止したため、個別値がなければゼロ剛性を割当てる
+            fixedModel.members.forEach((member) => {
+                if ((member.i_conn === 'バネ' || member.i_conn === 'spring') && !member.spring_i) {
+                    member.spring_i = { Kx: 0, Ky: 0, Kr: 0 };
+                }
+                if ((member.j_conn === 'バネ' || member.j_conn === 'spring') && !member.spring_j) {
+                    member.spring_j = { Kx: 0, Ky: 0, Kr: 0 };
+                }
+            });
         // 部材荷重の参照も修正
         if (fixedModel.memberLoads && Array.isArray(fixedModel.memberLoads)) {
             // 削除された部材の荷重を除去

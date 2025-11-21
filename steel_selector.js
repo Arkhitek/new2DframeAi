@@ -1873,4 +1873,6 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
 
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));
+        // 接合設定はポップアップ側ではなくメイン画面の部材テーブルで行います。
+        // バネ剛性はメイン画面のグローバル入力（index.html）から取得されます。
 });

@@ -135,7 +135,7 @@ select, input, button {
 }
 
 select, input[type="number"], input[type="text"] { 
-    width: 100%; 
+    width: auto; 
     box-sizing: border-box;
 }
 

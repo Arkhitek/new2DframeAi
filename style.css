@@ -2478,23 +2478,7 @@ header {
     color: #495057;
 }
 
-/* 断面算定結果ヘッダー内の文字サイズセレクトを確実に表示する */
-#result-font-size,
-label[for="result-font-size"] {
-    display: inline-block;
-    vertical-align: middle;
-}
-
-#result-font-size {
-    min-width: 100px;
-    background-color: #ffffff;
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 4px 8px;
-    box-sizing: border-box;
-    appearance: auto;
-}
+/* 断面算定関連の UI は削除されました */
 
 .result-item .value {
     font-weight: 600;
@@ -2550,59 +2534,7 @@ label[for="result-font-size"] {
     color: #856404;
 }
 
-/* 断面算定結果のレスポンシブ対応 */
-@media (max-width: 768px) {
-    .result-section {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* === 断面算定ボタンのスタイル === */
-.section-calc-controls {
-    text-align: center;
-    padding: 20px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 1px solid #e9ecef;
-}
-
-.section-calc-btn {
-    background-color: #007bff;
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    font-size: 1.1em;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
-}
-
-.section-calc-btn:hover {
-    background-color: #0056b3;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.4);
-}
-
-.section-calc-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
-}
-
-.section-calc-btn:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.section-calc-note {
-    margin-top: 10px;
-    color: #6c757d;
-    font-size: 0.9em;
-    font-style: italic;
-}
+/* 断面算定関連のスタイルは削除済み */
 
 /* ==========================================================================
    ダークモード無効化 - 常にライトモード表示

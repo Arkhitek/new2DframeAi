@@ -3338,6 +3338,61 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMember.ix = row.dataset.ix;
             currentMember.iy = row.dataset.iy;
 
+            // 各行のバネ剛性を取得（該当セル内の .spring-inputs を探す）
+            const readSpringFromCell = (cell) => {
+                if (!cell) return null;
+                const container = cell.querySelector('.spring-inputs');
+                if (!container) return null;
+                const kxEl = container.querySelector('.spring-kx');
+                const kyEl = container.querySelector('.spring-ky');
+                const krEl = container.querySelector('.spring-kr');
+                const parse = (el) => {
+                    if (!el) return null;
+                    const v = parseFloat(el.value);
+                    return Number.isFinite(v) ? v : null;
+                };
+                const Kx = parse(kxEl);
+                const Ky = parse(kyEl);
+                const Kr = parse(krEl);
+                // 少なくとも1つの値が数値ならオブジェクトとして返す
+                if (Kx !== null || Ky !== null || Kr !== null) {
+                    return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0 };
+                }
+                return null;
+            };
+
+            // 始端バネ
+            try {
+                if (currentMember.i_conn === 'spring') {
+                    const iCell = iConnIndex >= 0 ? row.cells[iConnIndex] : null;
+                    const s = readSpringFromCell(iCell);
+                    if (s) {
+                        currentMember.spring_i = s;
+                    } else if (typeof window.getSpringStiffness === 'function') {
+                        const g = window.getSpringStiffness();
+                        if (g && g.start) currentMember.spring_i = g.start;
+                    }
+                }
+            } catch (e) {
+                console.warn('始端バネ読み取りエラー', e);
+            }
+
+            // 終端バネ
+            try {
+                if (currentMember.j_conn === 'spring') {
+                    const jCell = jConnIndex >= 0 ? row.cells[jConnIndex] : null;
+                    const s2 = readSpringFromCell(jCell);
+                    if (s2) {
+                        currentMember.spring_j = s2;
+                    } else if (typeof window.getSpringStiffness === 'function') {
+                        const g = window.getSpringStiffness();
+                        if (g && g.end) currentMember.spring_j = g.end;
+                    }
+                }
+            } catch (e) {
+                console.warn('終端バネ読み取りエラー', e);
+            }
+
             // 断面情報と軸設定を保存
             const sectionInfoEncoded = row.dataset.sectionInfo;
             let sectionInfo = null;
@@ -9968,8 +10023,31 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         baseColumns.push(`<span class="section-axis-cell">${sectionAxis || '-'}</span>`);
 
         // 接続条件列を追加
-        baseColumns.push(`<select><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'pin' || i_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
-        baseColumns.push(`<select><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'pin' || j_conn === 'p' ? 'selected' : ''}>ピン</option></select>`);
+        // 各接続セル内にバネ選択時のみ表示するバネ剛性入力ブロックを含める
+        baseColumns.push(`
+            <div class="conn-cell">
+                <select class="conn-select"><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'pin' || i_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${i_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
+                <div class="spring-inputs" style="display:none; margin-top:6px;">
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                    </div>
+                </div>
+            </div>
+        `);
+        baseColumns.push(`
+            <div class="conn-cell">
+                <select class="conn-select"><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'pin' || j_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${j_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
+                <div class="spring-inputs" style="display:none; margin-top:6px;">
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                        <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                    </div>
+                </div>
+            </div>
+        `);
 
         return baseColumns;
     };
@@ -11439,6 +11517,45 @@ const loadPreset = (index) => {
         }
         alert('接続可能なすべての節点ペアは既に接続されています。');
     };
+    // members-table 内の接続セレクトに応じて行内のバネ入力を表示/非表示するユーティリティ
+    const updateAllSpringVisibility = () => {
+        try {
+            const rows = elements.membersTable.rows;
+            Array.from(rows).forEach(row => {
+                const connCells = row.querySelectorAll('.conn-cell');
+                if (!connCells) return;
+                connCells.forEach((cell) => {
+                    const select = cell.querySelector('.conn-select');
+                    const springBox = cell.querySelector('.spring-inputs');
+                    if (!select || !springBox) return;
+                    if (select.value === 'spring') {
+                        springBox.style.display = '';
+                    } else {
+                        springBox.style.display = 'none';
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('updateAllSpringVisibility error', e);
+        }
+    };
+
+    // イベントデリゲーションでselectの変更を監視
+    elements.membersTable.addEventListener('change', (e) => {
+        const sel = e.target;
+        if (!sel || sel.tagName !== 'SELECT') return;
+        if (!sel.classList.contains('conn-select')) return;
+        const cell = sel.closest('.conn-cell');
+        if (!cell) return;
+        const springBox = cell.querySelector('.spring-inputs');
+        if (!springBox) return;
+        if (sel.value === 'spring') springBox.style.display = '';
+        else springBox.style.display = 'none';
+    });
+
+    // 初期表示の調整（既存行がある場合）
+    setTimeout(updateAllSpringVisibility, 50);
+
     elements.addNodeLoadBtn.onclick = () => { addRow(elements.nodeLoadsTable, ['<input type="number" value="1">', '<input type="number" value="0">', '<input type="number" value="0">', '<input type="number" value="0">']); };
     elements.addMemberLoadBtn.onclick = () => { addRow(elements.memberLoadsTable, ['<input type="number" value="1">', '<input type="number" value="0">']); };
     

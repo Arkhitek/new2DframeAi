@@ -367,18 +367,28 @@
                                 <tr>
                                     <td>1</td>
                                     <td>
-                                        <select>
-                                            <option value="rigid">剛</option>
-                                            <option value="pinned">ピン</option>
-                                            <option value="spring">バネ</option>
-                                        </select>
+                                        <div class="conn-cell">
+                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
+                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
+                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td>
-                                        <select>
-                                            <option value="rigid">剛</option>
-                                            <option value="pinned">ピン</option>
-                                            <option value="spring">バネ</option>
-                                        </select>
+                                        <div class="conn-cell">
+                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
+                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
+                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
+                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>

@@ -5036,14 +5036,15 @@ function validateAndFixMemberOverlap(model) {
                 const spring = window.getSpringStiffness();
                 fixedModel.members.forEach((member, idx) => {
                     // i_conn, j_connがバネの場合はKx, Ky, Krを格納
-                    if (member.i_conn === 'バネ' || member.i_conn === 'spring') {
+                    // ただし既に部材に個別のspring_i/spring_jが設定されている場合は上書きしない
+                    if ((member.i_conn === 'バネ' || member.i_conn === 'spring') && !member.spring_i) {
                         member.spring_i = {
                             Kx: spring.start?.Kx || 0,
                             Ky: spring.start?.Ky || 0,
                             Kr: spring.start?.Kr || 0
                         };
                     }
-                    if (member.j_conn === 'バネ' || member.j_conn === 'spring') {
+                    if ((member.j_conn === 'バネ' || member.j_conn === 'spring') && !member.spring_j) {
                         member.spring_j = {
                             Kx: spring.end?.Kx || 0,
                             Ky: spring.end?.Ky || 0,

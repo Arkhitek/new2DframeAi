@@ -1869,7 +1869,7 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         console.log('Results displayed successfully');
     };
 
-    // 断面算定機能は削除されました（UIからの実行および結果表示は無効）
+    // 断面算定機能はUIから削除されたため、関連する表示・実行ロジックを削除しました
 
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));

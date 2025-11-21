@@ -1873,4 +1873,44 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
 
     // 初期化処理
     typeSelect.dispatchEvent(new Event('change'));
+        // 部材接合条件バネ入力欄表示・値取得
+        const jointStartSelect = document.getElementById('joint-start');
+        const jointEndSelect = document.getElementById('joint-end');
+        const springStartInputs = document.getElementById('spring-start-inputs');
+        const springEndInputs = document.getElementById('spring-end-inputs');
+
+        function toggleSpringInputs(selectEl, inputsEl) {
+            if (selectEl.value === 'バネ') {
+                inputsEl.style.display = '';
+            } else {
+                inputsEl.style.display = 'none';
+            }
+        }
+        if (jointStartSelect && springStartInputs) {
+            jointStartSelect.addEventListener('change', () => {
+                toggleSpringInputs(jointStartSelect, springStartInputs);
+            });
+            toggleSpringInputs(jointStartSelect, springStartInputs);
+        }
+        if (jointEndSelect && springEndInputs) {
+            jointEndSelect.addEventListener('change', () => {
+                toggleSpringInputs(jointEndSelect, springEndInputs);
+            });
+            toggleSpringInputs(jointEndSelect, springEndInputs);
+        }
+
+        // バネ剛性値取得関数（他ロジックで利用可能）
+        window.getSpringStiffness = function() {
+            const start = jointStartSelect.value === 'バネ' ? {
+                Kx: parseFloat(document.getElementById('spring-start-kx').value) || 0,
+                Ky: parseFloat(document.getElementById('spring-start-ky').value) || 0,
+                Kr: parseFloat(document.getElementById('spring-start-kr').value) || 0
+            } : null;
+            const end = jointEndSelect.value === 'バネ' ? {
+                Kx: parseFloat(document.getElementById('spring-end-kx').value) || 0,
+                Ky: parseFloat(document.getElementById('spring-end-ky').value) || 0,
+                Kr: parseFloat(document.getElementById('spring-end-kr').value) || 0
+            } : null;
+            return { start, end };
+        };
 });

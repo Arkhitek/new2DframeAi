@@ -56,6 +56,37 @@
                        <p class="image-caption">選択された鋼材の断面形状</p>
                    </div>
                 </div>
+
+                <!-- 部材接合条件（始端・終端）選択UI -->
+                <div class="joint-condition-section">
+                    <h2>部材接合条件</h2>
+                    <div class="joint-condition-group">
+                        <label for="joint-start">始端:</label>
+                        <select id="joint-start">
+                            <option value="固定">固定</option>
+                            <option value="ピン">ピン</option>
+                            <option value="バネ">バネ</option>
+                        </select>
+                        <span id="spring-start-inputs" class="spring-inputs" style="display:none;">
+                            Kx: <input type="number" id="spring-start-kx" min="0" step="0.01" placeholder="Kx (kN/mm)">
+                            Ky: <input type="number" id="spring-start-ky" min="0" step="0.01" placeholder="Ky (kN/mm)">
+                            Kr: <input type="number" id="spring-start-kr" min="0" step="0.01" placeholder="Kr (kN・m/rad)">
+                        </span>
+                    </div>
+                    <div class="joint-condition-group">
+                        <label for="joint-end">終端:</label>
+                        <select id="joint-end">
+                            <option value="固定">固定</option>
+                            <option value="ピン">ピン</option>
+                            <option value="バネ">バネ</option>
+                        </select>
+                        <span id="spring-end-inputs" class="spring-inputs" style="display:none;">
+                            Kx: <input type="number" id="spring-end-kx" min="0" step="0.01" placeholder="Kx (kN/mm)">
+                            Ky: <input type="number" id="spring-end-ky" min="0" step="0.01" placeholder="Ky (kN/mm)">
+                            Kr: <input type="number" id="spring-end-kr" min="0" step="0.01" placeholder="Kr (kN・m/rad)">
+                        </span>
+                    </div>
+                </div>
                 
                 <div id="table-section" class="hidden">
                     <div class="table-header">

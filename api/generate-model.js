@@ -72,7 +72,13 @@ export default async function handler(req, res) {
             body: JSON.stringify(requestBody),
         });
 
-                data = await mistralResponse.json();
+                // Mistralからのレスポンスは必ずJSONとは限らないため、JSONパースに失敗した場合はテキストで受け取る
+                try {
+                    data = await mistralResponse.json();
+                } catch (parseErr) {
+                    const rawText = await mistralResponse.text();
+                    data = { error: 'Non-JSON response from upstream', raw: rawText };
+                }
         console.error('Mistral AIレスポンス受信');
         console.error('レスポンスステータス:', mistralResponse.status);
         console.error('レスポンスデータ:', JSON.stringify(data, null, 2));
@@ -100,8 +106,9 @@ export default async function handler(req, res) {
                     }
                 }
                 
-                // その他のエラーは即座にスロー
-            throw new Error(data.message || 'Mistral AIでエラーが発生しました。');
+                // その他のエラーは即座にスロー（ステータスと可能な限りの詳細を含める）
+                const upstreamMsg = data && (data.message || data.error || data.raw || JSON.stringify(data));
+                throw new Error(`Mistral API error ${mistralResponse.status}: ${upstreamMsg}`);
                 
             } catch (error) {
                 console.error(`AI呼び出し試行 ${retryCount + 1} でエラー:`, error.message);

@@ -2497,22 +2497,6 @@ header {
     color: var(--color-text-primary);
 }
 
-/* スライダー用スタイル */
-.result-font-control input[type="range"].result-font-input {
-    width: 160px;
-    height: 28px;
-    padding: 0;
-    border: none;
-    background: transparent;
-}
-.result-font-value {
-    min-width: 28px;
-    display: inline-block;
-    text-align: right;
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
 /* 断面算定関連の UI は削除されました */
 
 .result-item .value {

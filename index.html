@@ -54,10 +54,10 @@
                             <div class="guide-section">
                                 <h5>⚙️ 編集機能</h5>
                                 <ul>
-                                    <li><strong>節点右クリック:</strong> 座標・荷重・境界条件編集</li>
-                                    <li><strong>部材右クリック:</strong> 材料・断面・接合・分布荷重編集</li>
-                                    <li><strong>荷重矢印右クリック:</strong> 荷重の直接編集</li>
-                                    <li><strong>複数選択:</strong> 一括編集・削除可能</li>
+                                    <li><strong>右クリック編集:</strong> 節点・部材・荷重の詳細設定</li>
+                                    <li><strong>バネ接合:</strong> 軸(Kx)・せん断(Ky)・回転(Kr)剛性と剛判定</li>
+                                    <li><strong>Excel貼り付け:</strong> 表へのデータ直接ペースト対応</li>
+                                    <li><strong>一括編集:</strong> 複数選択→右クリックでまとめて変更</li>
                                     <li><strong>Delete:</strong> 選択要素を削除</li>
                                 </ul>
                             </div>
@@ -80,15 +80,7 @@
                                     <li><strong>追加編集モード:</strong> 既存モデルに部材を追加</li>
                                     <li><strong>音声入力:</strong> 🎤ボタンで音声から指示入力</li>
                                     <li><strong>鋼材断面検出:</strong> H-200×100等の断面指定を自動認識</li>
-                                    <li><strong>部材タイプ識別:</strong> 柱部材・梁部材を自動判別</li>
-                                    <li><strong>断面情報保持:</strong> 既存部材の断面情報を自動保持</li>
                                 </ul>
-                                <div style="margin-top: 8px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; font-size: 12px;">
-                                    <strong>使用例:</strong><br>
-                                    「高さ5m、スパン10mの門型ラーメン。柱脚は固定。」<br>
-                                    「柱部材をH-200×100に変更」<br>
-                                    「梁部材をH-300×150に変更」
-                                </div>
                             </div>
                         </div>
                         
@@ -123,7 +115,6 @@
                                     <li><strong>算定結果表示:</strong> 応力・許容応力・検定比・判定</li>
                                     <li><strong>短期/長期切替:</strong> 荷重条件の選択</li>
                                     <li><strong>検定比図:</strong> 部材全体の検定比を色分け表示</li>
-                                    <li><strong>詳細結果:</strong> 各節点での算定結果詳細</li>
                                 </ul>
                             </div>
                             
@@ -132,30 +123,28 @@
                                 <ul>
                                     <li><strong>プリセット:</strong> 計算例の読込</li>
                                     <li><strong>CSV保存/読込:</strong> 入力データ管理</li>
-                                    <li><strong>レポート出力:</strong> 印刷用総合レポート</li>
-                                    <li><strong>エクセル出力:</strong> 結果データのExcel形式出力</li>
-                                    <li><strong>共有リンク:</strong> モデルデータのURL共有</li>
+                                    <li><strong>レポート/Excel出力:</strong> 結果の保存</li>
+                                    <li><strong>共有リンク:</strong> 短縮URLによるモデル共有（短縮・元URLの両方コピー可能）</li>
+                                    <li><strong>Excel貼り付け:</strong> 節点・部材・荷重テーブルへ直接貼り付け可能</li>
                                 </ul>
                             </div>
                             
                             <div class="guide-section">
                                 <h5>🔍 表示制御</h5>
                                 <ul>
-                                    <li><strong>外部荷重表示:</strong> 外部荷重の表示切替</li>
-                                    <li><strong>自重表示:</strong> 自重荷重の表示切替</li>
-                                    <li><strong>倍率調整:</strong> アニメーション・変位図倍率</li>
-                                    <li><strong>選択強調:</strong> 選択要素の赤色表示</li>
+                                    <li><strong>荷重/自重表示:</strong> 荷重矢印の表示切替</li>
+                                    <li><strong>バネ剛性表示:</strong> バネ定数値の表示切替（Kx/Ky/Kr）</li>
+                                    <li><strong>部材寸法表示:</strong> 部材長の表示切替</li>
+                                    <li><strong>倍率調整:</strong> 変位図等の拡大・縮小</li>
                                 </ul>
                             </div>
 
                             <div class="guide-section">
                                 <h5>🎬 3Dビューア</h5>
                                 <ul>
-                                    <li><strong>独立ウィンドウ:</strong> 別窓で3D表示</li>
-                                    <li><strong>リアルタイム更新:</strong> メイン画面の編集を即座に反映</li>
-                                    <li><strong>マウス操作:</strong> 左ドラッグ回転・右ドラッグ移動・ホイール拡大縮小</li>
-                                    <li><strong>ラベル表示:</strong> 節点・部材・断面名称の表示切替</li>
-                                    <li><strong>断面形状:</strong> H形鋼・チャンネル・角パイプ等を3D表示</li>
+                                    <li><strong>リアルタイム更新:</strong> 編集を即座に反映</li>
+                                    <li><strong>マウス操作:</strong> 回転・移動・ズーム</li>
+                                    <li><strong>断面形状:</strong> H形鋼等の3D表示</li>
                                 </ul>
                             </div>
                         </div>
@@ -200,6 +189,12 @@
                     <div class="canvas-settings">
                         <label for="anim-scale-input">アニメーション倍率:</label>
                         <input type="number" id="anim-scale-input" class="grid-input" style="width: 100px;" placeholder="自動">
+
+                        <label for="font-scale-model" style="margin-left: 10px;" title="モデル図の文字サイズを調整">文字サイズ:</label>
+                        <input type="range" id="font-scale-model" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                        <span id="font-scale-value-model" style="font-size: 12px; width: 40px; display: inline-block; text-align: left;">1.0x</span>
+                        <button id="fit-view-model" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
+
                         <input type="checkbox" id="grid-toggle" checked>
                         <label for="grid-toggle" title="グリッド表示切替 (ショートカット: G)">グリッド表示</label>
                         <input type="checkbox" id="member-info-toggle" title="マウスオーバー時の部材情報表示切替">
@@ -358,6 +353,7 @@
                                     <th>断面二次モーメント I (cm⁴)</th>
                                     <th>断面積 A (cm²)</th>
                                     <th class="section-check-item">断面係数 Z (cm³)</th>
+                                    <th class="section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
                                     <th class="density-column" style="display: none;">密度 ρ (kg/m³)</th>
                                     <th>断面名称</th>
                                     <th>軸方向</th>
@@ -419,19 +415,42 @@
                         <div class="canvas-settings" style="justify-content: flex-end; margin-bottom: 5px;">
                             <label for="disp-scale-input">表示倍率:</label>
                             <input type="number" id="disp-scale-input" class="grid-input" style="width: 100px;">
+
+                            <label for="font-scale-displacement" style="margin-left: 10px;">文字サイズ:</label>
+                            <input type="range" id="font-scale-displacement" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                            <span id="font-scale-value-displacement" style="font-size: 12px; width: 30px;">1.0x</span>
+                            <button id="fit-view-displacement" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
                         </div>
                         <canvas id="displacement-canvas"></canvas>
                     </div>
                     <div class="canvas-container">
                         <h3>曲げモーメント図 (BMD) (kN・m)</h3>
+                        <div class="canvas-settings" style="justify-content: flex-end; margin-bottom: 5px;">
+                            <label for="font-scale-moment">文字サイズ:</label>
+                            <input type="range" id="font-scale-moment" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                            <span id="font-scale-value-moment" style="font-size: 12px; width: 30px;">1.0x</span>
+                            <button id="fit-view-moment" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
+                        </div>
                         <canvas id="moment-canvas"></canvas>
                     </div>
                     <div class="canvas-container">
                         <h3>軸力図 (AFD) (kN)</h3>
+                        <div class="canvas-settings" style="justify-content: flex-end; margin-bottom: 5px;">
+                            <label for="font-scale-axial">文字サイズ:</label>
+                            <input type="range" id="font-scale-axial" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                            <span id="font-scale-value-axial" style="font-size: 12px; width: 30px;">1.0x</span>
+                            <button id="fit-view-axial" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
+                        </div>
                         <canvas id="axial-canvas"></canvas>
                     </div>
                     <div class="canvas-container">
                         <h3>せん断力図 (SFD) (kN)</h3>
+                        <div class="canvas-settings" style="justify-content: flex-end; margin-bottom: 5px;">
+                            <label for="font-scale-shear">文字サイズ:</label>
+                            <input type="range" id="font-scale-shear" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                            <span id="font-scale-value-shear" style="font-size: 12px; width: 30px;">1.0x</span>
+                            <button id="fit-view-shear" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
+                        </div>
                         <canvas id="shear-canvas"></canvas>
                     </div>
                 </div>
@@ -461,6 +480,12 @@
                     </div>
                     <div class="canvas-container">
                         <h3>検定比図 (D/C)</h3>
+                        <div class="canvas-settings" style="justify-content: flex-end; margin-bottom: 5px;">
+                            <label for="font-scale-ratio">文字サイズ:</label>
+                            <input type="range" id="font-scale-ratio" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 80px; vertical-align: middle;">
+                            <span id="font-scale-value-ratio" style="font-size: 12px; width: 30px;">1.0x</span>
+                            <button id="fit-view-ratio" title="全体表示" style="margin-left:6px;">⛶ 全体</button>
+                        </div>
                         <canvas id="ratio-canvas"></canvas>
                     </div>
                     <h3>検定比 詳細</h3>
@@ -586,7 +611,9 @@
 </div>
                 </div>
             </div>
-             <label for="popup-w">w (kN/m)</label>
+            <label for="popup-buckling-k">座屈長さ係数 K</label>
+            <input type="number" id="popup-buckling-k" step="0.1" placeholder="自動" title="空欄または0で自動判定">
+            <label for="popup-w">w (kN/m)</label>
             <input type="number" id="popup-w" title="等分布荷重">
         </div>
         <div class="popup-buttons">

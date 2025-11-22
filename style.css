@@ -738,6 +738,38 @@ canvas {
 .popup-box.add-member-popup-wide {
     width: 380px;
 }
+/* 横長の部材プロパティポップアップ用スタイル */
+.popup-box.member-props-popup-wide {
+    width: 720px; /* 横長にして情報を見やすく */
+    min-width: 520px;
+    max-width: calc(100vw - 40px);
+}
+.popup-box.member-props-popup-wide .props-grid {
+    grid-template-columns: 140px 1fr 140px 1fr; /* 2列×2で横並びに配置 */
+    gap: 12px;
+    align-items: center;
+}
+.popup-box.member-props-popup-wide .props-grid label {
+    margin-bottom: 0;
+    font-weight: 600;
+}
+.popup-box.member-props-popup-wide .props-grid input,
+.popup-box.member-props-popup-wide .props-grid select {
+    padding: 8px;
+    font-size: 14px;
+}
+.popup-box.member-props-popup-wide .props-grid input.section-check-item,
+.popup-box.member-props-popup-wide .props-grid .section-check-item {
+    grid-column: span 1;
+}
+.popup-box.member-props-popup-wide .popup-buttons {
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.popup-box.member-props-popup-wide .popup-buttons button {
+    padding: 8px 14px;
+}
+
 .section-info-display {
     background-color: #e8f5e9;
     border: 1px solid #4caf50;

@@ -630,6 +630,141 @@ window.normalizeAxisInfo = function normalizeAxisInfo(axisInfo) {
         }
     };
 
+    // --- エクセル貼り付け機能の追加 (汎用) ---
+    /**
+     * テーブルへのエクセル貼り付けを有効化する関数
+     * @param {HTMLTableSectionElement} tableBody - 対象のtbody要素
+     * @param {HTMLElement} addBtn - 行追加ボタン（データが行数を超える場合にクリックする）
+     */
+    const setupExcelPaste = (tableBody, addBtn) => {
+        // 境界条件の日本語マッピング
+        const supportMap = {
+            '自由': 'free', 'free': 'free', 'f': 'free',
+            'ピン': 'pinned', 'pinned': 'pinned', 'pin': 'pinned', 'p': 'pinned',
+            '固定': 'fixed', 'fixed': 'fixed', 'fix': 'fixed', 'x': 'fixed',
+            'ローラー': 'roller', 'roller': 'roller', 'r': 'roller',
+            'ローラー(X)': 'roller-x', 'roller-x': 'roller-x',
+            'ローラー(Y)': 'roller-y', 'roller-y': 'roller-y'
+        };
+
+        // 部材接合条件のマッピング
+        const connMap = {
+            '剛': 'rigid', 'rigid': 'rigid', '剛接合': 'rigid',
+            'ピン': 'pinned', 'pinned': 'pinned', 'ピン接合': 'pinned',
+            'バネ': 'spring', 'spring': 'spring', 'バネ接合': 'spring'
+        };
+
+        tableBody.addEventListener('paste', (e) => {
+            // 入力フィールドまたはセレクトボックスへの貼り付けのみ対象
+            const target = e.target;
+            if (!target || (!target.matches('input') && !target.matches('select'))) return;
+
+            e.preventDefault();
+            const clipboardData = (e.clipboardData || window.clipboardData).getData('text');
+            if (!clipboardData) return;
+
+            pushState(); // 履歴に保存
+
+            // 行と列に分割 (Excelはタブ区切り)
+            const rowsData = clipboardData.split(/\r\n|\n|\r/).filter(r => r.trim() !== '');
+            
+            // 開始位置の特定
+            const startCell = target.closest('td');
+            const startRow = target.closest('tr');
+            if (!startCell || !startRow) return;
+
+            const startRowIndex = startRow.sectionRowIndex; // tbody内でのインデックス
+            const startColIndex = startCell.cellIndex;
+
+            rowsData.forEach((rowData, rIdx) => {
+                const cellsData = rowData.split('\t');
+                const targetRowIndex = startRowIndex + rIdx;
+
+                // 行が足りない場合は追加ボタンをクリックして拡張
+                if (targetRowIndex >= tableBody.rows.length) {
+                    if (addBtn) {
+                        addBtn.click();
+                        // 追加直後の行は履歴保存(pushState)をスキップしたいが、
+                        // ボタンクリック自体がpushStateを含む場合があるため、そのまま続行
+                    } else {
+                        return; // 追加ボタンがない場合は無視
+                    }
+                }
+                
+                const targetRow = tableBody.rows[targetRowIndex];
+                if (!targetRow) return;
+
+                cellsData.forEach((cellValue, cIdx) => {
+                    const targetColIndex = startColIndex + cIdx;
+                    
+                    // セルが存在するか確認
+                    if (targetColIndex >= targetRow.cells.length) return;
+                    
+                    const cell = targetRow.cells[targetColIndex];
+                    
+                    // セル内の入力要素を探す
+                    const input = cell.querySelector('input, select');
+                    
+                    // 削除ボタンなどのセルはスキップ
+                    if (!input || input.type === 'button' || input.type === 'submit') return;
+
+                    // 値の適用
+                    const val = cellValue.trim();
+                    
+                    if (input.tagName === 'SELECT') {
+                        // セレクトボックスの場合（境界条件や接合条件）
+                        // 1. マッピングを試行
+                        let mappedVal = supportMap[val] || connMap[val];
+                        
+                        // 2. マッピングがなければ直接値を検索
+                        if (!mappedVal) {
+                            // オプションの値またはテキストと一致するか確認
+                            for (let opt of input.options) {
+                                if (opt.value === val || opt.textContent === val) {
+                                    mappedVal = opt.value;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (mappedVal) {
+                            input.value = mappedVal;
+                        }
+                    } else {
+                        // 通常の入力フィールド
+                        input.value = val;
+                    }
+
+                    // 変更イベントを発火（再描画などをトリガー）
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            });
+            
+            drawOnCanvas();
+            // 解析結果への即時反映が必要なら以下を有効化
+            // runFullAnalysis();
+        });
+    };
+
+    // 節点テーブルにエクセル貼り付け機能を適用
+    if (elements.nodesTable) {
+        setupExcelPaste(elements.nodesTable, elements.addNodeBtn);
+    }
+    
+    // 部材テーブルにも適用（便利機能として）
+    if (elements.membersTable) {
+        setupExcelPaste(elements.membersTable, elements.addMemberBtn);
+    }
+    
+    // 荷重テーブルにも適用
+    if (elements.nodeLoadsTable) {
+        setupExcelPaste(elements.nodeLoadsTable, elements.addNodeLoadBtn);
+    }
+    if (elements.memberLoadsTable) {
+        setupExcelPaste(elements.memberLoadsTable, elements.addMemberLoadBtn);
+    }
+    // --- エクセル貼り付け機能の追加 終了 ---
     const fallbackModeFromKey = (key) => {
         switch (key) {
             case 'y':
@@ -5582,20 +5717,27 @@ document.addEventListener('DOMContentLoaded', () => {
         // フォーマット関数（単位付き）
         const fmt = (val, unit) => {
             const uiVal = val / 1000; // 内部(kN/m) -> UI(kN/mm)
+            
+            // ▼▼▼ 修正: 微小値(計算上のEPS含む)は 0 として表示 ▼▼▼
+            if (Math.abs(uiVal) < 1e-6) return `0${unit}`;
+
             let numStr;
-            if (Math.abs(uiVal) < 0.001 && uiVal !== 0) numStr = uiVal.toExponential(1);
+            if (Math.abs(uiVal) < 0.001) numStr = uiVal.toExponential(1);
             else if (Math.abs(uiVal) >= 1000) numStr = Math.round(uiVal).toString();
             else numStr = parseFloat(uiVal.toFixed(2)).toString();
-            return `${numStr}${unit}`; // スペースなしで短く
+            return `${numStr}${unit}`; 
         };
         
         const fmtKr = (val) => {
             const uiVal = val * 1000; // 内部(kN·m/rad) -> UI(kN·mm/rad)
+            
+            // ▼▼▼ 修正: 微小値は 0 として表示 ▼▼▼
+            if (Math.abs(uiVal) < 1e-6) return `0kN·mm`;
+
             let numStr;
-            if (uiVal === 0) numStr = '0';
-            else if (Math.abs(uiVal) < 0.1) numStr = uiVal.toExponential(1);
+            if (Math.abs(uiVal) < 0.1) numStr = uiVal.toExponential(1);
             else numStr = parseFloat(uiVal.toFixed(1)).toString();
-            return `${numStr} kN·mm/rad`;
+            return `${numStr}kN·mm`;
         };
 
         members.forEach((m) => {
@@ -12659,7 +12801,7 @@ const loadPreset = (index) => {
         return u8;
     }
 
-    // 共有リンクを生成する関数（短縮URL対応版）
+    // 共有リンクを生成する関数（短縮URL・元URL併記版）
     const generateShareLink = async () => {
         try {
             const state = getCurrentState();
@@ -12669,45 +12811,82 @@ const loadPreset = (index) => {
             const baseUrl = window.location.href.split('#')[0];
             const longUrl = `${baseUrl}#model=${encodedData}`;
 
-            // まずモーダルを表示し、生成中であることを明示
-            shareLinkModal.style.display = 'flex';
-            shareLinkTextarea.value = "短縮URLを生成中...";
+            // モーダル要素の取得
+            const modalBody = shareLinkModal.querySelector('.modal-body');
+            const copyBtn = document.getElementById('copy-share-link-btn');
             
+            // 既存の「コピー」ボタンは今回は使用しないため非表示にする
+            if (copyBtn) copyBtn.style.display = 'none';
+
+            // モーダルを表示し、ロード中メッセージを設定
+            shareLinkModal.style.display = 'flex';
+            modalBody.innerHTML = `
+                <div style="text-align:center; padding:20px;">
+                    <div style="display:inline-block; width:20px; height:20px; border:3px solid #f3f3f3; border-top:3px solid #005A9C; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:10px;"></div>
+                    <p>リンクを生成中...</p>
+                </div>
+                <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+            `;
+
+            let shortUrl = null;
+
             // TinyURL APIを使用して短縮を試みる
             try {
-                // TinyURLのAPIはGETリクエストで短縮URLをテキストで返します
                 const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
-                
                 if (response.ok) {
-                    const shortUrl = await response.text();
-                    shareLinkTextarea.value = shortUrl;
-                    console.log("短縮URL生成成功:", shortUrl);
-                } else {
-                    throw new Error("短縮サービスが応答しませんでした");
+                    shortUrl = await response.text();
                 }
             } catch (apiError) {
-                console.warn("URL短縮に失敗しました（フォールバックします）:", apiError);
-                // 短縮に失敗した場合（長すぎる、オフラインなど）は元の長いURLを表示
-                shareLinkTextarea.value = longUrl;
-                
-                // 補足メッセージを表示（オプション）
-                const messageDiv = document.createElement('div');
-                messageDiv.style.color = '#666';
-                messageDiv.style.fontSize = '12px';
-                messageDiv.style.marginTop = '5px';
-                messageDiv.innerText = "※モデルデータが大きすぎる等の理由で短縮できませんでした。長いURLを使用してください。";
-                
-                // 既存のメッセージがあれば削除して追加
-                const existingMsg = shareLinkModal.querySelector('.fallback-message');
-                if (existingMsg) existingMsg.remove();
-                
-                messageDiv.classList.add('fallback-message');
-                shareLinkTextarea.parentNode.appendChild(messageDiv);
+                console.warn("URL短縮に失敗しました:", apiError);
             }
 
+            // HTMLの構築
+            let htmlContent = '<p style="margin-bottom:15px; font-size:14px;">以下のリンクをコピーして共有してください。</p>';
+
+            // 1. 短縮URLセクション
+            if (shortUrl) {
+                htmlContent += `
+                    <div style="margin-bottom: 20px; background:#f8f9fa; padding:10px; border-radius:5px; border:1px solid #e9ecef;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px; color:#005A9C;">短縮URL (推奨):</label>
+                        <div style="display:flex; gap:5px;">
+                            <input type="text" value="${shortUrl}" readonly style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-family:monospace;" id="short-url-input">
+                            <button class="generate-btn" style="padding:0 15px; white-space:nowrap;" onclick="
+                                document.getElementById('short-url-input').select();
+                                document.execCommand('copy');
+                                this.textContent = 'コピー完了';
+                                this.style.backgroundColor = '#28a745';
+                                setTimeout(() => { this.textContent = 'コピー'; this.style.backgroundColor = ''; }, 2000);
+                            ">コピー</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                htmlContent += `<div style="color:#d9534f; margin-bottom:10px; font-size:13px;">※短縮URLの生成に失敗しました（ネットワークエラー等）。</div>`;
+            }
+
+            // 2. 元のURLセクション
+            htmlContent += `
+                <div>
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#555;">元のURL (完全版):</label>
+                    <div style="display:flex; gap:5px;">
+                        <textarea readonly style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; height:60px; resize:none; font-family:monospace; font-size:12px;" id="long-url-input">${longUrl}</textarea>
+                        <button class="generate-btn" style="padding:0 15px; height:60px; white-space:nowrap;" onclick="
+                            document.getElementById('long-url-input').select();
+                            document.execCommand('copy');
+                            this.textContent = 'コピー完了';
+                            this.style.backgroundColor = '#28a745';
+                            setTimeout(() => { this.textContent = 'コピー'; this.style.backgroundColor = ''; }, 2000);
+                        ">コピー</button>
+                    </div>
+                    <p style="font-size:11px; color:#888; margin-top:5px;">※短縮URLが機能しない場合はこちらを使用してください。</p>
+                </div>
+            `;
+
+            modalBody.innerHTML = htmlContent;
+
         } catch (error) {
-            console.error("共有リンクの生成に失敗しました:", error);
-            alert("共有リンクの生成に失敗しました。");
+            console.error("共有リンク生成エラー:", error);
+            alert("共有リンクの生成に失敗しました: " + error.message);
             shareLinkModal.style.display = 'none';
         }
     };

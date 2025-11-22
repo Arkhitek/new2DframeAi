@@ -3365,11 +3365,11 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMember.iy = row.dataset.iy;
 
             // 各行のバネ剛性を取得（該当セル内の .spring-inputs を探す）
-            // UIから読み取ったバネ値を内部計算用単位に変換する関数
-            // 現在の実装ではUIで表示している単位 (Kx,Ky: N/mm, Kr: N·mm/rad) を
-            // そのまま内部で使用している単位系 (N/mm, N·mm/rad) と一致させる前提とする。
-            // 将来的に内部単位が変わる場合はここで変換を行ってください。
-            const convertSpringFromUI = (Kx, Ky, Kr) => ({ Kx: Kx, Ky: Ky, Kr: Kr });
+            // UI入力単位を内部単位へ変換する
+            // UI: Kx,Ky -> kN/mm  , Kr -> kN·mm/rad
+            // 内部計算: Kx,Ky -> kN/m   (1 kN/mm = 1000 kN/m)
+            //            Kr -> kN·m/rad (1 kN·mm = 0.001 kN·m)
+            const convertSpringFromUI = (Kx_ui, Ky_ui, Kr_ui) => ({ Kx: Kx_ui * 1000, Ky: Ky_ui * 1000, Kr: Kr_ui * 1e-3 });
 
             const readSpringFromCell = (cell) => {
                 if (!cell) return null;
@@ -3378,20 +3378,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 const kxEl = container.querySelector('.spring-kx');
                 const kyEl = container.querySelector('.spring-ky');
                 const krEl = container.querySelector('.spring-kr');
+                const rigidKxEl = container.querySelector('.spring-rigid-kx');
+                const rigidKyEl = container.querySelector('.spring-rigid-ky');
+                const rigidKrEl = container.querySelector('.spring-rigid-kr');
                 const parse = (el) => {
-                    if (!el) return null;
+                    if (!el) return 0;
                     const v = parseFloat(el.value);
-                    return Number.isFinite(v) ? v : null;
+                    return Number.isFinite(v) ? v : 0;
                 };
-                const Kx = parse(kxEl);
-                const Ky = parse(kyEl);
-                const Kr = parse(krEl);
-                // 少なくとも1つの値が数値ならオブジェクトとして返す（UI単位→内部単位変換を適用）
-                if (Kx !== null || Ky !== null || Kr !== null) {
-                    const out = convertSpringFromUI(Kx || 0, Ky || 0, Kr || 0);
-                    return { Kx: out.Kx, Ky: out.Ky, Kr: out.Kr };
+                const Kx_raw = parse(kxEl);
+                const Ky_raw = parse(kyEl);
+                const Kr_raw = parse(krEl); // UI入力値 (kN·mm/rad)
+                const { Kx, Ky, Kr } = convertSpringFromUI(Kx_raw, Ky_raw, Kr_raw);
+                const isRigidKx = rigidKxEl ? rigidKxEl.checked : false;
+                const isRigidKy = rigidKyEl ? rigidKyEl.checked : false;
+                const isRigidKr = rigidKrEl ? rigidKrEl.checked : false;
+                const EPS_LOCAL = (typeof EPS_SPRING !== 'undefined') ? EPS_SPRING : 1e-6;
+                if (!isRigidKx && !isRigidKy && (Kx === 0 || Kx === null) && (Ky === 0 || Ky === null)) {
+                    return { Kx: EPS_LOCAL, Ky: EPS_LOCAL, Kr: Kr || 0, rigidKx: isRigidKx, rigidKy: isRigidKy, rigidKr: isRigidKr };
                 }
-                return null;
+                return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0, rigidKx: isRigidKx, rigidKy: isRigidKy, rigidKr: isRigidKr };
             };
 
             // 始端バネ
@@ -4378,10 +4384,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 const member = members[load.memberIndex];
                 const L = member.length, w = load.w;
                 let fel;
-                if (member.i_conn === 'rigid' && member.j_conn === 'rigid') { fel = [0, w*L/2, w*L**2/12, 0, w*L/2, -w*L**2/12]; } 
-                else if (member.i_conn === 'pinned' && member.j_conn === 'rigid') { fel = [0, 3*w*L/8, 0, 0, 5*w*L/8, -w*L**2/8]; } 
-                else if (member.i_conn === 'rigid' && member.j_conn === 'pinned') { fel = [0, 5*w*L/8, w*L**2/8, 0, 3*w*L/8, 0]; } 
-                else { fel = [0, w*L/2, 0, 0, w*L/2, 0]; }
+                const EI = member.E * member.I;
+
+                if (!w || w === 0) {
+                    fel = [0,0,0,0,0,0];
+                } else {
+                    // compute j-end displacement for fixed-fixed particular solution
+                    const v_load = -(w * Math.pow(L, 4)) / (8 * EI);
+                    const theta_load = -(w * Math.pow(L, 3)) / (6 * EI);
+                    const D_load = [0, v_load, theta_load];
+
+                    // K_jj is lower-right 3x3 of member.k_local
+                    const K_jj = [
+                        [member.k_local[3][3], member.k_local[3][4], member.k_local[3][5]],
+                        [member.k_local[4][3], member.k_local[4][4], member.k_local[4][5]],
+                        [member.k_local[5][3], member.k_local[5][4], member.k_local[5][5]]
+                    ];
+
+                    // P_j_fix = -K_jj * D_load
+                    const P_j_fix = [0,0,0];
+                    for (let r=0; r<3; r++) {
+                        for (let c=0; c<3; c++) {
+                            P_j_fix[r] -= (K_jj[r][c] || 0) * (D_load[c] || 0);
+                        }
+                    }
+
+                    const N_j = P_j_fix[0];
+                    const Q_j = P_j_fix[1];
+                    const M_j = P_j_fix[2];
+
+                    const N_i = -N_j;
+                    const Q_i = (w * L) - Q_j;
+                    const M_i = -M_j - Q_j * L - (w * L * L) / 2;
+
+                    // Now prepare alternative correction approach based on simple-beam particular
+                    const theta_i_free = -(w * Math.pow(L, 3)) / (24 * EI);
+                    const theta_j_free =  (w * Math.pow(L, 3)) / (24 * EI);
+                    const D_simple = [0,0,theta_i_free,0,0,theta_j_free];
+
+                    const F_correction = [0,0,0,0,0,0];
+                    for (let r=0; r<6; r++){
+                        for (let c=0; c<6; c++){
+                            F_correction[r] -= (member.k_local[r][c] || 0) * (D_simple[c] || 0);
+                        }
+                    }
+
+                    const Q_simple = -(w * L) / 2;
+
+                    fel = [
+                        F_correction[0],
+                        Q_simple + F_correction[1],
+                        F_correction[2],
+                        F_correction[3],
+                        Q_simple + F_correction[4],
+                        F_correction[5]
+                    ];
+                }
                 const T_t = mat.transpose(member.T), feg = mat.multiply(T_t, fel.map(v => [v])), i = member.i, j = member.j;
                 F_global[i*3][0] -= feg[0][0]; F_global[i*3+1][0] -= feg[1][0]; F_global[i*3+2][0] -= feg[2][0];
                 F_global[j*3][0] -= feg[3][0]; F_global[j*3+1][0] -= feg[4][0]; F_global[j*3+2][0] -= feg[5][0];
@@ -4403,34 +4461,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const indices = [i*3, i*3+1, i*3+2, j*3, j*3+1, j*3+2];
                 for (let row = 0; row < 6; row++) for (let col = 0; col < 6; col++) K_global[indices[row]][indices[col]] += k_global_member[row][col];
             });
-            // 各部材の端に設定されたバネ剛性を全体剛性行列に反映する
-            try {
-                members.forEach((member, idx) => {
-                    const ii = member.i, jj = member.j;
-                    // 始端バネ
-                    if (member.spring_i) {
-                        const s = member.spring_i;
-                        const Kx = Number(s.Kx) || 0;
-                        const Ky = Number(s.Ky) || 0;
-                        const Kr = Number(s.Kr) || 0;
-                        if (Kx !== 0) K_global[ii*3][ii*3] += Kx;
-                        if (Ky !== 0) K_global[ii*3+1][ii*3+1] += Ky;
-                        if (Kr !== 0) K_global[ii*3+2][ii*3+2] += Kr;
-                    }
-                    // 終端バネ
-                    if (member.spring_j) {
-                        const s2 = member.spring_j;
-                        const Kx2 = Number(s2.Kx) || 0;
-                        const Ky2 = Number(s2.Ky) || 0;
-                        const Kr2 = Number(s2.Kr) || 0;
-                        if (Kx2 !== 0) K_global[jj*3][jj*3] += Kx2;
-                        if (Ky2 !== 0) K_global[jj*3+1][jj*3+1] += Ky2;
-                        if (Kr2 !== 0) K_global[jj*3+2][jj*3+2] += Kr2;
-                    }
-                });
-            } catch (e) {
-                console.warn('バネ剛性の K_global への反映中にエラーが発生しました:', e);
-            }
+
+            // 各部材端のバネ剛性は parseInputs 側で k_local に組み込まれているため、
+            // ここでは K_global に直接加算する処理は行いません。
             // ==========================================================
             // 強制変位を考慮した解析ロジック（自由節点も対応）
             // ==========================================================
@@ -4841,7 +4874,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // --- バネ剛性の読み取り ---
-            const EPS_SPRING = 1e-6; // 解析を不安定にしないための最小値 (単位: UIと同じ)
+            // UI単位 -> 内部単位への変換を行う（UI: kN/mm, kN·mm/rad -> 内部: kN/m, kN·m/rad）
+            const EPS_SPRING = 1e-9; // 内部単位(kN/m)での最小値（従来より小さめ）
             const readSpringFromCell = (cell) => {
                 if (!cell) return null;
                 const container = cell.querySelector('.spring-inputs');
@@ -4849,19 +4883,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 const kxEl = container.querySelector('.spring-kx');
                 const kyEl = container.querySelector('.spring-ky');
                 const krEl = container.querySelector('.spring-kr');
+                const rigidKxEl = container.querySelector('.spring-rigid-kx');
+                const rigidKyEl = container.querySelector('.spring-rigid-ky');
+                const rigidKrEl = container.querySelector('.spring-rigid-kr');
                 const parse = (el) => {
                     if (!el) return 0;
                     const v = parseFloat(el.value);
                     return Number.isFinite(v) ? v : 0;
                 };
-                const Kx = parse(kxEl);
-                const Ky = parse(kyEl);
-                const Kr = parse(krEl);
-                // UIで0/空のままだと不安定になりうるため、水平・垂直ともに0の場合は小さなEPSを設定
-                if ((Kx === 0 || Kx === null) && (Ky === 0 || Ky === null)) {
-                    return { Kx: EPS_SPRING, Ky: EPS_SPRING, Kr: Kr || 0 };
+                const Kx_ui = parse(kxEl); // kN/mm
+                const Ky_ui = parse(kyEl); // kN/mm
+                const Kr_ui = parse(krEl); // kN·mm/rad
+                // 単位変換: UI -> 内部
+                const Kx = Kx_ui * 1000; // kN/mm -> kN/m
+                const Ky = Ky_ui * 1000; // kN/mm -> kN/m
+                const Kr = Kr_ui * 1e-3;  // kN·mm -> kN·m
+                const isRigidKx = rigidKxEl ? rigidKxEl.checked : false;
+                const isRigidKy = rigidKyEl ? rigidKyEl.checked : false;
+                const isRigidKr = rigidKrEl ? rigidKrEl.checked : false;
+                // 水平・垂直ともに0の場合は最小EPSを入れて解析を安定化させる（ただし剛指定は優先）
+                if (!isRigidKx && !isRigidKy && (Kx === 0 || Kx === null) && (Ky === 0 || Ky === null)) {
+                    return { Kx: EPS_SPRING, Ky: EPS_SPRING, Kr: Kr || 0, rigidKx: isRigidKx, rigidKy: isRigidKy, rigidKr: isRigidKr };
                 }
-                return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0 };
+                return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0, rigidKx: isRigidKx, rigidKy: isRigidKy, rigidKr: isRigidKr };
             };
 
             let spring_i = null;
@@ -4886,87 +4930,130 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const c = dx/L, s = dy/L, T = [ [c,s,0,0,0,0], [-s,c,0,0,0,0], [0,0,1,0,0,0], [0,0,0,c,s,0], [0,0,0,-s,c,0], [0,0,0,0,0,1] ];
-            const EAL=E*A/L, EIL=E*I/L, EIL2=E*I/L**2, EIL3=E*I/L**3;
-            
+            // Axial stiffness with series springs (member and end springs)
+            // axialFlexibility = L/(E*A) + 1/Kx_i + 1/Kx_j  (if springs provided)
+            let axialFlexibility = L / (E * A);
+            if (i_conn === 'spring') {
+                const Kxi = spring_i && Number(spring_i.Kx) > 0 ? Number(spring_i.Kx) : 0;
+                if (Kxi > 0) axialFlexibility += 1 / Kxi;
+                else axialFlexibility = Infinity; // zero or missing spring -> open in series
+            }
+            if (j_conn === 'spring') {
+                const Kxj = spring_j && Number(spring_j.Kx) > 0 ? Number(spring_j.Kx) : 0;
+                if (Kxj > 0) axialFlexibility += 1 / Kxj;
+                else axialFlexibility = Infinity;
+            }
+            const EAL = (axialFlexibility === Infinity) ? 0 : (1 / axialFlexibility);
+            const EIL = E * I / L, EIL2 = E * I / L**2, EIL3 = E * I / L**3;
+
             // --- General calculation of k_local for any end condition ---
+            // Replace older semi-rigid approximations with a general flexibility-based element
+            // that assembles beam flexibility and end-spring flexibility, then inverts to get stiffness.
             let k_local;
-            const LARGE_STIFFNESS = 1e12; // A large number to simulate rigid connection
 
-            let Ri = 0, Rj = 0; // Rotational stiffnesses
+            // Helper: invert 3x3
+            const invert3x3 = (m) => {
+                const det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+                            m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                            m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+                // しきい値をより小さくして高剛性部材での誤判定を防止
+                if (Math.abs(det) < 1e-30) return null;
+                const invDet = 1 / det;
+                return [
+                    [(m[1][1] * m[2][2] - m[1][2] * m[2][1]) * invDet, (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * invDet, (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * invDet],
+                    [(m[1][2] * m[2][0] - m[1][0] * m[2][2]) * invDet, (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * invDet, (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * invDet],
+                    [(m[1][0] * m[2][1] - m[1][1] * m[2][0]) * invDet, (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * invDet, (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * invDet]
+                ];
+            };
 
-            if (i_conn === 'rigid') {
-                Ri = LARGE_STIFFNESS * E * I / L;
-            } else if (i_conn === 'spring' && spring_i) {
-                Ri = spring_i.Kr || 0;
-            } // if 'pinned', Ri remains 0
+            const getFlexibility = (connType, springData) => {
+                // [axial, shear, rotation]
+                if (connType === 'rigid') return [0, 0, 0];
+                if (connType === 'pinned') return [0, 0, 1e9];
+                if (connType === 'spring' && springData) {
+                    // Respect explicit 'rigid' checkboxes: if rigid flag is true, flexibility = 0
+                    let fx = 1e9;
+                    if (springData.rigidKx) fx = 0;
+                    else if (springData.Kx && springData.Kx > 1e-12) fx = 1 / springData.Kx;
 
-            if (j_conn === 'rigid') {
-                Rj = LARGE_STIFFNESS * E * I / L;
-            } else if (j_conn === 'spring' && spring_j) {
-                Rj = spring_j.Kr || 0;
-            } // if 'pinned', Rj remains 0
+                    let fy = 1e9;
+                    if (springData.rigidKy) fy = 0;
+                    else if (springData.Ky && springData.Ky > 1e-12) fy = 1 / springData.Ky;
 
-            // Handle the case of two pinned ends (truss element)
-            if (i_conn === 'pinned' && j_conn === 'pinned') {
-                k_local = [[EAL,0,0,-EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]];
-            } else {
-                // General formulation for semi-rigid connections
-                const L_ = L;
-                const EI = E * I;
+                    let fr = 1e9;
+                    if (springData.rigidKr) fr = 0;
+                    else if (springData.Kr && springData.Kr > 1e-12) fr = 1 / springData.Kr;
 
-                // Coefficients for solving for end moments
-                const A_ = 1 + 4 * EI / (L_ * (Ri || 1e-9)); // Avoid division by zero if Ri is 0
-                const B_ = 2 * EI / (L_ * (Rj || 1e-9));
-                const C_ = 4 * EI / L_;
-                const D_ = 2 * EI / L_;
-                const E_ = 2 * EI / (L_ * (Ri || 1e-9));
-                const F_ = 1 + 4 * EI / (L_ * (Rj || 1e-9));
-                const G_ = 4 * EI / L_;
+                    return [fx, fy, fr];
+                }
+                return [0,0,0];
+            };
 
-                const det = A_ * F_ - B_ * E_;
-                
-                // If determinant is close to zero, it's an unstable configuration
-                if (Math.abs(det) < 1e-9) {
-                     k_local = [[EAL,0,0,-EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]];
-                } else {
-                    const inv_det = 1 / det;
+            // Beam flexibility for j-end quantities (N, Q, M) when j is fixed and i is free
+            const L2 = L * L, L3 = L2 * L;
+            const EI_beam = E * I, EA = E * A;
+            const f_beam = [
+                [L / EA, 0, 0],
+                [0, L3 / (3 * EI_beam), L2 / (2 * EI_beam)],
+                [0, L2 / (2 * EI_beam), L / EI_beam]
+            ];
 
-                    // Modified stiffness factors S_ii, S_jj, S_ij
-                    const S_ii = inv_det * (F_ * C_ - B_ * D_);
-                    const S_ij = inv_det * (F_ * D_ - B_ * G_);
-                    const S_ji = inv_det * (A_ * D_ - E_ * C_); // Note: S_ji is not always S_ij
-                    const S_jj = inv_det * (A_ * G_ - E_ * D_);
-                    
-                    const k33 = S_ii;
-                    const k36 = S_ij;
-                    const k63 = S_ji;
-                    const k66 = S_jj;
-                    
-                    const k23 = (k33 + k63) / L_;
-                    const k32 = k23;
-                    const k26 = (k36 + k66) / L_;
-                    const k62 = k26;
-                    
-                    const k22 = (k23 + k26) / L_;
-                    const k52 = -k22;
-                    const k25 = -k22;
-                    const k55 = k22;
-                    
-                    const k35 = -k23;
-                    const k53 = -k23;
-                    const k65 = -k26;
-                    const k56 = -k26;
+            const f_spring_i = getFlexibility(i_conn, spring_i);
+            const f_spring_j = getFlexibility(j_conn, spring_j);
 
-                    k_local = [
-                        [EAL,   0,    0, -EAL,    0,    0],
-                        [  0, k22,  k23,    0,  k25,  k26],
-                        [  0, k32,  k33,    0,  k35,  k36],
-                        [-EAL,   0,    0,  EAL,    0,    0],
-                        [  0, k52,  k53,    0,  k55,  k56],
-                        [  0, k62,  k63,    0,  k65,  k66]
-                    ];
+            const B = [
+                [-1, 0, 0],
+                [0, -1, 0],
+                [0, -L, -1]
+            ];
+
+            const f_total = [[0,0,0],[0,0,0],[0,0,0]];
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    let val = f_beam[r][c] || 0;
+                    if (r === c) val += (f_spring_j[r] || 0);
+                    for (let k = 0; k < 3; k++) {
+                        val += (B[k][r] || 0) * (f_spring_i[k] || 0) * (B[k][c] || 0);
+                    }
+                    f_total[r][c] = val;
                 }
             }
+
+            const K_jj = invert3x3(f_total);
+            if (!K_jj) {
+                k_local = mat.create(6,6,0);
+            } else {
+                const K_ij = mat.create(3,3);
+                for (let r=0; r<3; r++) {
+                    for (let c=0; c<3; c++) {
+                        let sum = 0;
+                        for (let k=0; k<3; k++) sum += B[r][k] * K_jj[k][c];
+                        K_ij[r][c] = sum;
+                    }
+                }
+                const K_ji = mat.transpose(K_ij);
+                const K_ii = mat.create(3,3);
+                for (let r=0; r<3; r++) {
+                    for (let c=0; c<3; c++) {
+                        let sum = 0;
+                        for (let k=0; k<3; k++) sum += B[r][k] * K_ji[k][c];
+                        K_ii[r][c] = sum;
+                    }
+                }
+
+                k_local = [
+                    [K_ii[0][0], K_ii[0][1], K_ii[0][2], K_ij[0][0], K_ij[0][1], K_ij[0][2]],
+                    [K_ii[1][0], K_ii[1][1], K_ii[1][2], K_ij[1][0], K_ij[1][1], K_ij[1][2]],
+                    [K_ii[2][0], K_ii[2][1], K_ii[2][2], K_ij[2][0], K_ij[2][1], K_ij[2][2]],
+                    [K_ji[0][0], K_ji[0][1], K_ji[0][2], K_jj[0][0], K_jj[0][1], K_jj[0][2]],
+                    [K_ji[1][0], K_ji[1][1], K_ji[1][2], K_jj[1][0], K_jj[1][1], K_jj[1][2]],
+                    [K_ji[2][0], K_ji[2][1], K_ji[2][2], K_jj[2][0], K_jj[2][1], K_jj[2][2]]
+                ];
+            }
+
+            // --- 部材端の並進バネは既に k_local の軸方向剛性(EAL)の直列合成として組み込まれている ---
+            // 注意: ここでは軸方向(Kx)のみを要素内で直列合成として扱い、回転バネ(Kr)は Ri/Rj に反映している。
+            // 横方向(Ky)の詳細な要素内並列/直列扱いは未実装（必要なら後で拡張）。
 
             // 断面情報を取得（3Dビューア用）
             let sectionInfo = null;
@@ -5460,85 +5547,168 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
         }); 
     };
-    const drawConnections = (ctx, transform, nodes, members) => {
-        ctx.fillStyle = 'white';
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1.5;
-        const offset = 6;
+    const drawConnections = (ctx, transform, nodes, members, labelManager, obstacles) => {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
-        // helper: draw a simple zig-zag spring starting at point p and going along direction (ux,uy)
-        const drawSpring = (ctx, p, ux, uy, length, turns, amp) => {
-            const segs = Math.max(2, Math.floor((turns || 3) * 2)); // number of segments (zig + zag)
-            const segLen = (length || 14) / segs;
-            const px = -uy; // perpendicular vector
-            const py = ux;
+        const showStiffness = document.getElementById('show-spring-stiffness')?.checked ?? true;
 
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            for (let si = 1; si <= segs; si++) {
-                const along = segLen * si;
-                const sign = (si % 2 === 0) ? -1 : 1;
-                const x = p.x + ux * along + px * (amp * sign);
-                const y = p.y + uy * along + py * (amp * sign);
-                ctx.lineTo(x, y);
+        const drawTranslationalSpring = (ctx, length, width) => {
+            const coils = 4;
+            const step = length / coils;
+            ctx.beginPath(); ctx.moveTo(0, 0);
+            for (let i = 0; i < coils; i++) {
+                ctx.lineTo((i + 0.25) * step, width);
+                ctx.lineTo((i + 0.75) * step, -width);
+                ctx.lineTo((i + 1.00) * step, 0);
             }
             ctx.stroke();
         };
 
-        members.forEach(m => {
-            const n_i = nodes[m.i];
-            const p_i = transform(n_i.x, n_i.y);
-            const n_j = nodes[m.j];
-            const p_j = transform(n_j.x, n_j.y);
+        const drawRotationalSpring = (ctx, radius) => {
+            ctx.beginPath();
+            const points = 40;
+            const maxAngle = Math.PI * 2 * 2;
+            for (let i = 0; i <= points; i++) {
+                const angle = (i / points) * maxAngle;
+                const r = radius * (0.3 + 0.7 * (i / points));
+                const x = r * Math.cos(angle);
+                const y = r * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        };
 
-            // compute unit vector from i -> j in screen coordinates
+        // フォーマット関数（単位付き）
+        const fmt = (val, unit) => {
+            const uiVal = val / 1000; // 内部(kN/m) -> UI(kN/mm)
+            let numStr;
+            if (Math.abs(uiVal) < 0.001 && uiVal !== 0) numStr = uiVal.toExponential(1);
+            else if (Math.abs(uiVal) >= 1000) numStr = Math.round(uiVal).toString();
+            else numStr = parseFloat(uiVal.toFixed(2)).toString();
+            return `${numStr}${unit}`; // スペースなしで短く
+        };
+        
+        const fmtKr = (val) => {
+            const uiVal = val * 1000; // 内部(kN·m/rad) -> UI(kN·mm/rad)
+            let numStr;
+            if (uiVal === 0) numStr = '0';
+            else if (Math.abs(uiVal) < 0.1) numStr = uiVal.toExponential(1);
+            else numStr = parseFloat(uiVal.toFixed(1)).toString();
+            return `${numStr} kN·mm/rad`;
+        };
+
+        members.forEach((m) => {
+            const n_i = nodes[m.i];
+            const n_j = nodes[m.j];
+            const p_i = transform(n_i.x, n_i.y);
+            const p_j = transform(n_j.x, n_j.y);
             const dx = p_j.x - p_i.x;
             const dy = p_j.y - p_i.y;
-            const segLen = Math.hypot(dx, dy) || 1;
-            const ux = dx / segLen;
-            const uy = dy / segLen;
+            const angle = Math.atan2(dy, dx);
 
-            // pinned (existing behavior)
+            // ピン接合
+            const pinRadius = 4;
             if (m.i_conn === 'pinned') {
-                const p_i_offset = { x: p_i.x + offset * (m.c || ux), y: p_i.y - offset * (m.s || uy) };
-                ctx.beginPath();
-                ctx.arc(p_i_offset.x, p_i_offset.y, 3, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.stroke();
+                ctx.fillStyle = 'white'; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.arc(p_i.x, p_i.y, pinRadius, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
             }
             if (m.j_conn === 'pinned') {
-                const p_j_offset = { x: p_j.x - offset * (m.c || ux), y: p_j.y + offset * (m.s || uy) };
-                ctx.beginPath();
-                ctx.arc(p_j_offset.x, p_j_offset.y, 3, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.stroke();
+                ctx.fillStyle = 'white'; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.arc(p_j.x, p_j.y, pinRadius, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
             }
 
-            // spring: draw a short zig-zag coil sitting between the node marker and the member line
-            if (m.i_conn === 'spring') {
-                const springLen = Math.min(20, Math.max(10, segLen * 0.06));
-                const turns = 3;
-                const amp = Math.max(2, Math.min(6, Math.round(springLen / 4)));
-                const start = { x: p_i.x + ux * (offset + 1), y: p_i.y + uy * (offset + 1) };
-                ctx.strokeStyle = '#b33';
-                ctx.lineWidth = 1.6;
-                drawSpring(ctx, start, ux, uy, springLen, turns, amp);
-                // restore style
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 1.5;
-            }
+            // バネ接合
+            const drawEndSprings = (end, point, isStart) => {
+                const connType = end === 'i' ? m.i_conn : m.j_conn;
+                if (connType !== 'spring') return;
+                const springData = end === 'i' ? m.spring_i : m.spring_j;
+                if (!springData) return;
 
-            if (m.j_conn === 'spring') {
-                const springLen = Math.min(20, Math.max(10, segLen * 0.06));
-                const turns = 3;
-                const amp = Math.max(2, Math.min(6, Math.round(springLen / 4)));
-                const start = { x: p_j.x - ux * (offset + 1), y: p_j.y - uy * (offset + 1) };
-                ctx.strokeStyle = '#b33';
-                ctx.lineWidth = 1.6;
-                drawSpring(ctx, start, -ux, -uy, springLen, turns, amp);
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 1.5;
-            }
+                const { Kx=0, Ky=0, Kr=0, rigidKx, rigidKy, rigidKr } = springData;
+                if (rigidKx && rigidKy && rigidKr) return;
+
+                ctx.save();
+                ctx.translate(point.x, point.y);
+                const currentAngle = isStart ? angle : angle + Math.PI;
+                ctx.rotate(currentAngle);
+
+                const springColor = '#e65100';
+                const rotateColor = '#0277bd';
+                const springLen = 12;
+                const springW = 3;
+                
+                // テキスト描画用情報の収集
+                const cos = Math.cos(currentAngle);
+                const sin = Math.sin(currentAngle);
+                const labelsToDraw = [];
+
+                // --- Kx (軸方向) ---
+                if (!rigidKx) {
+                    ctx.strokeStyle = springColor; ctx.lineWidth = 1.5;
+                    ctx.save(); ctx.translate(3, 0);
+                    drawTranslationalSpring(ctx, springLen, springW);
+                    ctx.beginPath(); ctx.moveTo(springLen, -4); ctx.lineTo(springLen, 4); ctx.stroke();
+                    ctx.restore();
+
+                    // アンカー点: バネの中央
+                    const lx = 3 + springLen / 2, ly = 0;
+                    labelsToDraw.push({ 
+                        text: `Kx:${fmt(Kx, 'kN/mm')}`, 
+                        x: point.x + lx*cos - ly*sin, 
+                        y: point.y + lx*sin + ly*cos,
+                        color: '#333'
+                    });
+                }
+
+                // --- Ky (せん断方向) ---
+                if (!rigidKy) {
+                    ctx.strokeStyle = springColor; ctx.lineWidth = 1.5;
+                    ctx.save(); ctx.translate(0, -4); ctx.rotate(-Math.PI / 2);
+                    drawTranslationalSpring(ctx, springLen, springW);
+                    ctx.beginPath(); ctx.moveTo(springLen, -4); ctx.lineTo(springLen, 4); ctx.stroke();
+                    ctx.restore();
+
+                    // アンカー点: バネの中央
+                    const lx = 0, ly = -4 - springLen / 2;
+                    labelsToDraw.push({ 
+                        text: `Ky:${fmt(Ky, 'kN/mm')}`, 
+                        x: point.x + lx*cos - ly*sin, 
+                        y: point.y + lx*sin + ly*cos,
+                        color: '#333'
+                    });
+                }
+
+                // --- Kr (回転) ---
+                if (!rigidKr) {
+                    ctx.strokeStyle = rotateColor; ctx.lineWidth = 1.5;
+                    ctx.save(); drawRotationalSpring(ctx, 7); ctx.restore();
+
+                    // アンカー点: 渦巻きの右斜め上
+                    const lx = 5, ly = 5;
+                    labelsToDraw.push({ 
+                        text: `Kr:${fmtKr(Kr)}`, 
+                        x: point.x + lx*cos - ly*sin, 
+                        y: point.y + lx*sin + ly*cos,
+                        color: rotateColor
+                    });
+                }
+
+                ctx.restore(); // 座標系を戻す
+
+                // テキストの描画 (LabelManagerを使用)
+                if (showStiffness && labelManager && labelsToDraw.length > 0) {
+                    labelsToDraw.forEach(l => {
+                        labelManager.draw(ctx, l.text, l.x, l.y, obstacles, {
+                            drawLeaderLine: true,
+                            color: l.color
+                        });
+                    });
+                }
+            };
+
+            drawEndSprings('i', p_i, true);
+            drawEndSprings('j', p_j, false);
         });
     };
     const drawBoundaryConditions = (ctx, transform, nodes) => { 
@@ -6201,114 +6371,140 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const drawGrid = (ctx, transform, width, height) => { const { x: minX, y: maxY } = inverseTransform(0,0); const { x: maxX, y: minY } = inverseTransform(width, height); const spacing = parseFloat(elements.gridSpacing.value); if (isNaN(spacing) || spacing <= 0) return; ctx.strokeStyle = '#e9e9e9'; ctx.lineWidth = 1; const startX = Math.floor(minX / spacing) * spacing; for (let x = startX; x <= maxX; x += spacing) { const p1 = transform(x, minY); const p2 = transform(x, maxY); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); } const startY = Math.floor(minY / spacing) * spacing; for (let y = startY; y <= maxY; y += spacing) { const p1 = transform(minX, y); const p2 = transform(maxX, y); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); } };
     const LabelManager = () => {
-        const drawnLabels = []; // 描画したラベル情報をすべて保存する配列
+        const drawnLabels = []; 
         const isOverlapping = (rect1, rect2) => !(rect1.x2 < rect2.x1 || rect1.x1 > rect2.x2 || rect1.y2 < rect2.y1 || rect1.y1 > rect2.y2);
+        
         return {
             draw: (ctx, text, targetX, targetY, obstacles = [], options = {}) => {
                 const bounds = options.bounds || null;
+                const drawLeaderLine = options.drawLeaderLine || false; // 指示線を描画するかどうか
+                const color = options.color || '#333';
+
                 const metrics = ctx.measureText(text);
                 const w = metrics.width;
-                const h = metrics.fontBoundingBoxAscent ?? 12;
-                const padding = 12; // パディングを増やして重複を避ける
+                const h = 12; // 近似的な高さ
+                
+                // 指示線がある場合は距離を離す
+                const dist = drawLeaderLine ? 25 : 12;
+                const padding = 2; 
+
+                // 配置候補 (オフセットX, オフセットY, TextAlign, TextBaseline)
                 const candidates = [
-                    [w/2 + padding, -padding, 'left', 'bottom'],
-                    [-w/2 - padding, -padding, 'right', 'bottom'],
-                    [w/2 + padding, h + padding, 'left', 'top'],
-                    [-w/2 - padding, h + padding, 'right', 'top'],
-                    [0, -h - padding, 'center', 'bottom'],
-                    [0, h + padding, 'center', 'top'],
-                    [w/2 + padding, h/2, 'left', 'middle'],
-                    [-w/2 - padding, h/2, 'right', 'middle'],
-                    // フォールバック候補（より遠い位置）
-                    [w/2 + padding * 3, -padding * 3, 'left', 'bottom'],
-                    [-w/2 - padding * 3, -padding * 3, 'right', 'bottom'],
-                    [0, -h - padding * 3, 'center', 'bottom'],
-                    [0, h + padding * 3, 'center', 'top']
+                    [dist, -dist, 'left', 'bottom'],
+                    [-dist, -dist, 'right', 'bottom'],
+                    [dist, dist, 'left', 'top'],
+                    [-dist, dist, 'right', 'top'],
+                    // より遠い候補
+                    [dist * 1.5, -dist * 1.5, 'left', 'bottom'],
+                    [-dist * 1.5, -dist * 1.5, 'right', 'bottom'],
+                    [dist * 1.5, dist * 1.5, 'left', 'top'],
+                    [-dist * 1.5, dist * 1.5, 'right', 'top'],
+                    // 上下左右
+                    [0, -dist * 1.2, 'center', 'bottom'],
+                    [0, dist * 1.2, 'center', 'top'],
+                    [dist * 1.5, 0, 'left', 'middle'],
+                    [-dist * 1.5, 0, 'right', 'middle']
                 ];
 
                 for (const cand of candidates) {
                     const x = targetX + cand[0];
                     const y = targetY + cand[1];
+                    
+                    // テキストの矩形計算
                     let rect;
-                    if (cand[2] === 'left') rect = { x1: x, y1: y - h, x2: x + w, y2: y };
-                    else if (cand[2] === 'right') rect = { x1: x - w, y1: y - h, x2: x, y2: y };
-                    else rect = { x1: x - w/2, y1: y - h, x2: x + w/2, y2: y };
+                    if (cand[2] === 'left') rect = { x1: x, x2: x + w };
+                    else if (cand[2] === 'right') rect = { x1: x - w, x2: x };
+                    else rect = { x1: x - w/2, x2: x + w/2 };
 
-                    const paddedRect = {x1: rect.x1 - padding, y1: rect.y1 - padding, x2: rect.x2 + padding, y2: rect.y2 + padding};
+                    if (cand[3] === 'bottom') rect = { ...rect, y1: y - h, y2: y };
+                    else if (cand[3] === 'top') rect = { ...rect, y1: y, y2: y + h };
+                    else rect = { ...rect, y1: y - h/2, y2: y + h/2 };
+
+                    // パディング追加
+                    const paddedRect = {
+                        x1: rect.x1 - padding, y1: rect.y1 - padding, 
+                        x2: rect.x2 + padding, y2: rect.y2 + padding
+                    };
+
+                    // 衝突判定
                     let isInvalid = false;
-
-                    for (const existing of [...drawnLabels.map(l => l.rect), ...obstacles]) {
-                        if (isOverlapping(paddedRect, existing)) {
-                            isInvalid = true;
-                            break;
-                        }
-                    }
-                    if (isInvalid) continue;
-
                     if (bounds) {
-                        if (paddedRect.x1 < bounds.x1 || paddedRect.x2 > bounds.x2 || paddedRect.y1 < bounds.y1 || paddedRect.y2 > bounds.y2) {
-                            isInvalid = true;
+                        if (paddedRect.x1 < bounds.x1 || paddedRect.x2 > bounds.x2 || paddedRect.y1 < bounds.y1 || paddedRect.y2 > bounds.y2) isInvalid = true;
+                    }
+                    if (!isInvalid) {
+                        for (const existing of [...drawnLabels.map(l => l.rect), ...obstacles]) {
+                            if (isOverlapping(paddedRect, existing)) {
+                                isInvalid = true;
+                                break;
+                            }
                         }
                     }
+
                     if (isInvalid) continue;
 
+                    // --- 描画 ---
+                    
+                    // 指示線 (Leader Line)
+                    if (drawLeaderLine) {
+                        ctx.save();
+                        ctx.strokeStyle = '#999';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(targetX, targetY);
+                        
+                        // テキストのアンカーポイントまで線を引く
+                        // (テキストボックスの端に合わせて調整するとより綺麗ですが、簡易的にアンカーへ)
+                        ctx.lineTo(x, y);
+                        ctx.stroke();
+                        
+                        // ターゲット点にドットを描画
+                        ctx.beginPath();
+                        ctx.arc(targetX, targetY, 1.5, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#999';
+                        ctx.fill();
+                        ctx.restore();
+                    }
+
+                    // テキスト（白縁取り付き）
+                    ctx.save();
+                    ctx.font = "10px Arial";
                     ctx.textAlign = cand[2];
                     ctx.textBaseline = cand[3];
+                    ctx.lineJoin = "round";
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+                    ctx.strokeText(text, x, y);
+                    ctx.fillStyle = color;
                     ctx.fillText(text, x, y);
+                    ctx.restore();
 
-                    // 編集に必要な情報を保存
-                    const centerX = (rect.x1 + rect.x2) / 2;
-                    const centerY = (rect.y1 + rect.y2) / 2;
                     drawnLabels.push({
                         rect: paddedRect,
-                        center: { x: centerX, y: centerY },
-                        width: w + padding * 2,
-                        value: options.value,
-                        type: options.type,
-                        index: options.index,
+                        center: { x: (rect.x1+rect.x2)/2, y: (rect.y1+rect.y2)/2 },
+                        width: rect.x2 - rect.x1,
+                        value: options.value, type: options.type, index: options.index
                     });
                     return;
                 }
-
-                // フォールバック: 全候補がブロックされた場合、最初の候補位置に強制表示
-                const fallbackCand = candidates[0];
-                const x = targetX + fallbackCand[0];
-                const y = targetY + fallbackCand[1];
-                let rect;
-                if (fallbackCand[2] === 'left') rect = { x1: x, y1: y - h, x2: x + w, y2: y };
-                else if (fallbackCand[2] === 'right') rect = { x1: x - w, y1: y - h, x2: x, y2: y };
-                else rect = { x1: x - w/2, y1: y - h, x2: x + w/2, y2: y };
-
-                const paddedRect = {x1: rect.x1 - padding, y1: rect.y1 - padding, x2: rect.x2 + padding, y2: rect.y2 + padding};
-                ctx.textAlign = fallbackCand[2];
-                ctx.textBaseline = fallbackCand[3];
+                // フォールバック（描画場所が見つからない場合も最初の候補に描画）
+                const cand = candidates[0];
+                const x = targetX + cand[0];
+                const y = targetY + cand[1];
+                ctx.save();
+                ctx.textAlign = cand[2];
+                ctx.textBaseline = cand[3];
+                ctx.fillStyle = color;
                 ctx.fillText(text, x, y);
-
-                // フォールバックの場合も情報を保存
-                const centerX = (rect.x1 + rect.x2) / 2;
-                const centerY = (rect.y1 + rect.y2) / 2;
-                drawnLabels.push({
-                    rect: paddedRect,
-                    center: { x: centerX, y: centerY },
-                    width: w + padding * 2,
-                    value: options.value,
-                    type: options.type,
-                    index: options.index,
-                });
+                ctx.restore();
             },
             getLabelAt: (x, y) => {
-                // 最も手前に描画されたラベルから逆順に検索
                 for (let i = drawnLabels.length - 1; i >= 0; i--) {
                     const label = drawnLabels[i];
-                    if (x >= label.rect.x1 && x <= label.rect.x2 && y >= label.rect.y1 && y <= label.rect.y2) {
-                        return label;
-                    }
+                    if (x >= label.rect.x1 && x <= label.rect.x2 && y >= label.rect.y1 && y <= label.rect.y2) return label;
                 }
                 return null;
             },
-            clear: () => {
-                drawnLabels.length = 0;
-            }
+            clear: () => { drawnLabels.length = 0; }
         };
     };
     const drawOnCanvas = () => {
@@ -6333,7 +6529,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     return { x1: pos.x - 12, y1: pos.y - 12 - 16, x2: pos.x + 12 + textWidth, y2: pos.y + 12 }; // 障害物サイズを拡大
                 });
                 drawStructure(ctx, transform, nodes, members, '#333', true, true, true, drawingCtx);
-                drawConnections(ctx, transform, nodes, members);
+                // pass labelManager and nodeObstacles so drawConnections can register labels
+                drawConnections(ctx, transform, nodes, members, labelManager, nodeObstacles);
                 drawBoundaryConditions(ctx, transform, nodes);
                 drawDimensions(ctx, transform, nodes, members, labelManager, nodeObstacles);
                 drawExternalLoads(ctx, transform, nodes, members, nodeLoads, memberLoads, memberSelfWeights, nodeSelfWeights, labelManager, nodeObstacles);
@@ -9325,10 +9522,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 titleEl.style.marginTop = '0';
                 popup.prepend(titleEl);
             }
-            titleEl.textContent = `部材プロパティ (Member ${selectedMemberIndex + 1})`;
+            // 上部の大きなタイトルは不要とのことなので非表示にする
+            titleEl.style.display = 'none';
+
+            // 部材番号表示（ポップアップ内目立つ位置に表示）
+            let memberIndexEl = document.getElementById('member-props-popup-index');
+            if (!memberIndexEl) {
+                memberIndexEl = document.createElement('div');
+                memberIndexEl.id = 'member-props-popup-index';
+                memberIndexEl.style.textAlign = 'center';
+                memberIndexEl.style.fontWeight = '600';
+                memberIndexEl.style.marginBottom = '8px';
+                // title の直後に挿入
+                if (titleEl.nextSibling) titleEl.parentNode.insertBefore(memberIndexEl, titleEl.nextSibling);
+                else titleEl.parentNode.appendChild(memberIndexEl);
+            }
+            memberIndexEl.textContent = `部材番号: ${selectedMemberIndex + 1}`;
 
             popup.style.display = 'block';
             popup.style.visibility = 'visible';
+            // ポップアップ表示時に、既に「剛」設定されているものは入力を無効化しておく
+            try {
+                const piKx = document.getElementById('popup-i-spring-kx');
+                const piKy = document.getElementById('popup-i-spring-ky');
+                const piKr = document.getElementById('popup-i-spring-kr');
+                const pjKx = document.getElementById('popup-j-spring-kx');
+                const pjKy = document.getElementById('popup-j-spring-ky');
+                const pjKr = document.getElementById('popup-j-spring-kr');
+                const piRKx = document.getElementById('popup-i-spring-rigid-kx');
+                const piRKy = document.getElementById('popup-i-spring-rigid-ky');
+                const piRKr = document.getElementById('popup-i-spring-rigid-kr');
+                const pjRKx = document.getElementById('popup-j-spring-rigid-kx');
+                const pjRKy = document.getElementById('popup-j-spring-rigid-ky');
+                const pjRKr = document.getElementById('popup-j-spring-rigid-kr');
+                if (piKx && piRKx) piKx.disabled = !!piRKx.checked;
+                if (piKy && piRKy) piKy.disabled = !!piRKy.checked;
+                if (piKr && piRKr) piKr.disabled = !!piRKr.checked;
+                if (pjKx && pjRKx) pjKx.disabled = !!pjRKx.checked;
+                if (pjKy && pjRKy) pjKy.disabled = !!pjRKy.checked;
+                if (pjKr && pjRKr) pjKr.disabled = !!pjRKr.checked;
+            } catch (e) {
+                console.warn('popup init disable error', e);
+            }
             console.log('📦 部材プロパティポップアップ - 表示設定:', {
                 display: popup.style.display,
                 visibility: popup.style.visibility,
@@ -9857,6 +10092,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (popupKx && rowKx) rowKx.value = popupKx.value || '0';
                 if (popupKy && rowKy) rowKy.value = popupKy.value || '0';
                 if (popupKr && rowKr) rowKr.value = popupKr.value || '0';
+                // 剛フラグを反映
+                const popupRKx = document.getElementById(`${prefix}-spring-rigid-kx`);
+                const popupRKy = document.getElementById(`${prefix}-spring-rigid-ky`);
+                const popupRKr = document.getElementById(`${prefix}-spring-rigid-kr`);
+                const rowRKx = rowSpringBox ? rowSpringBox.querySelector('.spring-rigid-kx') : null;
+                const rowRKy = rowSpringBox ? rowSpringBox.querySelector('.spring-rigid-ky') : null;
+                const rowRKr = rowSpringBox ? rowSpringBox.querySelector('.spring-rigid-kr') : null;
+                if (popupRKx && rowRKx) {
+                    rowRKx.checked = !!popupRKx.checked;
+                    // disable input if checked
+                    if (rowKx) rowKx.disabled = rowRKx.checked;
+                    rowRKx.dispatchEvent(new Event('change'));
+                }
+                if (popupRKy && rowRKy) {
+                    rowRKy.checked = !!popupRKy.checked;
+                    if (rowKy) rowKy.disabled = rowRKy.checked;
+                    rowRKy.dispatchEvent(new Event('change'));
+                }
+                if (popupRKr && rowRKr) {
+                    rowRKr.checked = !!popupRKr.checked;
+                    if (rowKr) rowKr.disabled = rowRKr.checked;
+                    rowRKr.dispatchEvent(new Event('change'));
+                }
                 // 入力値を書き換えたことを入力イベントで伝えておく（UIやparse時の観測のため）
                 if (rowKx) rowKx.dispatchEvent(new Event('input'));
                 if (rowKy) rowKy.dispatchEvent(new Event('input'));
@@ -9943,7 +10201,21 @@ document.addEventListener('DOMContentLoaded', () => {
             titleEl.style.marginTop = '0';
             popup.prepend(titleEl);
         }
-        titleEl.textContent = `節点プロパティ (Node ${nodeIndex + 1})`;
+        // 上部の大きなタイトルは不要とのことなので非表示にする
+        titleEl.style.display = 'none';
+
+        // 節点番号表示（ポップアップ内目立つ位置に表示）
+        let nodeIndexEl = document.getElementById('node-props-popup-index');
+        if (!nodeIndexEl) {
+            nodeIndexEl = document.createElement('div');
+            nodeIndexEl.id = 'node-props-popup-index';
+            nodeIndexEl.style.textAlign = 'center';
+            nodeIndexEl.style.fontWeight = '600';
+            nodeIndexEl.style.marginBottom = '8px';
+            if (titleEl.nextSibling) titleEl.parentNode.insertBefore(nodeIndexEl, titleEl.nextSibling);
+            else titleEl.parentNode.appendChild(nodeIndexEl);
+        }
+        nodeIndexEl.textContent = `節点番号: ${nodeIndex + 1}`;
 
         popup.style.display = 'block';
         popup.style.visibility = 'visible';
@@ -10428,6 +10700,55 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             `<input type="number" value="${(Z * 1e6).toFixed(2)}" title="断面係数 Z (cm³)">`
         ];
 
+        // バネ入力部分のHTMLテンプレート生成関数（単位表示・レイアウト調整版）
+        const createSpringInputs = (prefix) => `
+        <div class="spring-inputs" style="display:none; margin-top:4px; padding:6px 4px; background-color:#f8f9fa; border:1px solid #e9ecef; border-radius:4px; text-align:left; width: 100%; box-sizing: border-box;">
+            
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <div style="display:flex; flex-direction:column; line-height:1;">
+                    <span style="font-size:10px; font-weight:bold; color:#555;">Kx</span>
+                    <span style="font-size:9px; color:#888; transform:scale(0.9); transform-origin:left top;">(kN/mm)</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                    <input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:45px; padding:1px; font-size:10px; border:1px solid #ccc; border-radius:2px;">
+                    <label style="font-size:10px; display:flex; align-items:center; cursor:pointer; margin:0;">
+                        <input type="checkbox" class="spring-rigid-kx" style="margin:0 4px 0 0; vertical-align:middle;" 
+                               onchange="this.closest('.spring-inputs').querySelector('.spring-kx').disabled = this.checked">剛
+                    </label>
+                </div>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <div style="display:flex; flex-direction:column; line-height:1;">
+                    <span style="font-size:10px; font-weight:bold; color:#555;">Ky</span>
+                    <span style="font-size:9px; color:#888; transform:scale(0.9); transform-origin:left top;">(kN/mm)</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                    <input class="spring-ky" type="number" min="0" step="0.01" value="0" style="width:45px; padding:1px; font-size:10px; border:1px solid #ccc; border-radius:2px;">
+                    <label style="font-size:10px; display:flex; align-items:center; cursor:pointer; margin:0;">
+                        <input type="checkbox" class="spring-rigid-ky" style="margin:0 4px 0 0; vertical-align:middle;" 
+                               onchange="this.closest('.spring-inputs').querySelector('.spring-ky').disabled = this.checked">剛
+                    </label>
+                </div>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; flex-direction:column; line-height:1;">
+                    <span style="font-size:10px; font-weight:bold; color:#555;">Kr</span>
+                    <span style="font-size:8px; color:#888; transform:scale(0.85); transform-origin:left top;">(kN·mm/rad)</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                    <input class="spring-kr" type="number" min="0" step="0.01" value="0" style="width:45px; padding:1px; font-size:10px; border:1px solid #ccc; border-radius:2px;">
+                    <label style="font-size:10px; display:flex; align-items:center; cursor:pointer; margin:0;">
+                        <input type="checkbox" class="spring-rigid-kr" style="margin:0 4px 0 0; vertical-align:middle;" 
+                               onchange="this.closest('.spring-inputs').querySelector('.spring-kr').disabled = this.checked">剛
+                    </label>
+                </div>
+            </div>
+            
+        </div>
+    `;
+
         // 自重考慮チェックボックスがオンの場合、密度列を追加
         // プリセット読み込み中は密度列の表示状態に関係なく追加しない
         const shouldAddDensity = !window.isLoadingPreset &&
@@ -10448,25 +10769,13 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         baseColumns.push(`
             <div class="conn-cell">
                 <select class="conn-select"><option value="rigid" ${i_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${i_conn === 'pinned' || i_conn === 'pin' || i_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${i_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
-                <div class="spring-inputs" style="display:none; margin-top:6px;">
-                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <label style="font-size:12px;">Kx (N/mm)</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                        <label style="font-size:12px;">Ky (N/mm)</label><input class="spring-ky" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                        <label style="font-size:12px;">Kr (N·mm/rad)</label><input class="spring-kr" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                    </div>
-                </div>
+                ${createSpringInputs(`i`)}
             </div>
         `);
         baseColumns.push(`
             <div class="conn-cell">
                 <select class="conn-select"><option value="rigid" ${j_conn === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${j_conn === 'pinned' || j_conn === 'pin' || j_conn === 'p' ? 'selected' : ''}>ピン</option><option value="spring" ${j_conn === 'spring' ? 'selected' : ''}>バネ</option></select>
-                <div class="spring-inputs" style="display:none; margin-top:6px;">
-                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <label style="font-size:12px;">Kx (N/mm)</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                        <label style="font-size:12px;">Ky (N/mm)</label><input class="spring-ky" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                        <label style="font-size:12px;">Kr (N·mm/rad)</label><input class="spring-kr" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                    </div>
-                </div>
+                ${createSpringInputs(`j`)}
             </div>
         `);
 
@@ -12233,10 +12542,10 @@ const loadPreset = (index) => {
                         // 両端をバネ接続に設定（典型値）
                         i_conn: 'spring',
                         j_conn: 'spring',
-                        // 始端バネ: 比較的硬い水平剛性、低めの回転剛性
-                        spring_i: { Kx: 1000, Ky: 1000, Kr: 100 },
-                        // 終端バネ: やや柔らかめの水平剛性、同様に回転剛性あり
-                        spring_j: { Kx: 500, Ky: 500, Kr: 50 }
+                        // 始端バネ: Kx=1.0 kN/mm, Ky=1.0 kN/mm, Kr=10000 kN·mm/rad
+                        spring_i: { Kx: 1.0, Ky: 1.0, Kr: 10000 },
+                        // 終端バネ: Kx=0.5 kN/mm, Ky=0.5 kN/mm, Kr=5000 kN·mm/rad
+                        spring_j: { Kx: 0.5, Ky: 0.5, Kr: 5000 }
                     }
                 ],
                 nodeLoads: [],
@@ -12301,6 +12610,7 @@ const loadPreset = (index) => {
     const showExternalLoadsCheckbox = document.getElementById('show-external-loads');
     const showSelfWeightCheckbox = document.getElementById('show-self-weight');
     const showMemberDimensionsCheckbox = document.getElementById('show-member-dimensions');
+    const showSpringStiffnessCheckbox = document.getElementById('show-spring-stiffness');
     if (showExternalLoadsCheckbox) {
         showExternalLoadsCheckbox.addEventListener('change', drawOnCanvas);
     }
@@ -12309,6 +12619,9 @@ const loadPreset = (index) => {
     }
     if (showMemberDimensionsCheckbox) {
         showMemberDimensionsCheckbox.addEventListener('change', drawOnCanvas);
+    }
+    if (showSpringStiffnessCheckbox) {
+        showSpringStiffnessCheckbox.addEventListener('change', drawOnCanvas);
     }
     
     elements.saveBtn.addEventListener('click', saveInputData);
@@ -12346,21 +12659,56 @@ const loadPreset = (index) => {
         return u8;
     }
 
-    // 共有リンクを生成する関数
-    const generateShareLink = () => {
+    // 共有リンクを生成する関数（短縮URL対応版）
+    const generateShareLink = async () => {
         try {
             const state = getCurrentState();
             const jsonString = JSON.stringify(state);
             const compressed = pako.deflate(jsonString);
             const encodedData = toBase64Url(compressed);
             const baseUrl = window.location.href.split('#')[0];
-            const shareUrl = `${baseUrl}#model=${encodedData}`;
+            const longUrl = `${baseUrl}#model=${encodedData}`;
 
-            shareLinkTextarea.value = shareUrl;
+            // まずモーダルを表示し、生成中であることを明示
             shareLinkModal.style.display = 'flex';
+            shareLinkTextarea.value = "短縮URLを生成中...";
+            
+            // TinyURL APIを使用して短縮を試みる
+            try {
+                // TinyURLのAPIはGETリクエストで短縮URLをテキストで返します
+                const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+                
+                if (response.ok) {
+                    const shortUrl = await response.text();
+                    shareLinkTextarea.value = shortUrl;
+                    console.log("短縮URL生成成功:", shortUrl);
+                } else {
+                    throw new Error("短縮サービスが応答しませんでした");
+                }
+            } catch (apiError) {
+                console.warn("URL短縮に失敗しました（フォールバックします）:", apiError);
+                // 短縮に失敗した場合（長すぎる、オフラインなど）は元の長いURLを表示
+                shareLinkTextarea.value = longUrl;
+                
+                // 補足メッセージを表示（オプション）
+                const messageDiv = document.createElement('div');
+                messageDiv.style.color = '#666';
+                messageDiv.style.fontSize = '12px';
+                messageDiv.style.marginTop = '5px';
+                messageDiv.innerText = "※モデルデータが大きすぎる等の理由で短縮できませんでした。長いURLを使用してください。";
+                
+                // 既存のメッセージがあれば削除して追加
+                const existingMsg = shareLinkModal.querySelector('.fallback-message');
+                if (existingMsg) existingMsg.remove();
+                
+                messageDiv.classList.add('fallback-message');
+                shareLinkTextarea.parentNode.appendChild(messageDiv);
+            }
+
         } catch (error) {
             console.error("共有リンクの生成に失敗しました:", error);
             alert("共有リンクの生成に失敗しました。");
+            shareLinkModal.style.display = 'none';
         }
     };
 
@@ -13905,13 +14253,28 @@ const loadPreset = (index) => {
                             const kx = iSpringBox.querySelector('.spring-kx')?.value || '0';
                             const ky = iSpringBox.querySelector('.spring-ky')?.value || '0';
                             const kr = iSpringBox.querySelector('.spring-kr')?.value || '0';
+                            const rKx = iSpringBox.querySelector('.spring-rigid-kx')?.checked || false;
+                            const rKy = iSpringBox.querySelector('.spring-rigid-ky')?.checked || false;
+                            const rKr = iSpringBox.querySelector('.spring-rigid-kr')?.checked || false;
                             if (piKx) piKx.value = kx;
                             if (piKy) piKy.value = ky;
                             if (piKr) piKr.value = kr;
+                            const piRKx = document.getElementById('popup-i-spring-rigid-kx');
+                            const piRKy = document.getElementById('popup-i-spring-rigid-ky');
+                            const piRKr = document.getElementById('popup-i-spring-rigid-kr');
+                            if (piRKx) { piRKx.checked = rKx; if (piKx) piKx.disabled = rKx; }
+                            if (piRKy) { piRKy.checked = rKy; if (piKy) piKy.disabled = rKy; }
+                            if (piRKr) { piRKr.checked = rKr; if (piKr) piKr.disabled = rKr; }
                         } else {
                             if (piKx) piKx.value = '0';
                             if (piKy) piKy.value = '0';
                             if (piKr) piKr.value = '0';
+                            const piRKx = document.getElementById('popup-i-spring-rigid-kx');
+                            const piRKy = document.getElementById('popup-i-spring-rigid-ky');
+                            const piRKr = document.getElementById('popup-i-spring-rigid-kr');
+                            if (piRKx) { piRKx.checked = false; if (piKx) piKx.disabled = false; }
+                            if (piRKy) { piRKy.checked = false; if (piKy) piKy.disabled = false; }
+                            if (piRKr) { piRKr.checked = false; if (piKr) piKr.disabled = false; }
                         }
                     }
 
@@ -13924,13 +14287,28 @@ const loadPreset = (index) => {
                             const kx = jSpringBox.querySelector('.spring-kx')?.value || '0';
                             const ky = jSpringBox.querySelector('.spring-ky')?.value || '0';
                             const kr = jSpringBox.querySelector('.spring-kr')?.value || '0';
+                            const rKx = jSpringBox.querySelector('.spring-rigid-kx')?.checked || false;
+                            const rKy = jSpringBox.querySelector('.spring-rigid-ky')?.checked || false;
+                            const rKr = jSpringBox.querySelector('.spring-rigid-kr')?.checked || false;
                             if (pjKx) pjKx.value = kx;
                             if (pjKy) pjKy.value = ky;
                             if (pjKr) pjKr.value = kr;
+                            const pjRKx = document.getElementById('popup-j-spring-rigid-kx');
+                            const pjRKy = document.getElementById('popup-j-spring-rigid-ky');
+                            const pjRKr = document.getElementById('popup-j-spring-rigid-kr');
+                            if (pjRKx) { pjRKx.checked = rKx; if (pjKx) pjKx.disabled = rKx; }
+                            if (pjRKy) { pjRKy.checked = rKy; if (pjKy) pjKy.disabled = rKy; }
+                            if (pjRKr) { pjRKr.checked = rKr; if (pjKr) pjKr.disabled = rKr; }
                         } else {
                             if (pjKx) pjKx.value = '0';
                             if (pjKy) pjKy.value = '0';
                             if (pjKr) pjKr.value = '0';
+                            const pjRKx = document.getElementById('popup-j-spring-rigid-kx');
+                            const pjRKy = document.getElementById('popup-j-spring-rigid-ky');
+                            const pjRKr = document.getElementById('popup-j-spring-rigid-kr');
+                            if (pjRKx) { pjRKx.checked = false; if (pjKx) pjKx.disabled = false; }
+                            if (pjRKy) { pjRKy.checked = false; if (pjKy) pjKy.disabled = false; }
+                            if (pjRKr) { pjRKr.checked = false; if (pjKr) pjKr.disabled = false; }
                         }
                     }
                 } catch (e) {
@@ -13951,6 +14329,27 @@ const loadPreset = (index) => {
                 
                 if (popup) {
                     popup.style.display = 'block';
+                    // 表示時に剛フラグがある入力を無効化
+                    try {
+                        const piKx = document.getElementById('popup-i-spring-kx');
+                        const piKy = document.getElementById('popup-i-spring-ky');
+                        const piKr = document.getElementById('popup-i-spring-kr');
+                        const pjKx = document.getElementById('popup-j-spring-kx');
+                        const pjKy = document.getElementById('popup-j-spring-ky');
+                        const pjKr = document.getElementById('popup-j-spring-kr');
+                        const piRKx = document.getElementById('popup-i-spring-rigid-kx');
+                        const piRKy = document.getElementById('popup-i-spring-rigid-ky');
+                        const piRKr = document.getElementById('popup-i-spring-rigid-kr');
+                        const pjRKx = document.getElementById('popup-j-spring-rigid-kx');
+                        const pjRKy = document.getElementById('popup-j-spring-rigid-ky');
+                        const pjRKr = document.getElementById('popup-j-spring-rigid-kr');
+                        if (piKx && piRKx) piKx.disabled = !!piRKx.checked;
+                        if (piKy && piRKy) piKy.disabled = !!piRKy.checked;
+                        if (piKr && piRKr) piKr.disabled = !!piRKr.checked;
+                        if (pjKx && pjRKx) pjKx.disabled = !!pjRKx.checked;
+                        if (pjKy && pjRKy) pjKy.disabled = !!pjRKy.checked;
+                        if (pjKr && pjRKr) pjKr.disabled = !!pjRKr.checked;
+                    } catch (e) { console.warn('popup init disable error', e); }
                     console.log('✅ ポップアップ表示設定完了:', popup.style.display);
                 } else {
                     console.error('❌ memberPropsPopup要素が見つかりません');

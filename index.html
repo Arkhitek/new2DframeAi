@@ -179,6 +179,10 @@
                             <input type="checkbox" id="show-member-dimensions" checked style="margin-right: 5px;">
                             部材寸法表示
                         </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="show-spring-stiffness" checked style="margin-right: 5px;">
+                            バネ剛性表示
+                        </label>
                     </div>
                 </div>
 
@@ -511,21 +515,36 @@
                      <option value="pinned">ピン</option>
                      <option value="spring">バネ</option>
                 </select>
-                <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
-                    <div class="spring-grid">
-                        <div class="spring-input">
-                            <label for="popup-i-spring-kx">Kx (N/mm)</label>
-                            <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="spring-input">
-                            <label for="popup-i-spring-ky">Ky (N/mm)</label>
-                            <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="spring-input">
-                            <label for="popup-i-spring-kr">Kr (N·mm/rad)</label>
-                            <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0">
-                        </div>
+                            <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
+                                <div class="spring-grid">
+                <div class="spring-input">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <label for="popup-i-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
+                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                            <input id="popup-i-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kx').disabled = this.checked">剛
+                        </label>
                     </div>
+                    <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0">
+                </div>
+                <div class="spring-input">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <label for="popup-i-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
+                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                            <input id="popup-i-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-ky').disabled = this.checked">剛
+                        </label>
+                    </div>
+                    <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0">
+                </div>
+                <div class="spring-input">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <label for="popup-i-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
+                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                            <input id="popup-i-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kr').disabled = this.checked">剛
+                        </label>
+                    </div>
+                    <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0">
+                </div>
+            </div>
                 </div>
             </div>
             <div class="conn-group">
@@ -537,19 +556,34 @@
                 </select>
                 <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
                     <div class="spring-grid">
-                        <div class="spring-input">
-                            <label for="popup-j-spring-kx">Kx (N/mm)</label>
-                            <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="spring-input">
-                            <label for="popup-j-spring-ky">Ky (N/mm)</label>
-                            <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="spring-input">
-                            <label for="popup-j-spring-kr">Kr (N·mm/rad)</label>
-                            <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0">
-                        </div>
-                    </div>
+    <div class="spring-input">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label for="popup-j-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
+            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                <input id="popup-j-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kx').disabled = this.checked">剛
+            </label>
+        </div>
+        <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0">
+    </div>
+    <div class="spring-input">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label for="popup-j-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
+            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                <input id="popup-j-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-ky').disabled = this.checked">剛
+            </label>
+        </div>
+        <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0">
+    </div>
+    <div class="spring-input">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label for="popup-j-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
+            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                <input id="popup-j-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kr').disabled = this.checked">剛
+            </label>
+        </div>
+        <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0">
+    </div>
+</div>
                 </div>
             </div>
              <label for="popup-w">w (kN/m)</label>

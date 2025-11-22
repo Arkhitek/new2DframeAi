@@ -504,36 +504,52 @@
             <input type="number" id="popup-a">
             <label for="popup-z" class="section-check-item">Z (cm³)</label>
 <input type="number" id="popup-z" class="section-check-item">
-            <label for="popup-i-conn">始端接合</label>
-            <select id="popup-i-conn">
-                 <option value="rigid">剛</option>
-                 <option value="pinned">ピン</option>
-                 <option value="spring">バネ</option>
-            </select>
-                    <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                    <label style="font-size:12px;">Kx (N/mm)</label>
-                    <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
-                    <label style="font-size:12px;">Ky (N/mm)</label>
-                    <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
-                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
-                    <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+            <div class="conn-group">
+                <label for="popup-i-conn">始端接合</label>
+                <select id="popup-i-conn">
+                     <option value="rigid">剛</option>
+                     <option value="pinned">ピン</option>
+                     <option value="spring">バネ</option>
+                </select>
+                <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
+                    <div class="spring-grid">
+                        <div class="spring-input">
+                            <label for="popup-i-spring-kx">Kx (N/mm)</label>
+                            <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <label for="popup-i-spring-ky">Ky (N/mm)</label>
+                            <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <label for="popup-i-spring-kr">Kr (N·mm/rad)</label>
+                            <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0">
+                        </div>
+                    </div>
                 </div>
             </div>
-            <label for="popup-j-conn">終端接合</label>
-            <select id="popup-j-conn">
-                 <option value="rigid">剛</option>
-                 <option value="pinned">ピン</option>
-                 <option value="spring">バネ</option>
-            </select>
-            <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                    <label style="font-size:12px;">Kx (N/mm)</label>
-                    <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0" style="width:100px;">
-                    <label style="font-size:12px;">Ky (N/mm)</label>
-                    <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0" style="width:100px;">
-                    <label style="font-size:12px;">Kr (N·mm/rad)</label>
-                    <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0" style="width:100px;">
+            <div class="conn-group">
+                <label for="popup-j-conn">終端接合</label>
+                <select id="popup-j-conn">
+                     <option value="rigid">剛</option>
+                     <option value="pinned">ピン</option>
+                     <option value="spring">バネ</option>
+                </select>
+                <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
+                    <div class="spring-grid">
+                        <div class="spring-input">
+                            <label for="popup-j-spring-kx">Kx (N/mm)</label>
+                            <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <label for="popup-j-spring-ky">Ky (N/mm)</label>
+                            <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <label for="popup-j-spring-kr">Kr (N·mm/rad)</label>
+                            <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0">
+                        </div>
+                    </div>
                 </div>
             </div>
              <label for="popup-w">w (kN/m)</label>

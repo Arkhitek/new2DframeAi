@@ -749,6 +749,38 @@ canvas {
     gap: 12px;
     align-items: center;
 }
+.popup-box.member-props-popup-wide .props-grid .conn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    /* conn-group should occupy one label+input slot (i.e. two grid columns) */
+    grid-column: auto / span 1;
+}
+.popup-box.member-props-popup-wide .props-grid .conn-group select {
+    width: 100%;
+}
+.popup-box.member-props-popup-wide #popup-i-spring-box,
+.popup-box.member-props-popup-wide #popup-j-spring-box {
+    margin-top: 4px;
+}
+/* spring inputs: label above each input, arranged in 3 columns */
+.popup-box.member-props-popup-wide .spring-grid {
+    display: grid;
+    grid-template-columns: 1fr; /* 縦並びにする */
+    gap: 6px;
+    align-items: start;
+}
+.popup-box.member-props-popup-wide .spring-input label {
+    font-size: 12px;
+    margin-bottom: 6px;
+    display: block;
+    color: var(--color-text-secondary);
+}
+.popup-box.member-props-popup-wide .spring-input input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+}
 .popup-box.member-props-popup-wide .props-grid label {
     margin-bottom: 0;
     font-weight: 600;

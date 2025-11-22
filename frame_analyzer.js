@@ -2884,14 +2884,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // 接合条件の更新 - 密度列を考慮したインデックス調整
-            const hasDensityColumn = row.querySelector('.density-cell') !== null;
-            // 基本列(7) + 密度列(0or1) + 断面名称列(1) + 軸方向列(1) + 接続列(2)
-            const iConnIndex = hasDensityColumn ? 12 : 11; // 始端のインデックス
-            const jConnIndex = hasDensityColumn ? 13 : 12; // 終端のインデックス
-
-            if (updates.i_conn) row.cells[iConnIndex].querySelector('select').value = updates.i_conn;
-            if (updates.j_conn) row.cells[jConnIndex].querySelector('select').value = updates.j_conn;
+            // 接合条件の更新 - conn-select クラスを持つ要素を使って安全に更新
+            const connSelectsRow = Array.from(row.querySelectorAll('.conn-select'));
+            const tableIConnSel = connSelectsRow[0] || null;
+            const tableJConnSel = connSelectsRow[1] || null;
+            if (updates.i_conn && tableIConnSel) {
+                tableIConnSel.value = updates.i_conn;
+                tableIConnSel.dispatchEvent(new Event('change'));
+            }
+            if (updates.j_conn && tableJConnSel) {
+                tableJConnSel.value = updates.j_conn;
+                tableJConnSel.dispatchEvent(new Event('change'));
+            }
             
             // 等分布荷重の処理
             if (updates.memberLoad) {
@@ -4835,13 +4839,134 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn(`  始点節点${i+1}: (${ni.x}, ${ni.y}), 終点節点${j+1}: (${nj.x}, ${nj.y})`);
                 return null; // この部材をスキップ
             }
+
+            // --- バネ剛性の読み取り ---
+            const EPS_SPRING = 1e-6; // 解析を不安定にしないための最小値 (単位: UIと同じ)
+            const readSpringFromCell = (cell) => {
+                if (!cell) return null;
+                const container = cell.querySelector('.spring-inputs');
+                if (!container) return null;
+                const kxEl = container.querySelector('.spring-kx');
+                const kyEl = container.querySelector('.spring-ky');
+                const krEl = container.querySelector('.spring-kr');
+                const parse = (el) => {
+                    if (!el) return 0;
+                    const v = parseFloat(el.value);
+                    return Number.isFinite(v) ? v : 0;
+                };
+                const Kx = parse(kxEl);
+                const Ky = parse(kyEl);
+                const Kr = parse(krEl);
+                // UIで0/空のままだと不安定になりうるため、水平・垂直ともに0の場合は小さなEPSを設定
+                if ((Kx === 0 || Kx === null) && (Ky === 0 || Ky === null)) {
+                    return { Kx: EPS_SPRING, Ky: EPS_SPRING, Kr: Kr || 0 };
+                }
+                return { Kx: Kx || 0, Ky: Ky || 0, Kr: Kr || 0 };
+            };
+
+            let spring_i = null;
+            let spring_j = null;
+            try {
+                if (i_conn === 'spring') {
+                    const iCell = iConnIndex >= 0 ? row.cells[iConnIndex] : null;
+                    spring_i = readSpringFromCell(iCell) || { Kx: 0, Ky: 0, Kr: 0 };
+                }
+            } catch (e) {
+                console.warn('始端バネ読み取りエラー(parseInputs)', e);
+                spring_i = { Kx: 0, Ky: 0, Kr: 0 };
+            }
+            try {
+                if (j_conn === 'spring') {
+                    const jCell = jConnIndex >= 0 ? row.cells[jConnIndex] : null;
+                    spring_j = readSpringFromCell(jCell) || { Kx: 0, Ky: 0, Kr: 0 };
+                }
+            } catch (e) {
+                console.warn('終端バネ読み取りエラー(parseInputs)', e);
+                spring_j = { Kx: 0, Ky: 0, Kr: 0 };
+            }
+            
             const c = dx/L, s = dy/L, T = [ [c,s,0,0,0,0], [-s,c,0,0,0,0], [0,0,1,0,0,0], [0,0,0,c,s,0], [0,0,0,-s,c,0], [0,0,0,0,0,1] ];
             const EAL=E*A/L, EIL=E*I/L, EIL2=E*I/L**2, EIL3=E*I/L**3;
+            
+            // --- General calculation of k_local for any end condition ---
             let k_local;
-            if (i_conn === 'rigid' && j_conn === 'rigid') k_local = [[EAL,0,0,-EAL,0,0],[0,12*EIL3,6*EIL2,0,-12*EIL3,6*EIL2],[0,6*EIL2,4*EIL,0,-6*EIL2,2*EIL],[-EAL,0,0,EAL,0,0],[0,-12*EIL3,-6*EIL2,0,12*EIL3,-6*EIL2],[0,6*EIL2,2*EIL,0,-6*EIL2,4*EIL]];
-            else if (i_conn === 'pinned' && j_conn === 'rigid') k_local = [[EAL,0,0,-EAL,0,0],[0,3*EIL3,0,0,-3*EIL3,3*EIL2],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,-3*EIL3,0,0,3*EIL3,-3*EIL2],[0,3*EIL2,0,0,-3*EIL2,3*EIL]];
-            else if (i_conn === 'rigid' && j_conn === 'pinned') k_local = [[EAL,0,0,-EAL,0,0],[0,3*EIL3,3*EIL2,0,-3*EIL3,0],[0,3*EIL2,3*EIL,0,-3*EIL2,0],[-EAL,0,0,EAL,0,0],[0,-3*EIL3,-3*EIL2,0,3*EIL3,0],[0,0,0,0,0,0]];
-            else k_local = [[EAL,0,0,-EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]];
+            const LARGE_STIFFNESS = 1e12; // A large number to simulate rigid connection
+
+            let Ri = 0, Rj = 0; // Rotational stiffnesses
+
+            if (i_conn === 'rigid') {
+                Ri = LARGE_STIFFNESS * E * I / L;
+            } else if (i_conn === 'spring' && spring_i) {
+                Ri = spring_i.Kr || 0;
+            } // if 'pinned', Ri remains 0
+
+            if (j_conn === 'rigid') {
+                Rj = LARGE_STIFFNESS * E * I / L;
+            } else if (j_conn === 'spring' && spring_j) {
+                Rj = spring_j.Kr || 0;
+            } // if 'pinned', Rj remains 0
+
+            // Handle the case of two pinned ends (truss element)
+            if (i_conn === 'pinned' && j_conn === 'pinned') {
+                k_local = [[EAL,0,0,-EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]];
+            } else {
+                // General formulation for semi-rigid connections
+                const L_ = L;
+                const EI = E * I;
+
+                // Coefficients for solving for end moments
+                const A_ = 1 + 4 * EI / (L_ * (Ri || 1e-9)); // Avoid division by zero if Ri is 0
+                const B_ = 2 * EI / (L_ * (Rj || 1e-9));
+                const C_ = 4 * EI / L_;
+                const D_ = 2 * EI / L_;
+                const E_ = 2 * EI / (L_ * (Ri || 1e-9));
+                const F_ = 1 + 4 * EI / (L_ * (Rj || 1e-9));
+                const G_ = 4 * EI / L_;
+
+                const det = A_ * F_ - B_ * E_;
+                
+                // If determinant is close to zero, it's an unstable configuration
+                if (Math.abs(det) < 1e-9) {
+                     k_local = [[EAL,0,0,-EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[-EAL,0,0,EAL,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]];
+                } else {
+                    const inv_det = 1 / det;
+
+                    // Modified stiffness factors S_ii, S_jj, S_ij
+                    const S_ii = inv_det * (F_ * C_ - B_ * D_);
+                    const S_ij = inv_det * (F_ * D_ - B_ * G_);
+                    const S_ji = inv_det * (A_ * D_ - E_ * C_); // Note: S_ji is not always S_ij
+                    const S_jj = inv_det * (A_ * G_ - E_ * D_);
+                    
+                    const k33 = S_ii;
+                    const k36 = S_ij;
+                    const k63 = S_ji;
+                    const k66 = S_jj;
+                    
+                    const k23 = (k33 + k63) / L_;
+                    const k32 = k23;
+                    const k26 = (k36 + k66) / L_;
+                    const k62 = k26;
+                    
+                    const k22 = (k23 + k26) / L_;
+                    const k52 = -k22;
+                    const k25 = -k22;
+                    const k55 = k22;
+                    
+                    const k35 = -k23;
+                    const k53 = -k23;
+                    const k65 = -k26;
+                    const k56 = -k26;
+
+                    k_local = [
+                        [EAL,   0,    0, -EAL,    0,    0],
+                        [  0, k22,  k23,    0,  k25,  k26],
+                        [  0, k32,  k33,    0,  k35,  k36],
+                        [-EAL,   0,    0,  EAL,    0,    0],
+                        [  0, k52,  k53,    0,  k55,  k56],
+                        [  0, k62,  k63,    0,  k65,  k66]
+                    ];
+                }
+            }
 
             // 断面情報を取得（3Dビューア用）
             let sectionInfo = null;
@@ -4875,7 +5000,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`🔍 部材${index + 1}の軸情報を取得:`, sectionAxis);
             }
 
-            return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis };
+            return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis, spring_i, spring_j };
         }).filter(member => member !== null); // 長さ0の部材(null)を除外
         
         console.log(`📊 部材処理結果: 全${elements.membersTable.rows.length}行中、有効な部材${members.length}個`);
@@ -5335,7 +5460,87 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
         }); 
     };
-    const drawConnections = (ctx, transform, nodes, members) => { ctx.fillStyle = 'white'; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; const offset = 6; members.forEach(m => { const n_i = nodes[m.i]; const p_i = transform(n_i.x, n_i.y); if (m.i_conn === 'pinned') { const p_i_offset = { x: p_i.x + offset * m.c, y: p_i.y - offset * m.s }; ctx.beginPath(); ctx.arc(p_i_offset.x, p_i_offset.y, 3, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); } if (m.j_conn === 'pinned') { const n_j = nodes[m.j]; const p_j = transform(n_j.x, n_j.y); const p_j_offset = { x: p_j.x - offset * m.c, y: p_j.y + offset * m.s }; ctx.beginPath(); ctx.arc(p_j_offset.x, p_j_offset.y, 3, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); } }); };
+    const drawConnections = (ctx, transform, nodes, members) => {
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1.5;
+        const offset = 6;
+
+        // helper: draw a simple zig-zag spring starting at point p and going along direction (ux,uy)
+        const drawSpring = (ctx, p, ux, uy, length, turns, amp) => {
+            const segs = Math.max(2, Math.floor((turns || 3) * 2)); // number of segments (zig + zag)
+            const segLen = (length || 14) / segs;
+            const px = -uy; // perpendicular vector
+            const py = ux;
+
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            for (let si = 1; si <= segs; si++) {
+                const along = segLen * si;
+                const sign = (si % 2 === 0) ? -1 : 1;
+                const x = p.x + ux * along + px * (amp * sign);
+                const y = p.y + uy * along + py * (amp * sign);
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        };
+
+        members.forEach(m => {
+            const n_i = nodes[m.i];
+            const p_i = transform(n_i.x, n_i.y);
+            const n_j = nodes[m.j];
+            const p_j = transform(n_j.x, n_j.y);
+
+            // compute unit vector from i -> j in screen coordinates
+            const dx = p_j.x - p_i.x;
+            const dy = p_j.y - p_i.y;
+            const segLen = Math.hypot(dx, dy) || 1;
+            const ux = dx / segLen;
+            const uy = dy / segLen;
+
+            // pinned (existing behavior)
+            if (m.i_conn === 'pinned') {
+                const p_i_offset = { x: p_i.x + offset * (m.c || ux), y: p_i.y - offset * (m.s || uy) };
+                ctx.beginPath();
+                ctx.arc(p_i_offset.x, p_i_offset.y, 3, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+            }
+            if (m.j_conn === 'pinned') {
+                const p_j_offset = { x: p_j.x - offset * (m.c || ux), y: p_j.y + offset * (m.s || uy) };
+                ctx.beginPath();
+                ctx.arc(p_j_offset.x, p_j_offset.y, 3, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            // spring: draw a short zig-zag coil sitting between the node marker and the member line
+            if (m.i_conn === 'spring') {
+                const springLen = Math.min(20, Math.max(10, segLen * 0.06));
+                const turns = 3;
+                const amp = Math.max(2, Math.min(6, Math.round(springLen / 4)));
+                const start = { x: p_i.x + ux * (offset + 1), y: p_i.y + uy * (offset + 1) };
+                ctx.strokeStyle = '#b33';
+                ctx.lineWidth = 1.6;
+                drawSpring(ctx, start, ux, uy, springLen, turns, amp);
+                // restore style
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1.5;
+            }
+
+            if (m.j_conn === 'spring') {
+                const springLen = Math.min(20, Math.max(10, segLen * 0.06));
+                const turns = 3;
+                const amp = Math.max(2, Math.min(6, Math.round(springLen / 4)));
+                const start = { x: p_j.x - ux * (offset + 1), y: p_j.y - uy * (offset + 1) };
+                ctx.strokeStyle = '#b33';
+                ctx.lineWidth = 1.6;
+                drawSpring(ctx, start, -ux, -uy, springLen, turns, amp);
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1.5;
+            }
+        });
+    };
     const drawBoundaryConditions = (ctx, transform, nodes) => { 
         const size = 10; 
         nodes.forEach(node => { 
@@ -8597,13 +8802,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const f_select=memberRow.cells[4].querySelector('select'), f_input=memberRow.cells[4].querySelector('input[type="number"]'); const F_val = f_select ? (f_select.value==='custom'?f_input.value:f_select.value) : '235';
                 const I_m4 = parseFloat(memberRow.cells[5].querySelector('input').value)*1e-8, A_m2 = parseFloat(memberRow.cells[6].querySelector('input').value)*1e-4, Z_m3 = parseFloat(memberRow.cells[7].querySelector('input').value)*1e-6;
                 
-                // Dynamic cell index calculation for connections
+                // 接合条件: テーブル行内の .conn-select を使って安全に取得
                 const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
-                // 基本列(7) + 密度列(0or1) + 断面名称列(1) + 軸方向列(1) + 接続列(2)
-                const iConnIndex = hasDensityColumn ? 12 : 11;
-                const jConnIndex = hasDensityColumn ? 13 : 12;
-
-                const props = {E:E_val, F:F_val, I:I_m4, A:A_m2, Z:Z_m3, i_conn:memberRow.cells[iConnIndex].querySelector('select').value, j_conn:memberRow.cells[jConnIndex].querySelector('select').value};
+                const connSelectsRow = Array.from(memberRow.querySelectorAll('.conn-select'));
+                const iConnVal = connSelectsRow[0]?.value || 'rigid';
+                const jConnVal = connSelectsRow[1]?.value || 'rigid';
+                const props = {E:E_val, F:F_val, I:I_m4, A:A_m2, Z:Z_m3, i_conn:iConnVal, j_conn:jConnVal};
                 // 追加前に既存節点との重複チェックを行う（グリッドスナップ後の座標で判定）
                 try {
                     const { nodes } = parseInputs();
@@ -8997,9 +9201,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // その他のプロパティを設定
-            document.getElementById('popup-i').value = memberRow.cells[5].querySelector('input').value;
-            document.getElementById('popup-a').value = memberRow.cells[6].querySelector('input').value;
-            document.getElementById('popup-z').value = memberRow.cells[7].querySelector('input').value;
+            // テーブルの列配置: 0:'#',1:i,2:j,3:E,4:strength,5:I,6:A,7:Z,...
+            const tableStartNodeCell = memberRow.cells[1];
+            const tableAcell = memberRow.cells[6];
+            const tableZcell = memberRow.cells[7];
+            document.getElementById('popup-i').value = tableStartNodeCell ? tableStartNodeCell.querySelector('input').value : '';
+            document.getElementById('popup-a').value = tableAcell ? tableAcell.querySelector('input').value : '';
+            document.getElementById('popup-z').value = tableZcell ? tableZcell.querySelector('input').value : '';
             
             // 密度欄の表示/非表示と値設定
             const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
@@ -9068,15 +9276,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => adjustPopupPosition(elements.memberPropsPopup), 0);
             }
             
-            // Dynamic cell index calculation for connections
-            // 基本列(7) + 密度列(0or1) + 断面名称列(1) + 軸方向列(1) + 接続列(2)
-            const iConnIndex = hasDensityColumn ? 12 : 11;
-            const jConnIndex = hasDensityColumn ? 13 : 12;
+            // 接合条件: row 内の .conn-select から安全に取得してポップアップに反映
+            const popupIConn = document.getElementById('popup-i-conn');
+            const popupJConn = document.getElementById('popup-j-conn');
+            const connSelectsRow = Array.from(memberRow.querySelectorAll('.conn-select'));
+            const iConnSel = connSelectsRow[0] || null;
+            const jConnSel = connSelectsRow[1] || null;
+            if (popupIConn) {
+                if (iConnSel) {
+                    popupIConn.value = iConnSel.value;
+                    popupIConn.dispatchEvent(new Event('change'));
+                }
+                else console.warn('popup sync: i_conn select not found on row', { selectedMemberIndex, memberRow });
+            }
+            if (popupJConn) {
+                if (jConnSel) {
+                    popupJConn.value = jConnSel.value;
+                    popupJConn.dispatchEvent(new Event('change'));
+                }
+                else console.warn('popup sync: j_conn select not found on row', { selectedMemberIndex, memberRow });
+            }
 
-            document.getElementById('popup-i-conn').value = memberRow.cells[iConnIndex].querySelector('select').value;
-            document.getElementById('popup-j-conn').value = memberRow.cells[jConnIndex].querySelector('select').value;
             const memberLoadRow = Array.from(elements.memberLoadsTable.rows).find(row => parseInt(row.cells[0].querySelector('input').value)-1 === selectedMemberIndex);
-            document.getElementById('popup-w').value = memberLoadRow ? memberLoadRow.cells[1].querySelector('input').value : '0';
+            const popupW = document.getElementById('popup-w');
+            if (popupW) {
+                if (memberLoadRow) {
+                    const wInput = memberLoadRow.cells[1].querySelector('input');
+                    popupW.value = wInput ? wInput.value : '0';
+                } else {
+                    popupW.value = '0';
+                }
+            } else {
+                console.warn('popup-w 要素が DOM 上に存在しません');
+            }
             
             // ポップアップを部材に重ならない位置に表示（null チェック付き）
             const popup = elements.memberPropsPopup;
@@ -9085,6 +9317,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
+            let titleEl = document.getElementById('member-props-popup-title');
+            if (!titleEl) {
+                titleEl = document.createElement('h2');
+                titleEl.id = 'member-props-popup-title';
+                titleEl.style.textAlign = 'center';
+                titleEl.style.marginTop = '0';
+                popup.prepend(titleEl);
+            }
+            titleEl.textContent = `部材プロパティ (Member ${selectedMemberIndex + 1})`;
+
             popup.style.display = 'block';
             popup.style.visibility = 'visible';
             console.log('📦 部材プロパティポップアップ - 表示設定:', {
@@ -9543,9 +9785,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 4. その他のプロパティを更新
-        memberRow.cells[5].querySelector('input').value = document.getElementById('popup-i').value;
-        memberRow.cells[6].querySelector('input').value = document.getElementById('popup-a').value;
-        memberRow.cells[7].querySelector('input').value = document.getElementById('popup-z').value;
+        // テーブル列: 0:'#',1:i,2:j,3:E,4:strength,5:I,6:A,7:Z
+        if (memberRow.cells[1]) memberRow.cells[1].querySelector('input').value = document.getElementById('popup-i').value;
+        if (memberRow.cells[6]) memberRow.cells[6].querySelector('input').value = document.getElementById('popup-a').value;
+        if (memberRow.cells[7]) memberRow.cells[7].querySelector('input').value = document.getElementById('popup-z').value;
         
         // 密度の保存処理
         const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
@@ -9568,33 +9811,60 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // Dynamic cell index calculation for connections
-        // 基本列(7) + 密度列(0or1) + 断面名称列(1) + 軸方向列(1) + 接続列(2)
-        const iConnIndex = hasDensityColumn ? 12 : 11;
-        const jConnIndex = hasDensityColumn ? 13 : 12;
+        // 接合セレクトはテーブル行内の class="conn-select" で特定する（インデックスに依存しない）
+        const connSelects = Array.from(memberRow.querySelectorAll('.conn-select'));
+        const tableIConnSelect = connSelects[0] || null;
+        const tableJConnSelect = connSelects[1] || null;
 
-        memberRow.cells[iConnIndex].querySelector('select').value = document.getElementById('popup-i-conn').value;
-        memberRow.cells[jConnIndex].querySelector('select').value = document.getElementById('popup-j-conn').value;
-        // ポップアップのバネ入力をテーブル行のspring-inputsへ反映
+        if (tableIConnSelect) {
+            const popupIVal = document.getElementById('popup-i-conn')?.value;
+            if (popupIVal !== undefined) {
+                tableIConnSelect.value = popupIVal;
+                tableIConnSelect.dispatchEvent(new Event('change'));
+            }
+        }
+        if (tableJConnSelect) {
+            const popupJVal = document.getElementById('popup-j-conn')?.value;
+            if (popupJVal !== undefined) {
+                tableJConnSelect.value = popupJVal;
+                tableJConnSelect.dispatchEvent(new Event('change'));
+            }
+        }
+
+        // ポップアップのバネ入力をテーブル行のspring-inputsへ反映（conn セル単位で探す）
         try {
-            const applyPopupToRowSpring = (connIndex, prefix) => {
-                const popupKx = document.getElementById(`${prefix}-spring-kx`);
-                const popupKy = document.getElementById(`${prefix}-spring-ky`);
-                const popupKr = document.getElementById(`${prefix}-spring-kr`);
-                const rowSpringBox = memberRow.cells[connIndex].querySelector('.spring-inputs');
+            const applyPopupToConnCell = (connSelectEl, prefix) => {
+                if (!connSelectEl) return;
+                // conn-select の直近の .conn-cell を探す（テンプレートによって構造が異なる可能性に対応）
+                const connCell = connSelectEl.closest('.conn-cell') || connSelectEl.parentElement;
+                const rowSpringBox = connCell ? connCell.querySelector('.spring-inputs') : null;
                 if (!rowSpringBox) return;
                 const rowKx = rowSpringBox.querySelector('.spring-kx');
                 const rowKy = rowSpringBox.querySelector('.spring-ky');
                 const rowKr = rowSpringBox.querySelector('.spring-kr');
+                const popupKx = document.getElementById(`${prefix}-spring-kx`);
+                const popupKy = document.getElementById(`${prefix}-spring-ky`);
+                const popupKr = document.getElementById(`${prefix}-spring-kr`);
+                // コピー前に表示状態を明示的に更新（ポップアップ側の select が 'spring' のとき）
+                const popupConnSelect = document.getElementById(prefix === 'popup-i' ? 'popup-i-conn' : 'popup-j-conn');
+                if (popupConnSelect) {
+                    if (popupConnSelect.value === 'spring') {
+                        rowSpringBox.style.display = '';
+                    } else {
+                        rowSpringBox.style.display = 'none';
+                    }
+                }
                 if (popupKx && rowKx) rowKx.value = popupKx.value || '0';
                 if (popupKy && rowKy) rowKy.value = popupKy.value || '0';
                 if (popupKr && rowKr) rowKr.value = popupKr.value || '0';
+                // 入力値を書き換えたことを入力イベントで伝えておく（UIやparse時の観測のため）
+                if (rowKx) rowKx.dispatchEvent(new Event('input'));
+                if (rowKy) rowKy.dispatchEvent(new Event('input'));
+                if (rowKr) rowKr.dispatchEvent(new Event('input'));
             };
 
-            // 始端
-            applyPopupToRowSpring(iConnIndex, 'popup-i');
-            // 終端
-            applyPopupToRowSpring(jConnIndex, 'popup-j');
+            applyPopupToConnCell(tableIConnSelect, 'popup-i');
+            applyPopupToConnCell(tableJConnSelect, 'popup-j');
         } catch (e) {
             console.warn('popup->row spring apply error', e);
         }
@@ -9665,6 +9935,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        let titleEl = document.getElementById('node-props-popup-title');
+        if (!titleEl) {
+            titleEl = document.createElement('h2');
+            titleEl.id = 'node-props-popup-title';
+            titleEl.style.textAlign = 'center';
+            titleEl.style.marginTop = '0';
+            popup.prepend(titleEl);
+        }
+        titleEl.textContent = `節点プロパティ (Node ${nodeIndex + 1})`;
+
         popup.style.display = 'block';
         popup.style.visibility = 'visible';
 
@@ -11930,9 +12210,11 @@ const loadPreset = (index) => {
     // Make runFullAnalysis globally accessible
     window.runFullAnalysis = runFullAnalysis;
 
-    // 簡易テストプリセット: 2節点1部材、片端をバネ接続にしたサンプル
+    // 簡易テストプリセット: 2節点1部材、両端にバネ接続を設定した動作確認用サンプル
+    // 解析での安定性を確保するため、水平/垂直方向の剛性は非ゼロの代表値を設定します。
     window.createSimpleSpringPreset = () => {
         try {
+            // 単位はUIと同一 (Kx,Ky: N/mm, Kr: N·mm/rad)
             const state = {
                 nodes: [
                     { x: 0, y: 0, support: 'fixed', dx_forced: 0, dy_forced: 0, r_forced: 0 },
@@ -11948,10 +12230,13 @@ const loadPreset = (index) => {
                         I: '1.84e-5',
                         A: '2.34e-3',
                         Z: '1.23e-3',
-                        i_conn: 'rigid',
+                        // 両端をバネ接続に設定（典型値）
+                        i_conn: 'spring',
                         j_conn: 'spring',
-                        spring_i: { Kx: 0, Ky: 0, Kr: 0 },
-                        spring_j: { Kx: 100, Ky: 0, Kr: 0 }
+                        // 始端バネ: 比較的硬い水平剛性、低めの回転剛性
+                        spring_i: { Kx: 1000, Ky: 1000, Kr: 100 },
+                        // 終端バネ: やや柔らかめの水平剛性、同様に回転剛性あり
+                        spring_j: { Kx: 500, Ky: 500, Kr: 50 }
                     }
                 ],
                 nodeLoads: [],
@@ -11959,6 +12244,8 @@ const loadPreset = (index) => {
             };
             historyStack = [];
             restoreState(state);
+            // ログで設定内容を表示して確認しやすくする
+            console.log('createSimpleSpringPreset: state restored', JSON.stringify(state, null, 2));
             runFullAnalysis();
             console.log('createSimpleSpringPreset: プリセットを読み込み、解析を実行しました。');
         } catch (e) {
@@ -13529,9 +13816,16 @@ const loadPreset = (index) => {
                 popupFContainer.appendChild(createStrengthInputHTML(materialType, 'popup-f', currentStrength));
 
                 // その他のプロパティを設定
-                document.getElementById('popup-i').value = memberRow.cells[5].querySelector('input').value;
-                document.getElementById('popup-a').value = memberRow.cells[6].querySelector('input').value;
-                document.getElementById('popup-z').value = memberRow.cells[7].querySelector('input').value;
+                // テーブルの列配置: 0:'#',1:i,2:j,3:E,4:strength,5:I,6:A,7:Z,...
+                const tableStartNodeCell = memberRow.cells[1];
+                const tableAcell = memberRow.cells[6];
+                const tableZcell = memberRow.cells[7];
+                const popupIEl = document.getElementById('popup-i');
+                const popupAEl = document.getElementById('popup-a');
+                const popupZEl = document.getElementById('popup-z');
+                if (popupIEl) popupIEl.value = tableStartNodeCell ? (tableStartNodeCell.querySelector('input')?.value || '') : '';
+                if (popupAEl) popupAEl.value = tableAcell ? (tableAcell.querySelector('input')?.value || '') : '';
+                if (popupZEl) popupZEl.value = tableZcell ? (tableZcell.querySelector('input')?.value || '') : '';
 
                 // 密度欄の表示/非表示と値設定
                 const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
@@ -13576,18 +13870,37 @@ const loadPreset = (index) => {
                     if (existingDensityContainer) existingDensityContainer.style.display = 'none';
                 }
 
-                // 接続条件を設定
-                const iConnIndex = hasDensityColumn ? 12 : 11;
-                const jConnIndex = hasDensityColumn ? 13 : 12;
-                document.getElementById('popup-i-conn').value = memberRow.cells[iConnIndex].querySelector('select').value;
-                document.getElementById('popup-j-conn').value = memberRow.cells[jConnIndex].querySelector('select').value;
+                // 接続条件を設定（conn-select を使って安全に取得）
+                const popupIConnEl = document.getElementById('popup-i-conn');
+                const popupJConnEl = document.getElementById('popup-j-conn');
+                const connSelectsRow = Array.from(memberRow.querySelectorAll('.conn-select'));
+                const iConnSelEl = connSelectsRow[0] || null;
+                const jConnSelEl = connSelectsRow[1] || null;
+                if (popupIConnEl) {
+                    if (iConnSelEl) {
+                        popupIConnEl.value = iConnSelEl.value;
+                        popupIConnEl.dispatchEvent(new Event('change'));
+                    }
+                    else console.warn('popup sync: i_conn select not found', { memberRow });
+                }
+                if (popupJConnEl) {
+                    if (jConnSelEl) {
+                        popupJConnEl.value = jConnSelEl.value;
+                        popupJConnEl.dispatchEvent(new Event('change'));
+                    }
+                    else console.warn('popup sync: j_conn select not found', { memberRow });
+                }
 
-                // ポップアップ内のバネ入力にテーブル行の値を反映（存在すれば）
-                    try {
-                        const iSpringBox = memberRow.cells[iConnIndex].querySelector('.spring-inputs');
-                        const piKx = document.getElementById('popup-i-spring-kx');
-                        const piKy = document.getElementById('popup-i-spring-ky');
-                        const piKr = document.getElementById('popup-i-spring-kr');
+                // ポップアップ内のバネ入力にテーブル行の値を反映（conn セル単位で探す）
+                try {
+                    const iConnCell = iConnSelEl ? (iConnSelEl.closest('.conn-cell') || iConnSelEl.parentElement) : null;
+                    const jConnCell = jConnSelEl ? (jConnSelEl.closest('.conn-cell') || jConnSelEl.parentElement) : null;
+
+                    const piKx = document.getElementById('popup-i-spring-kx');
+                    const piKy = document.getElementById('popup-i-spring-ky');
+                    const piKr = document.getElementById('popup-i-spring-kr');
+                    if (iConnCell) {
+                        const iSpringBox = iConnCell.querySelector('.spring-inputs');
                         if (iSpringBox) {
                             const kx = iSpringBox.querySelector('.spring-kx')?.value || '0';
                             const ky = iSpringBox.querySelector('.spring-ky')?.value || '0';
@@ -13596,16 +13909,17 @@ const loadPreset = (index) => {
                             if (piKy) piKy.value = ky;
                             if (piKr) piKr.value = kr;
                         } else {
-                            // set defaults
                             if (piKx) piKx.value = '0';
                             if (piKy) piKy.value = '0';
                             if (piKr) piKr.value = '0';
                         }
+                    }
 
-                        const jSpringBox = memberRow.cells[jConnIndex].querySelector('.spring-inputs');
-                        const pjKx = document.getElementById('popup-j-spring-kx');
-                        const pjKy = document.getElementById('popup-j-spring-ky');
-                        const pjKr = document.getElementById('popup-j-spring-kr');
+                    const pjKx = document.getElementById('popup-j-spring-kx');
+                    const pjKy = document.getElementById('popup-j-spring-ky');
+                    const pjKr = document.getElementById('popup-j-spring-kr');
+                    if (jConnCell) {
+                        const jSpringBox = jConnCell.querySelector('.spring-inputs');
                         if (jSpringBox) {
                             const kx = jSpringBox.querySelector('.spring-kx')?.value || '0';
                             const ky = jSpringBox.querySelector('.spring-ky')?.value || '0';
@@ -13618,9 +13932,10 @@ const loadPreset = (index) => {
                             if (pjKy) pjKy.value = '0';
                             if (pjKr) pjKr.value = '0';
                         }
-                    } catch (e) {
-                        console.warn('popup sync spring read error', e);
                     }
+                } catch (e) {
+                    console.warn('popup sync spring read error', e);
+                }
 
                 // 部材荷重を設定
                 const memberLoadRow = Array.from(elements.memberLoadsTable.rows).find(row => parseInt(row.cells[0].querySelector('input').value)-1 === selectedMemberIndex);

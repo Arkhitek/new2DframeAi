@@ -8604,8 +8604,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const jConnIndex = hasDensityColumn ? 13 : 12;
 
                 const props = {E:E_val, F:F_val, I:I_m4, A:A_m2, Z:Z_m3, i_conn:memberRow.cells[iConnIndex].querySelector('select').value, j_conn:memberRow.cells[jConnIndex].querySelector('select').value};
-                memberRow.querySelector('.delete-row-btn').onclick.apply(memberRow.querySelector('.delete-row-btn'));
-                addRow(elements.nodesTable, [`#`,`<input type="number" value="${finalCoords.x.toFixed(2)}">`,`<input type="number" value="${finalCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false);
+                // 追加前に既存節点との重複チェックを行う（グリッドスナップ後の座標で判定）
+                try {
+                    const { nodes } = parseInputs();
+                    const dupTolerance = 0.01; // 10mm未満を同一とみなす
+                    const dupIndex = nodes.findIndex(node => Math.abs(node.x - finalCoords.x) < dupTolerance && Math.abs(node.y - finalCoords.y) < dupTolerance);
+                    if (dupIndex !== -1) {
+                        // 既存節点と同一位置のため追加を中止し、ワーニングを表示
+                        console.log('⚠️ 部材分割で既存節点と同一位置が検出されました。新規節点は追加されません:', { existingIndex: dupIndex + 1, x: finalCoords.x, y: finalCoords.y });
+                        utils.showMessage(`既存の節点${dupIndex + 1}と同じ位置です。新規節点は追加されません。`, 'warning', 2000);
+                    } else {
+                        memberRow.querySelector('.delete-row-btn').onclick.apply(memberRow.querySelector('.delete-row-btn'));
+                        addRow(elements.nodesTable, [`#`,`<input type="number" value="${finalCoords.x.toFixed(2)}">`,`<input type="number" value="${finalCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false);
+                    }
+                } catch (err) {
+                    console.error('❌ 部材分割前の重複チェック中にエラーが発生しました:', err);
+                    // エラー時は安全のため追加を中止
+                    utils.showMessage('エラーが発生したため節点を追加できませんでした。', 'error', 3000);
+                }
                 const newNodeId = elements.nodesTable.rows.length;
                 const newRow1 = addRow(elements.membersTable, [`#`, ...memberRowHTML(startNodeId, newNodeId, props.E, props.F, props.I, props.A, props.Z, props.i_conn, 'rigid', '', '')], false);
                 const newRow2 = addRow(elements.membersTable, [`#`, ...memberRowHTML(newNodeId, endNodeId, props.E, props.F, props.I, props.A, props.Z, 'rigid', props.j_conn, '', '')], false);

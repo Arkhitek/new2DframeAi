@@ -2013,7 +2013,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let lastMouseX = 0;
     let lastMouseY = 0;
-    let historyStack = [];
+    // let historyStack = []; // HistoryManagerに移行
     const resolutionScale = 2.0;
     let newMemberDefaults = { E: '205000', F: '235', I: '18400', A: '2340', Z: '1230', i_conn: 'rigid', j_conn: 'rigid' };
     
@@ -3772,7 +3772,92 @@ document.addEventListener('DOMContentLoaded', () => {
         return state;
     };
 
-    const pushState = () => { historyStack.push(getCurrentState()); };
+    // 履歴管理マネージャー (圧縮と重複排除によるパフォーマンス改善版)
+    const HistoryManager = {
+        stack: [],
+        maxSize: 50, // 履歴の最大保持数
+
+        push: function(state) {
+            if (!state) return;
+            
+            try {
+                // オブジェクトをJSON文字列化
+                const jsonString = JSON.stringify(state);
+                
+                // 直前の状態と比較して変更がなければ保存しない
+                if (this.stack.length > 0) {
+                    const lastItem = this.stack[this.stack.length - 1];
+                    let lastJsonString;
+                    
+                    if (lastItem.compressed && typeof pako !== 'undefined') {
+                        lastJsonString = pako.inflate(lastItem.data, { to: 'string' });
+                    } else {
+                        lastJsonString = lastItem.data;
+                    }
+                    
+                    if (lastJsonString === jsonString) {
+                        // 状態に変更がないため保存しない
+                        return;
+                    }
+                }
+
+                // pakoが利用可能なら圧縮して保存、なければ文字列のまま保存
+                if (typeof pako !== 'undefined') {
+                    const compressed = pako.deflate(jsonString);
+                    this.stack.push({ compressed: true, data: compressed });
+                } else {
+                    this.stack.push({ compressed: false, data: jsonString });
+                }
+
+                // サイズ制限を超えたら古い履歴を削除
+                if (this.stack.length > this.maxSize) {
+                    this.stack.shift();
+                }
+                
+                this.updateUI();
+            } catch (e) {
+                console.error('履歴保存エラー:', e);
+            }
+        },
+
+        pop: function() {
+            if (this.stack.length === 0) return null;
+
+            try {
+                const item = this.stack.pop();
+                let jsonString;
+                
+                if (item.compressed && typeof pako !== 'undefined') {
+                    jsonString = pako.inflate(item.data, { to: 'string' });
+                } else {
+                    jsonString = item.data;
+                }
+                
+                this.updateUI();
+                return JSON.parse(jsonString);
+            } catch (e) {
+                console.error('履歴復元エラー:', e);
+                return null;
+            }
+        },
+
+        clear: function() {
+            this.stack = [];
+            this.updateUI();
+        },
+
+        updateUI: function() {
+            const undoBtn = document.getElementById('undo-btn');
+            if (undoBtn) {
+                const hasHistory = this.stack.length > 0;
+                undoBtn.disabled = !hasHistory;
+                undoBtn.style.opacity = hasHistory ? '1' : '0.5';
+                undoBtn.title = hasHistory ? "元に戻す (ショートカット: Ctrl+Z)" : "元に戻す履歴がありません";
+            }
+        }
+    };
+
+    const pushState = () => { HistoryManager.push(getCurrentState()); };
 
     const restoreState = (state) => {
         console.log('🔍 restoreState呼び出し時刻:', new Date().toISOString());
@@ -4227,7 +4312,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    elements.undoBtn.onclick = () => { if (historyStack.length > 0) { const lastState = historyStack.pop(); if(lastState) restoreState(lastState); } };
+    elements.undoBtn.onclick = () => { 
+        const lastState = HistoryManager.pop(); 
+        if (lastState) { 
+            restoreState(lastState); 
+        } 
+    };
     
     // Make state management functions globally accessible
     window.pushState = pushState;
@@ -4681,7 +4771,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     fel = [0,0,0,0,0,0];
                 } else {
                     // compute j-end displacement for fixed-fixed particular solution
-                    const v_load = -(w * Math.pow(L, 4)) / (8 * EI);
+                    // せん断変形パラメータの計算 (parseInputsと同様)
+                    const nu = 0.3;
+                    const G = member.E / (2 * (1 + nu));
+                    const kappa = 1.5;
+                    const As = member.A / kappa;
+                    // 等分布荷重による片持ち梁先端のせん断たわみ: (w * L^2) / (2 * G * As)
+                    const v_shear_load = (G > 0 && As > 0) ? ((w * L * L) / (2 * G * As)) : 0;
+
+                    // 曲げ変形にせん断変形を加算
+                    const v_load = -(w * Math.pow(L, 4)) / (8 * EI) - v_shear_load;
                     const theta_load = -(w * Math.pow(L, 3)) / (6 * EI);
                     const D_load = [0, v_load, theta_load];
 
@@ -5234,6 +5333,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const c = dx/L, s = dy/L, T = [ [c,s,0,0,0,0], [-s,c,0,0,0,0], [0,0,1,0,0,0], [0,0,0,c,s,0], [0,0,0,-s,c,0], [0,0,0,0,0,1] ];
+            
+            // --- ティモシェンコ梁理論のためのせん断変形パラメータ ---
+            // ポアソン比 nu = 0.3 (鋼材の標準値) と仮定
+            const nu = 0.3;
+            // せん断弾性係数 G = E / (2 * (1 + nu))
+            const G = E / (2 * (1 + nu));
+            // せん断有効断面積 As。形状係数 kappa = 1.5 (矩形1.2〜H形等の平均的概算値) と仮定
+            const kappa = 1.5;
+            const As = A / kappa;
+            // せん断柔軟度 (長さ / GAs)
+            const shear_flex = (G > 0 && As > 0) ? (L / (G * As)) : 0;
+
             // Axial stiffness with series springs (member and end springs)
             // axialFlexibility = L/(E*A) + 1/Kx_i + 1/Kx_j  (if springs provided)
             let axialFlexibility = L / (E * A);
@@ -5296,9 +5407,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Beam flexibility for j-end quantities (N, Q, M) when j is fixed and i is free
             const L2 = L * L, L3 = L2 * L;
             const EI_beam = E * I, EA = E * A;
+            // f_beam[1][1] (たわみ項) にせん断変形項 shear_flex を加算
             const f_beam = [
                 [L / EA, 0, 0],
-                [0, L3 / (3 * EI_beam), L2 / (2 * EI_beam)],
+                [0, L3 / (3 * EI_beam) + shear_flex, L2 / (2 * EI_beam)],
                 [0, L2 / (2 * EI_beam), L / EI_beam]
             ];
 
@@ -12386,7 +12498,7 @@ const loadPreset = (index) => {
         // プリセット読み込み中フラグを設定（描画処理をスキップするため）
         window.isLoadingPreset = true;
         
-        historyStack = [];
+        HistoryManager.clear();
         elements.nodesTable.innerHTML = '';
         elements.membersTable.innerHTML = '';
         elements.nodeLoadsTable.innerHTML = '';
@@ -12758,7 +12870,7 @@ const loadPreset = (index) => {
                         });
                     });
                     if (state.nodes.length === 0 && state.members.length === 0) throw new Error('ファイルから有効なデータを読み込めませんでした。');
-                    historyStack = [];
+                    HistoryManager.clear();
                     pushState();
                     restoreState(state);
                     runFullAnalysis();
@@ -12935,7 +13047,7 @@ const loadPreset = (index) => {
                 nodeLoads: [],
                 memberLoads: []
             };
-            historyStack = [];
+            HistoryManager.clear();
             restoreState(state);
             // ログで設定内容を表示して確認しやすくする
             console.log('createSimpleSpringPreset: state restored', JSON.stringify(state, null, 2));
@@ -13146,7 +13258,7 @@ const loadPreset = (index) => {
                 const state = JSON.parse(jsonString);
                 
                 if (state && state.nodes) {
-                    historyStack = [];
+                    HistoryManager.clear();
                     elements.nodesTable.innerHTML = '';
                     elements.membersTable.innerHTML = '';
                     elements.nodeLoadsTable.innerHTML = '';
@@ -13398,7 +13510,7 @@ const loadPreset = (index) => {
     elements.resetModelBtn.addEventListener('click', () => {
         if (confirm('本当にモデル情報を全てリセットしますか？この操作は元に戻せません。')) {
             panZoomState.isInitialized = false;
-            historyStack = [];
+            HistoryManager.clear();
             elements.nodesTable.innerHTML = '';
             elements.membersTable.innerHTML = '';
             elements.nodeLoadsTable.innerHTML = '';

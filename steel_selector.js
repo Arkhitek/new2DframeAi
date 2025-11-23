@@ -1417,8 +1417,71 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         }
 
         const sectionAxisInfo = buildAxisInfo(resolvedAxisKey);
+
+        // 詳細ラベルを常に生成する（例: "H形鋼（細幅） 300×150×6.5×9"）
+        let typeLabel = '';
+        const selectedOption = typeSelect.querySelector(`option[value="${selectedTypeKey}"]`);
+        if (selectedOption) typeLabel = selectedOption.textContent.trim();
+        else typeLabel = selectedTypeKey;
+
+        const designation = rowData?.[0] ? String(rowData[0]) : '';
+        let detailedLabel = `${typeLabel} ${designation}`;
+
+        // numericRawDims に正規化された寸法が入っている想定 (H, B, A, t, t1, t2, C, D など)
+        const d = numericRawDims || {};
+
+        if (['hkatakou_hiro', 'hkatakou_naka', 'hkatakou_hoso', 'ikatakou', 'keiryouhkatakou'].includes(selectedTypeKey)) {
+            if (d.H && d.B && d.t1 && d.t2) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.B}×${d.t1}×${d.t2}`;
+            } else if (d.H && d.B) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.B}`;
+            }
+        } else if (['keiryourippuhkatakou'].includes(selectedTypeKey)) {
+            if (d.H && d.B && d.C && d.t1 && d.t2) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.B}×${d.C}×${d.t1}×${d.t2}`;
+            } else if (d.H && d.B && d.t1 && d.t2) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.B}×${d.t1}×${d.t2}`;
+            }
+        } else if (['mizogatakou'].includes(selectedTypeKey)) {
+            if (d.H && d.B && d.t1 && d.t2) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.B}×${d.t1}×${d.t2}`;
+            }
+        } else if (['keimizogatakou'].includes(selectedTypeKey)) {
+            if (d.H && d.A && d.B && d.t) {
+                detailedLabel = (d.A === d.B) ? `${typeLabel} ${d.H}×${d.A}×${d.t}` : `${typeLabel} ${d.H}×${d.A}×${d.B}×${d.t}`;
+            }
+        } else if (['rippumizokatakou'].includes(selectedTypeKey)) {
+            if (d.H && d.A && d.C && d.t) {
+                detailedLabel = `${typeLabel} ${d.H}×${d.A}×${d.C}×${d.t}`;
+            }
+        } else if (['touhenyamakatakou'].includes(selectedTypeKey)) {
+            if (d.A && d.t) {
+                detailedLabel = `${typeLabel} ${d.A}×${d.A}×${d.t}`;
+            }
+        } else if (['futouhenyamagata'].includes(selectedTypeKey)) {
+            if (d.A && d.B && d.t) {
+                detailedLabel = `${typeLabel} ${d.A}×${d.B}×${d.t}`;
+            }
+        } else if (['seihoukei', 'tyouhoukei'].includes(selectedTypeKey)) {
+            const A = d.A;
+            const B = d.B || A;
+            const t = d.t;
+            if (A && B && t) {
+                detailedLabel = `${typeLabel} ${A}×${B}×${t}`;
+            }
+        } else if (selectedTypeKey === 'koukan') {
+            if (d.D && d.t) {
+                detailedLabel = `${typeLabel} φ${d.D}×${d.t}`;
+            }
+        } else {
+            // その他: 主要な寸法があればそれを列挙して表示
+            const keys = ['H','B','A','D','t','t1','t2','C'];
+            const found = keys.filter(k => d[k] !== undefined).map(k => d[k]);
+            if (found.length > 0) detailedLabel = `${typeLabel} ${found.join('×')}`;
+        }
+
         const sectionInfo = {
-            label: rowData?.[0] ? String(rowData[0]) : 'Unknown',
+            label: detailedLabel,
             typeKey: selectedTypeKey,
             rawDims: numericRawDims,
             source: 'library',
@@ -1439,6 +1502,62 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             sectionAxis: sectionAxisInfo,
             sectionAxisLabel: sectionAxisInfo?.label
         };
+
+        // 【修正】断面2次半径 i: 厳密にヘッダの単位や名称をチェックして取得
+        // I (モーメント, cm4) と i (半径, cm) の混同を防ぐロジック
+        const findExactHeaderValue = (candidates) => {
+            if (!Array.isArray(steel.headers) || !Array.isArray(rowData)) return undefined;
+            
+            // 検索候補を正規化（例: "断面2次半径 ix" -> "断面2次半径ix"）
+            const candidateNorms = candidates.map(c => normalizeHeaderKey(c));
+
+            for (let idx = 0; idx < steel.headers.length; idx++) {
+                const rawH = String(steel.headers[idx]);
+                // normalizeHeaderKeyは括弧内の単位を削除してしまうため、比較用に別途正規化キーを用意
+                const normH = normalizeHeaderKey(rawH);
+
+                // 1. 除外ロジック (重要): 
+                // ヘッダーに「cm4」「cm⁴」「moment」「モーメント」が含まれている場合は
+                // 断面2次モーメント(I)の列であるため、半径(i)の検索対象から除外する
+                if (/cm\s*[4⁴]|\^4|moment|モーメント/i.test(rawH)) continue;
+
+                // 2. 採用ロジック:
+                // 正規化したヘッダーが候補と一致する場合
+                if (candidateNorms.includes(normH)) {
+                    return rowData[idx];
+                }
+
+                // 3. 補助ロジック:
+                // 正規化キーが一致しなくても、「ix/iy」を含み、かつ「半径(radius)」という言葉が含まれている場合
+                // candidates[0] は 'ix' や 'iy' を想定
+                const targetToken = candidates[0].toLowerCase().trim(); 
+                const lowerRawH = rawH.toLowerCase();
+                
+                // 単語境界または括弧で囲まれた ix/iy を探す (例: "ix(cm)", "断面2次半径 ix")
+                const hasToken = lowerRawH === targetToken || 
+                                 lowerRawH.includes(` ${targetToken}`) || 
+                                 lowerRawH.includes(`${targetToken}(`) ||
+                                 lowerRawH.includes(`${targetToken}（`);
+                                 
+                if (hasToken && (/radius|半径/i.test(rawH))) {
+                    return rowData[idx];
+                }
+            }
+
+            return undefined;
+        };
+
+        const radiusXValue = findExactHeaderValue(['ix', '断面2次半径 ix', '断面2次半径ix']);
+        const radiusYValue = findExactHeaderValue(['iy', '断面2次半径 iy', '断面2次半径iy']);
+        const numericRadiusX = parseNumericValue(radiusXValue);
+        const numericRadiusY = parseNumericValue(radiusYValue);
+        
+        if (numericRadiusX !== null || numericRadiusY !== null) {
+            // 両方ある場合は小さい方（弱軸側）を採用、片方ならある方を採用
+            props.i = (numericRadiusX !== null && numericRadiusY !== null) 
+                ? Math.min(numericRadiusX, numericRadiusY) 
+                : (numericRadiusX || numericRadiusY);
+        }
 
         // 親へ送信（最終チェック）
         try { ensureOutgoingSectionInfo(props); } catch (e) { /* ignore */ }
@@ -1599,6 +1718,14 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         if (targetMemberIndex !== null) {
             props.targetMemberIndex = targetMemberIndex;
         }
+
+        // カスタム・ライブラリ両方で、もし計算済みの半径情報があれば最小値を i として送信する
+        try {
+            if (typeof calculatedProps !== 'undefined') {
+                const i_min = (calculatedProps.ix && calculatedProps.iy) ? Math.min(calculatedProps.ix, calculatedProps.iy) : (calculatedProps.ix || calculatedProps.iy);
+                if (i_min) props.i = i_min;
+            }
+        } catch (e) { /* ignore */ }
 
         if (props.I !== undefined && props.A !== undefined) {
             // 互換性確保: 親が期待するトップレベルの識別子・寸法情報を入れておく

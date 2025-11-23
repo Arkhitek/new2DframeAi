@@ -235,8 +235,22 @@ const parseInputs = () => {
         if (row.dataset.sectionInfo) {
             try {
                 const raw = row.dataset.sectionInfo;
-                const decoded = (raw.startsWith('%') ? decodeURIComponent(raw) : raw);
-                sectionInfo = JSON.parse(decoded);
+                // raw は encodeURIComponent(JSON.stringify(...)) の可能性や、
+                // そのまま JSON 文字列の可能性があるため順に試す
+                let parsed = null;
+                try {
+                    // まずデコードして JSON.parse を試す
+                    const dec = decodeURIComponent(raw);
+                    parsed = JSON.parse(dec);
+                } catch (_) {
+                    try {
+                        // デコード失敗または dec が JSON でない場合、生の raw を直接パース
+                        parsed = JSON.parse(raw);
+                    } catch (__){
+                        parsed = null;
+                    }
+                }
+                sectionInfo = parsed;
             } catch (e) {
                 console.warn(`部材 ${index+1}: sectionInfoパース失敗`, e);
             }
@@ -262,6 +276,16 @@ const parseInputs = () => {
 
         ix *= 1e-2; // m
         iy *= 1e-2; // m
+
+        // 断面2次半径 i_radius を初期化（m 単位） — ix/iy の最小値を利用
+        let i_radius = null;
+        if (!isNaN(ix) && !isNaN(iy)) {
+            i_radius = Math.min(ix, iy);
+        } else if (!isNaN(ix)) {
+            i_radius = ix;
+        } else if (!isNaN(iy)) {
+            i_radius = iy;
+        }
 
         // バネ定数の読み取り
         const EPS_SPRING = 1e-9;
@@ -308,7 +332,7 @@ const parseInputs = () => {
         // ... k_local計算 ...
 
         return {
-            i, j, E, strengthProps, I, A, Z, Zx, Zy, ix, iy, length: L, c, s, T, 
+            i, j, E, strengthProps, I, A, Z, Zx, Zy, i_radius, ix, iy, length: L, c, s, T, 
             i_conn, j_conn, spring_i, spring_j, bucklingK,
             material, sectionName, sectionAxis: sectionAxisText, // テキスト情報も保存
             sectionInfo, sectionAxis // オブジェクト情報も保存
@@ -4182,7 +4206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     // console.log(`🔍 部材 ${index + 1} memberRowHTML引数:`, { i, j, E: E_value, I: I_m4, A: A_m2, Z: Z_m3 });
                     
-                    const memberHTML = memberRowHTML(i, j, E_value, "235", I_m4, A_m2, Z_m3, i_conn, j_conn, sectionName, sectionAxis, (m.bucklingK !== undefined ? m.bucklingK : ''));
+                    const memberHTML = memberRowHTML(i, j, E_value, "235", I_m4, A_m2, Z_m3, '', i_conn, j_conn, sectionName, sectionAxis, (m.bucklingK !== undefined ? m.bucklingK : ''));
                     if (!memberHTML || !Array.isArray(memberHTML)) {
                         console.warn('memberRowHTML returned invalid data:', memberHTML);
                         return;
@@ -5519,27 +5543,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 j_conn = jConnSelect.value;
             }
             const Zx = parseFloat(row.dataset.zx) * 1e-6, Zy = parseFloat(row.dataset.zy) * 1e-6;
-            // 断面二次半径 ix, iy の取り扱い（dataset に明示があればそれを優先）
+            // 断面2次半径 i の取り扱い: UI の .radius-i-input を優先し、なければ dataset の ix/iy、
+            // それでもなければ I/A から推定する。内部では ix/iy は cm 単位で一時保持し、後で m に変換する。
             let ix = parseFloat(row.dataset.ix); // cm単位
             let iy = parseFloat(row.dataset.iy); // cm単位
+            let i_radius = null; // m 単位
 
-            // dataset にない場合は推定する（I, A は内部で m 単位）
-            if (isNaN(ix)) {
-                // ix の推定値: sqrt(I/A) を m 単位で得て cm に変換
-                ix = Math.sqrt(I / A) * 100; // cm
-            }
-            if (isNaN(iy)) {
-                // iy 未設定時は慎重に扱う（デフォルトで ix を使うが警告）
-                iy = ix;
-                const sectionName = row.querySelector('.section-name-cell')?.textContent || '';
-                if (sectionName.includes('H') || sectionName.includes('I')) {
-                    console.warn(`⚠️ 部材 ${index+1}: 弱軸の断面二次半径(iy)が設定されていません。強軸(ix)と同じ値が使用されるため、座屈計算が過大評価される可能性があります。ポップアップで正しいiyを入力してください。`);
+            // 優先: 編集可能な入力欄から取得（cm -> m に変換）
+            try {
+                const iRadInput = row.querySelector('.radius-i-input');
+                if (iRadInput && iRadInput.value !== '') {
+                    const parsed = parseFloat(iRadInput.value);
+                    if (!isNaN(parsed)) {
+                        i_radius = parsed * 1e-2; // cm -> m
+                        ix = parsed; // cm
+                        iy = parsed; // cm
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+            // 次に dataset の ix/iy を参照（cm）
+            if (i_radius === null) {
+                if (isNaN(ix) && !isNaN(parseFloat(row.dataset.ix))) ix = parseFloat(row.dataset.ix);
+                if (isNaN(iy) && !isNaN(parseFloat(row.dataset.iy))) iy = parseFloat(row.dataset.iy);
+                if (isNaN(ix) && isNaN(iy)) {
+                    // 推定: sqrt(I/A) を m 単位で算出し cm に変換
+                    if (A > 0) {
+                        const est_cm = Math.sqrt(I / A) * 100;
+                        ix = est_cm;
+                        iy = est_cm;
+                        i_radius = est_cm * 1e-2;
+                    } else {
+                        ix = 0; iy = 0; i_radius = 0;
+                    }
+                } else {
+                    if (isNaN(ix)) ix = iy;
+                    if (isNaN(iy)) iy = ix;
+                    // i_radius は小さい方を採用
+                    i_radius = Math.min(ix, iy) * 1e-2;
                 }
             }
 
-            // cm -> m に変換して格納
-            ix = ix * 1e-2;
-            iy = iy * 1e-2;
+            // cm -> m に変換して格納（既存コードとの互換性のため）
+            ix = Number(ix) * 1e-2;
+            iy = Number(iy) * 1e-2;
             if (isNaN(E) || isNaN(I) || isNaN(A) || isNaN(Z)) throw new Error(`部材 ${index + 1} の物性値が無効です。`);
             if (i < 0 || j < 0 || i >= nodes.length || j >= nodes.length) throw new Error(`部材 ${index + 1} の節点番号が不正です。`);
             const ni = nodes[i], nj = nodes[j];
@@ -8054,10 +8101,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const bucklingResults = [];
 
         members.forEach((member, idx) => {
-            const { strengthProps, A, ix, iy, E, length, i_conn, j_conn } = member;
+            const { strengthProps, A, i_radius, ix, iy, E, length, i_conn, j_conn } = member;
             const force = forces[idx];
             
-            if (!A || !ix || !iy || isNaN(A) || isNaN(ix) || isNaN(iy)) {
+            // 必要な断面情報が揃っているか確認。i_radius があればそれを優先して使用
+            const hasIRadius = (i_radius !== undefined && i_radius !== null && !isNaN(i_radius) && i_radius > 0);
+            const hasIxIy = (ix !== undefined && iy !== undefined && !isNaN(ix) && !isNaN(iy) && ix > 0 && iy > 0);
+            if (!A || (!hasIRadius && !hasIxIy) || isNaN(A) || (hasIxIy && (isNaN(ix) || isNaN(iy)))) {
                 bucklingResults.push({
                     memberIndex: idx,
                     status: 'データ不足',
@@ -8087,8 +8137,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const bucklingLength = length * bucklingLengthFactor; // 座屈長 (m)
             
-            // 弱軸まわりの座屈（通常はiy < ix）
-            const i_min = Math.min(ix, iy); // 最小回転半径 (m)
+            // 最小回転半径: i_radius を優先、なければ ix/iy の最小値を使用
+            const i_min = hasIRadius ? i_radius : Math.min(ix, iy); // 最小回転半径 (m)
             const slendernessRatio = bucklingLength / i_min; // 細長比
             
             // オイラー座屈荷重の計算
@@ -8104,14 +8154,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const axialForceKN = (Math.abs(N_i) > Math.abs(N_j)) ? N_i : N_j; // kN単位での軸力
             const compressionForce = axialForceKN < 0 ? Math.abs(axialForceKN) * 1000 : 0; // 負の値を圧縮力として抽出、N単位に変換
             
-            // 座屈モードの判定
-            let bucklingMode = '';
-            if (ix < iy) {
-                bucklingMode = 'X軸まわり座屈（強軸）';
-            } else if (iy < ix) {
-                bucklingMode = 'Y軸まわり座屈（弱軸）';  
-            } else {
-                bucklingMode = '等方性断面';
+            // 座屈モードの判定: i_radius が明示されていれば「最小断面2次半径軸まわり」とする
+            let bucklingMode = '最小断面2次半径軸まわり';
+            if (!hasIRadius) {
+                if (ix < iy) {
+                    bucklingMode = 'X軸まわり座屈（強軸）';
+                } else if (iy < ix) {
+                    bucklingMode = 'Y軸まわり座屈（弱軸）';
+                } else {
+                    bucklingMode = '等方性断面';
+                }
             }
             
             // 安全率の計算
@@ -9791,8 +9843,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     utils.showMessage('エラーが発生したため節点を追加できませんでした。', 'error', 3000);
                 }
                 const newNodeId = elements.nodesTable.rows.length;
-                const newRow1 = addRow(elements.membersTable, [`#`, ...memberRowHTML(startNodeId, newNodeId, props.E, props.F, props.I, props.A, props.Z, props.i_conn, 'rigid', '', '', '')], false);
-                const newRow2 = addRow(elements.membersTable, [`#`, ...memberRowHTML(newNodeId, endNodeId, props.E, props.F, props.I, props.A, props.Z, 'rigid', props.j_conn, '', '', '')], false);
+                const newRow1 = addRow(elements.membersTable, [`#`, ...memberRowHTML(startNodeId, newNodeId, props.E, props.F, props.I, props.A, props.Z, '', props.i_conn, 'rigid', '', '', '')], false);
+                const newRow2 = addRow(elements.membersTable, [`#`, ...memberRowHTML(newNodeId, endNodeId, props.E, props.F, props.I, props.A, props.Z, '', 'rigid', props.j_conn, '', '', '')], false);
                 
                 // 手動追加部材に断面情報を設定
                 if (newRow1 && typeof window.setRowSectionInfo === 'function') {
@@ -9977,7 +10029,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             const sectionName = newMemberDefaults.sectionName || '';
                             const sectionAxis = newMemberDefaults.sectionAxis || '';
                             console.log('🔍 部材追加: newMemberDefaults:', { sectionName, sectionAxis, I: newMemberDefaults.I, A: newMemberDefaults.A, Z: newMemberDefaults.Z });
-                            const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis, newMemberDefaults.bucklingK || '')]);
+                            const iArgForNew = (newMemberDefaults && (newMemberDefaults.i || newMemberDefaults.i_radius || newMemberDefaults.ix || newMemberDefaults.iy)) ? (newMemberDefaults.i || newMemberDefaults.i_radius || newMemberDefaults.ix || newMemberDefaults.iy) : '';
+                            const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, iArgForNew, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis, newMemberDefaults.bucklingK || '')]);
                             console.log('✅ 部材を作成しました:', { from: firstMemberNode, to: targetNodeIndex });
 
                             // ★ 追加: 新規行に対して保存済みの sectionInfo を適用
@@ -10210,18 +10263,79 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // その他のプロパティを設定
             // テーブルの列配置: 0:'#',1:i,2:j,3:E,4:strength,5:I,6:A,7:Z,...
-            const tableStartNodeCell = memberRow.cells[1];
+            const tableIcell = memberRow.cells[5];
             const tableAcell = memberRow.cells[6];
             const tableZcell = memberRow.cells[7];
-            document.getElementById('popup-i').value = tableStartNodeCell ? tableStartNodeCell.querySelector('input').value : '';
+            // テーブル表示は I を cm^4 単位で表示しているため、そのままポップアップへ渡す
+            document.getElementById('popup-i').value = tableIcell ? (tableIcell.querySelector('input') ? tableIcell.querySelector('input').value : '') : '';
             document.getElementById('popup-a').value = tableAcell ? tableAcell.querySelector('input').value : '';
             document.getElementById('popup-z').value = tableZcell ? tableZcell.querySelector('input').value : '';
-            // ▼▼▼ 追加: popup-ix / popup-iy の読み込み (dataset から取得。なければ空欄＝自動)
-            const popupIxEl = document.getElementById('popup-ix');
-            const popupIyEl = document.getElementById('popup-iy');
-            if (popupIxEl && popupIyEl) {
-                popupIxEl.value = memberRow.dataset.ix || '';
-                popupIyEl.value = memberRow.dataset.iy || '';
+            // ▼▼▼ 変更: popup に表示する座屈半径 i を1つだけ扱う
+            const popupRadiusEl = document.getElementById('popup-radius-i');
+            if (popupRadiusEl) {
+                // dataset に ix/iy があれば小さい方（または片方）を優先して表示（dataset 値は cm 単位）
+                try {
+                    const rawIx = memberRow.dataset.ix;
+                    const rawIy = memberRow.dataset.iy;
+                    const nIx = (rawIx !== undefined && rawIx !== '') ? parseFloat(rawIx) : NaN;
+                    const nIy = (rawIy !== undefined && rawIy !== '') ? parseFloat(rawIy) : NaN;
+                    if (!isNaN(nIx) && !isNaN(nIy)) {
+                        popupRadiusEl.value = Math.min(nIx, nIy).toFixed(2);
+                    } else if (!isNaN(nIx)) {
+                        popupRadiusEl.value = nIx.toFixed(2);
+                    } else if (!isNaN(nIy)) {
+                        popupRadiusEl.value = nIy.toFixed(2);
+                    } else {
+                        popupRadiusEl.value = '';
+                    }
+                } catch (e) {
+                    popupRadiusEl.value = '';
+                }
+            }
+            // ポップアップに断面名を表示
+            try {
+                const popupSectionLabelEl = document.getElementById('popup-section-label');
+                if (popupSectionLabelEl) {
+                    let labelText = '';
+                    // 優先: row.dataset.sectionInfo (エンコード済みの可能性あり)
+                    try {
+                        const raw = memberRow.dataset.sectionInfo;
+                        if (raw) {
+                            let si = null;
+                            try {
+                                // まずデコード + JSON.parse を試す
+                                const dec = decodeURIComponent(raw);
+                                si = JSON.parse(dec);
+                            } catch (_) {
+                                try { si = JSON.parse(raw); } catch (__){ si = null; }
+                            }
+                            if (si) labelText = si.label || si.sectionLabel || si.name || '';
+                        }
+                    } catch (err) {
+                        labelText = '';
+                    }
+
+                    // 取得できなければテーブルの断面名称セルから読む（.section-name-cell span 優先）
+                    if (!labelText) {
+                        const nameSpan = memberRow.querySelector('.section-name-cell');
+                        if (nameSpan) labelText = nameSpan.textContent.trim();
+                        else {
+                            // フォールバック: 断面名称が入るであろうセルをスキャン
+                            const cells = memberRow.cells || [];
+                            const tryCols = [10,9,11,8,7];
+                            for (let ci of tryCols) {
+                                if (cells[ci]) {
+                                    const t = (cells[ci].textContent || '').trim();
+                                    if (t) { labelText = t; break; }
+                                }
+                            }
+                        }
+                    }
+
+                    popupSectionLabelEl.textContent = labelText || '-';
+                }
+            } catch (err) {
+                console.warn('popup section label set failed', err);
             }
             // ▲▲▲ 追加終了
             
@@ -10787,7 +10901,8 @@ document.addEventListener('DOMContentLoaded', () => {
             E: popup_e_select.value === 'custom' ? document.getElementById('popup-e-input').value : popup_e_select.value,
             strengthValue: strengthValue
         });
-        elements.memberPropsPopup.style.display = 'none';
+        // ポップアップは閉じずにそのまま開いておく
+        // elements.memberPropsPopup.style.display = 'none';
     }
 };
 
@@ -10851,27 +10966,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 4. その他のプロパティを更新
-        // テーブル列: 0:'#',1:i,2:j,3:E,4:strength,5:I,6:A,7:Z
-        if (memberRow.cells[1]) memberRow.cells[1].querySelector('input').value = document.getElementById('popup-i').value;
+        // テーブル列: 0:'#',1:i(始点),2:j(終点),3:E,4:strength,5:I,6:A,7:Z
+        // 【修正】I は始点セル(cells[1])ではなく cells[5] に保存する
+        if (memberRow.cells[5]) memberRow.cells[5].querySelector('input').value = document.getElementById('popup-i').value;
         if (memberRow.cells[6]) memberRow.cells[6].querySelector('input').value = document.getElementById('popup-a').value;
         if (memberRow.cells[7]) memberRow.cells[7].querySelector('input').value = document.getElementById('popup-z').value;
 
-        // ▼▼▼ 追加: popup-ix / popup-iy の保存（datasetに格納）。空欄なら削除して自動計算に委ねる
+        // ▼▼▼ 変更: popup の単一 i 入力を dataset の ix/iy に格納（空欄なら削除）
         try {
-            const newIx = document.getElementById('popup-ix')?.value;
-            const newIy = document.getElementById('popup-iy')?.value;
-            if (newIx && !isNaN(parseFloat(newIx))) {
-                memberRow.dataset.ix = newIx;
+            const newI = document.getElementById('popup-radius-i')?.value;
+            if (newI && !isNaN(parseFloat(newI))) {
+                // dataset は cm 単位で保持（既存コードとの互換性のため）
+                memberRow.dataset.ix = newI;
+                memberRow.dataset.iy = newI;
             } else {
                 delete memberRow.dataset.ix;
-            }
-            if (newIy && !isNaN(parseFloat(newIy))) {
-                memberRow.dataset.iy = newIy;
-            } else {
                 delete memberRow.dataset.iy;
             }
         } catch (e) {
-            console.warn('popup ix/iy save error', e);
+            console.warn('popup i save error', e);
         }
         // ▲▲▲ 追加終了
 
@@ -11758,7 +11871,7 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         return html;
     };
 
-    const memberRowHTML = (i, j, E = '205000', F='235', I = 1.84e-5, A = 2.34e-3, Z = 1.23e-3, i_conn = 'rigid', j_conn = 'rigid', sectionName = '', sectionAxis = '', bucklingK = '') => {
+    const memberRowHTML = (i, j, E = '205000', F='235', I = 1.84e-5, A = 2.34e-3, Z = 1.23e-3, i_rad = '', i_conn = 'rigid', j_conn = 'rigid', sectionName = '', sectionAxis = '', bucklingK = '') => {
         // 引数に bucklingK を追加（デフォルトは空）
         const baseColumns = [
             `<input type="number" value="${i}">`,
@@ -11767,9 +11880,11 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             createStrengthInputHTML('steel', `member-strength-${i}-${j}`, F),
             `<input type="number" value="${(I * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">`,
             `<input type="number" value="${(A * 1e4).toFixed(2)}" title="断面積 A (cm²)">`,
-            `<input type="number" value="${(Z * 1e6).toFixed(2)}" title="断面係数 Z (cm³)">`,
+            `<input type=\"number\" value=\"${(Z * 1e6).toFixed(2)}\" title=\"断面係数 Z (cm³)\">`,
+            // 追加: 断面2次半径 i (cm) 入力（編集可能）
+            `<input type=\"number\" class=\"radius-i-input col-buckling\" value=\"${i_rad !== '' ? Number(i_rad).toFixed(2) : ''}\" title=\"断面2次半径 i (cm)\">`,
             // 座屈係数入力セル
-            `<input type="number" class="buckling-k-input" value="${bucklingK}" step="0.1" min="0.1" max="10.0" placeholder="自動" style="width:50px;" title="空欄の場合は接合条件から自動判定">`
+            `<input type=\"number\" class=\"buckling-k-input col-buckling\" value=\"${bucklingK}\" step=\"0.1\" min=\"0.1\" max=\"10.0\" placeholder=\"自動\" style=\"width:50px;\" title=\"空欄の場合は接合条件から自動判定\">`
         ];
 
         // バネ入力部分のHTMLテンプレート生成関数（単位表示・レイアウト調整版）
@@ -13237,8 +13352,21 @@ const loadPreset = (index) => {
             // 断面名称と軸方向を取得
             const sectionName = sectionInfoFromPreset?.label || '';
             const sectionAxis = axisInfo?.label || '';
-
-            const rowCells = memberRowHTML(m.i, m.j, E_N_mm2, F_N_mm2, I_m4, A_m2, Z_m3, m.i_conn || m.ic, m.j_conn || m.jc, sectionName, sectionAxis, (m.bucklingK !== undefined ? m.bucklingK : ''));
+            // プリセットやメンバーデータに ix/iy が含まれる場合、小さい方を断面i (cm) として使用
+            let i_rad_val = '';
+            try {
+                const p_ix = presetProfile?.properties?.ix ?? m.ix;
+                const p_iy = presetProfile?.properties?.iy ?? m.iy;
+                if (p_ix !== undefined && p_iy !== undefined) {
+                    const npx = parseFloat(p_ix);
+                    const npy = parseFloat(p_iy);
+                    if (!isNaN(npx) && !isNaN(npy)) i_rad_val = Math.min(npx, npy);
+                } else if (m.I && m.A) {
+                    // I (m4), A (m2) から推定して cm 単位に変換
+                    try { i_rad_val = Math.sqrt((m.I) / (m.A)) * 100; } catch (e) { i_rad_val = ''; }
+                }
+            } catch (e) { i_rad_val = ''; }
+            const rowCells = memberRowHTML(m.i, m.j, E_N_mm2, F_N_mm2, I_m4, A_m2, Z_m3, i_rad_val, m.i_conn || m.ic, m.j_conn || m.jc, sectionName, sectionAxis, (m.bucklingK !== undefined ? m.bucklingK : ''));
             if (!rowCells || !Array.isArray(rowCells)) {
                 console.warn('Failed to build member row cells for preset member:', m);
                 return;
@@ -13440,7 +13568,8 @@ const loadPreset = (index) => {
                     const I_m4 = parseFloat(newMemberDefaults.I) * 1e-8;
                     const A_m2 = parseFloat(newMemberDefaults.A) * 1e-4;
                     const Z_m3 = parseFloat(newMemberDefaults.Z) * 1e-6;
-                    const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(i,j,newMemberDefaults.E,newMemberDefaults.F,I_m4,A_m2,Z_m3,newMemberDefaults.i_conn,newMemberDefaults.j_conn, '', '', '')]);
+                    const iArgForNew = (newMemberDefaults && (newMemberDefaults.i || newMemberDefaults.i_radius || newMemberDefaults.ix || newMemberDefaults.iy)) ? (newMemberDefaults.i || newMemberDefaults.i_radius || newMemberDefaults.ix || newMemberDefaults.iy) : '';
+                    const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(i,j,newMemberDefaults.E,newMemberDefaults.F,I_m4,A_m2,Z_m3,iArgForNew,newMemberDefaults.i_conn,newMemberDefaults.j_conn, '', '', '')]);
                     
                     // 手動追加部材に断面情報を設定
                     if (newRow && typeof window.setRowSectionInfo === 'function') {
@@ -14345,9 +14474,9 @@ const loadPreset = (index) => {
         if (memberIndex >= 0 && memberIndex < elements.membersTable.rows.length) {
             const row = elements.membersTable.rows[memberIndex];
 
-            // 基本的な表示更新
-            const displaySectionName = props.sectionName || (props.sectionInfo ? props.sectionInfo.label : '') || '-';
-            const displayAxisLabel = (props.sectionAxis ? props.sectionAxis.label : '') || props.sectionAxisLabel || '-';
+            // 基本的な表示更新: sectionInfo.label を最優先に使い、props.sectionName/sectionLabel はフォールバック
+            const displaySectionName = (props.sectionInfo && (props.sectionInfo.label || props.sectionInfo.sectionLabel || props.sectionInfo.name)) || props.sectionLabel || props.sectionName || '-';
+            const displayAxisLabel = (props.sectionAxis && props.sectionAxis.label) || props.sectionAxisLabel || '-';
 
             const sectionNameCell = row.querySelector('.section-name-cell');
             if (sectionNameCell) sectionNameCell.textContent = displaySectionName;
@@ -14409,12 +14538,87 @@ const loadPreset = (index) => {
                 }
             }
 
+            // ポップアップが開いていて現在編集中の部材と一致する場合、ポップアップ内の断面表示を更新
+            try {
+                const popup = document.getElementById('member-props-popup');
+                if (popup && popup.style && popup.style.display === 'block' && window.selectedMemberIndex === memberIndex) {
+                    // ポップアップ内の I/A/Z フィールドを更新（props 優先）
+                    try {
+                        if (props.I !== undefined) document.getElementById('popup-i').value = props.I;
+                        if (props.A !== undefined) document.getElementById('popup-a').value = props.A;
+                        if (props.Z !== undefined) document.getElementById('popup-z').value = props.Z;
+                    } catch (_) { /* ignore popup input updates */ }
+
+                    const popupSectionLabelEl = document.getElementById('popup-section-label');
+                    if (popupSectionLabelEl) {
+                        const labelFromProps = props.sectionInfo && (props.sectionInfo.label || props.sectionInfo.sectionLabel || props.sectionName) ? (props.sectionInfo.label || props.sectionInfo.sectionLabel || props.sectionName) : (props.sectionName || '');
+                        if (labelFromProps) popupSectionLabelEl.textContent = labelFromProps;
+                        else {
+                            const span = row.querySelector('.section-name-cell');
+                            popupSectionLabelEl.textContent = span ? span.textContent.trim() : '-';
+                        }
+                    }
+
+                    // 断面2次半径入力も更新（ix/iy のうち小さい方を優先して表示）
+                    const popupRadiusEl = document.getElementById('popup-radius-i');
+                    if (popupRadiusEl) {
+                        try {
+                            if (props.i !== undefined && props.i !== null && props.i !== '') {
+                                popupRadiusEl.value = Number(props.i).toFixed(2);
+                            } else {
+                                const pIx = (props.ix !== undefined && props.ix !== null && props.ix !== '') ? parseFloat(props.ix) : NaN;
+                                const pIy = (props.iy !== undefined && props.iy !== null && props.iy !== '') ? parseFloat(props.iy) : NaN;
+                                if (!isNaN(pIx) && !isNaN(pIy)) {
+                                    popupRadiusEl.value = Math.min(pIx, pIy).toFixed(2);
+                                } else if (!isNaN(pIx)) {
+                                    popupRadiusEl.value = pIx.toFixed(2);
+                                } else if (!isNaN(pIy)) {
+                                    popupRadiusEl.value = pIy.toFixed(2);
+                                } else {
+                                    // fallback to dataset values
+                                    const rawIx = row.dataset.ix;
+                                    const rawIy = row.dataset.iy;
+                                    const nIx = (rawIx !== undefined && rawIx !== '') ? parseFloat(rawIx) : NaN;
+                                    const nIy = (rawIy !== undefined && rawIy !== '') ? parseFloat(rawIy) : NaN;
+                                    if (!isNaN(nIx) && !isNaN(nIy)) popupRadiusEl.value = Math.min(nIx, nIy).toFixed(2);
+                                    else if (!isNaN(nIx)) popupRadiusEl.value = nIx.toFixed(2);
+                                    else if (!isNaN(nIy)) popupRadiusEl.value = nIy.toFixed(2);
+                                }
+                            }
+                        } catch (_) { /* ignore */ }
+                    }
+                }
+            } catch (err) { /* ignore popup update errors */ }
+
             // 軸情報の dataset 保存
             if (props.sectionAxis) {
                 if (typeof window.applySectionAxisDataset === 'function') {
                     window.applySectionAxisDataset(row, props.sectionAxis);
                 }
             }
+
+            // 断面2次半径 i の更新（UI入力欄があれば値をセット）
+            try {
+                const iInput = row.querySelector('.radius-i-input');
+                if (iInput) {
+                    let newVal = null;
+                    if (props.i !== undefined && props.i !== null && props.i !== '') newVal = Number(props.i);
+                    else {
+                        const pIx = (props.ix !== undefined && props.ix !== null && props.ix !== '') ? parseFloat(props.ix) : NaN;
+                        const pIy = (props.iy !== undefined && props.iy !== null && props.iy !== '') ? parseFloat(props.iy) : NaN;
+                        if (!isNaN(pIx) && !isNaN(pIy)) newVal = Math.min(pIx, pIy);
+                        else if (!isNaN(pIx)) newVal = pIx;
+                        else if (!isNaN(pIy)) newVal = pIy;
+                    }
+
+                    if (newVal !== null && !isNaN(newVal)) {
+                        // 表示は cm 単位で固定
+                        iInput.value = Number(newVal).toFixed(2);
+                        try { row.dataset.ix = String(Number(newVal)); } catch(_){ }
+                        try { row.dataset.iy = String(Number(newVal)); } catch(_){ }
+                    }
+                }
+            } catch (e) { /* ignore */ }
 
             // DOM 更新を確実にしてから 3D ビューアへ送信（100ms 遅延）
             if (typeof sendModelToViewer === 'function') {
@@ -14941,7 +15145,7 @@ const loadPreset = (index) => {
             // ヘッダー行を2段構成にするなどの工夫も可能ですが、ここではフラットに並べます
             const memberHeader = [
                 '部材番号', 'i節点', 'j節点', '長さ(m)', '材料', 'E(N/mm²)', 'F(N/mm²)', 
-                'I(cm⁴)', 'A(cm²)', 'Z(cm³)', '座屈係数K',
+                'I(cm⁴)', 'A(cm²)', 'Z(cm³)', '断面2次半径 i(cm)', '座屈係数K',
                 'i端接合', 'i端Kx(kN/mm)', 'i端Ky(kN/mm)', 'i端Kr(kN·mm/rad)',
                 'j端接合', 'j端Kx(kN/mm)', 'j端Ky(kN/mm)', 'j端Kr(kN·mm/rad)',
                 '断面名称', '軸方向'
@@ -14973,7 +15177,7 @@ const loadPreset = (index) => {
                 let fVal = member.strengthProps?.value || member.F || '-';
                 if (member.strengthProps?.type === 'wood-type') fVal = '木材';
 
-                data.push([
+                    data.push([
                     i + 1, 
                     member.i + 1, 
                     member.j + 1, 
@@ -14984,6 +15188,7 @@ const loadPreset = (index) => {
                     (member.I * 1e8).toFixed(2), // m4 -> cm4
                     (member.A * 1e4).toFixed(2), // m2 -> cm2
                     (member.Z * 1e6).toFixed(2), // m3 -> cm3
+                    ((member.i_radius || member.ix || member.iy) ? ( (member.i_radius ? (member.i_radius*100) : (Math.min(member.ix||0, member.iy||0)) ) ).toFixed(2) : ''), // m -> cm
                     member.bucklingK || '自動',
                     
                     // i端
@@ -15045,7 +15250,8 @@ const loadPreset = (index) => {
             {wch: 10}, // H (I)
             {wch: 10}, // I (A)
             {wch: 10}, // J (Z)
-            {wch: 10}, // K (座屈K)
+            {wch: 10}, // K (i radius)
+            {wch: 10}, // L (座屈K)
             {wch: 10}, // L (i端)
             {wch: 12}, // M (iKx)
             {wch: 12}, // N (iKy)
@@ -18043,8 +18249,36 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
                         const zxValue = getProp('Zx', '強軸断面係数', 'Z');
                         const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
-                        const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
-                        const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+                        const radiusXValue = (function(){
+                            const v = getProp('ix', '強軸断面2次半径');
+                            if (v !== undefined) return v;
+                            try {
+                                for (let idx=0; idx<actualHeaders.length; idx++){
+                                    const raw = (actualHeaders[idx]||'').toString();
+                                    const nh = normalizedHeaders[idx] || normalizeHeaderKey(raw);
+                                    const hasRadiusWord = /半径|radius|断面2次半径/i.test(raw);
+                                    const looksLikeMoment = /cm\s*\^?4|cm⁴|cm4|cm4/i.test(raw) || /断面2次モーメント|moment of inertia|二次モーメント/i.test(raw);
+                                    if (!hasRadiusWord || looksLikeMoment) continue;
+                                    if (nh === 'i' || nh.includes('半径') || /\bi\b/.test(raw.trim())) return rowData[idx];
+                                }
+                            } catch(_){}
+                            return undefined;
+                        })();
+                        const radiusYValue = (function(){
+                            const v = getProp('iy', '弱軸断面2次半径');
+                            if (v !== undefined) return v;
+                            try {
+                                for (let idx=0; idx<actualHeaders.length; idx++){
+                                    const raw = (actualHeaders[idx]||'').toString();
+                                    const nh = normalizedHeaders[idx] || normalizeHeaderKey(raw);
+                                    const hasRadiusWord = /半径|radius|断面2次半径/i.test(raw);
+                                    const looksLikeMoment = /cm\s*\^?4|cm⁴|cm4|cm4/i.test(raw) || /断面2次モーメント|moment of inertia|二次モーメント/i.test(raw);
+                                    if (!hasRadiusWord || looksLikeMoment) continue;
+                                    if (nh === 'i' || nh.includes('半径') || /\bi\b/.test(raw.trim())) return rowData[idx];
+                                }
+                            } catch(_){}
+                            return undefined;
+                        })();
                         const t1Value = getProp('t1', 't1', 't1');
                         const t2Value = getProp('t2', 't2', 't2');
                         
@@ -18147,8 +18381,8 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
                         const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
                         const zxValue = getProp('Zx', '強軸断面係数', 'Z');
                         const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
-                        const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
-                        const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+                        const radiusXValue = getProp('ix', '強軸断面2次半径');
+                        const radiusYValue = getProp('iy', '弱軸断面2次半径');
                         const t1Value = getProp('t1', 't1', 't1');
                         const t2Value = getProp('t2', 't2', 't2');
                         
@@ -18320,8 +18554,36 @@ async function findSteelPropertiesFromLibrary(steelInfo) {
     const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
     const zxValue = getProp('Zx', '強軸断面係数', 'Z');
     const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
-    const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
-    const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
+    const radiusXValue = (function(){
+        const v = getProp('ix', '強軸断面2次半径');
+        if (v !== undefined) return v;
+        try {
+            for (let idx=0; idx<actualHeaders.length; idx++){
+                const raw = (actualHeaders[idx]||'').toString();
+                const nh = normalizedHeaders[idx] || normalizeHeaderKey(raw);
+                const hasRadiusWord = /半径|radius|断面2次半径/i.test(raw);
+                const looksLikeMoment = /cm\s*\^?4|cm⁴|cm4|cm4/i.test(raw) || /断面2次モーメント|moment of inertia|二次モーメント/i.test(raw);
+                if (!hasRadiusWord || looksLikeMoment) continue;
+                if (nh === 'i' || nh.includes('半径') || /\bi\b/.test(raw.trim())) return rowData[idx];
+            }
+        } catch(_){}
+        return undefined;
+    })();
+    const radiusYValue = (function(){
+        const v = getProp('iy', '弱軸断面2次半径');
+        if (v !== undefined) return v;
+        try {
+            for (let idx=0; idx<actualHeaders.length; idx++){
+                const raw = (actualHeaders[idx]||'').toString();
+                const nh = normalizedHeaders[idx] || normalizeHeaderKey(raw);
+                const hasRadiusWord = /半径|radius|断面2次半径/i.test(raw);
+                const looksLikeMoment = /cm\s*\^?4|cm⁴|cm4|cm4/i.test(raw) || /断面2次モーメント|moment of inertia|二次モーメント/i.test(raw);
+                if (!hasRadiusWord || looksLikeMoment) continue;
+                if (nh === 'i' || nh.includes('半径') || /\bi\b/.test(raw.trim())) return rowData[idx];
+            }
+        } catch(_){}
+        return undefined;
+    })();
     
     // 板厚情報も取得
     const t1Value = getProp('t1', 't1', 't1');

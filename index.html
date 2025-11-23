@@ -361,6 +361,7 @@
                                     <th class="col-section">断面二次モーメント I (cm⁴)</th>
                                     <th class="col-section">断面積 A (cm²)</th>
                                     <th class="col-section section-check-item">断面係数 Z (cm³)</th>
+                                    <th class="col-buckling section-check-item" title="断面2次半径 (弱軸)">断面2次半径 i (cm)</th>
                                     <th class="col-buckling section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
                                     <th class="col-material density-column" style="display: none;">密度 ρ (kg/m³)</th>
                                     <th class="col-section">断面名称</th>
@@ -526,11 +527,8 @@
             <label for="popup-z" class="section-check-item popup-group-section">Z (cm³)</label>
             <input type="number" id="popup-z" class="section-check-item popup-group-section">
 
-            <label for="popup-ix" class="section-check-item popup-group-buckling" style="font-size: 0.9em;">ix (cm)</label>
-            <input type="number" id="popup-ix" class="section-check-item popup-group-buckling" step="0.01" placeholder="自動">
-
-            <label for="popup-iy" class="section-check-item popup-group-buckling" style="font-size: 0.9em;">iy (cm)</label>
-            <input type="number" id="popup-iy" class="section-check-item popup-group-buckling" step="0.01" placeholder="自動">
+            <label for="popup-radius-i" class="section-check-item popup-group-buckling" style="font-size: 0.95em;">断面2次半径 i (cm)</label>
+            <input type="number" id="popup-radius-i" class="section-check-item popup-group-buckling radius-i-input" step="0.01" placeholder="自動">
             
             <label for="popup-buckling-k" class="popup-group-buckling">座屈係数 K</label>
             <input type="number" id="popup-buckling-k" step="0.1" placeholder="自動" title="空欄または0で自動判定" class="popup-group-buckling">
@@ -620,6 +618,7 @@
         </div>
         
         <div class="popup-buttons">
+            <div id="popup-section-label" class="popup-group-section" style="margin-right:12px; font-weight:600;">断面: -</div>
             <button id="popup-select-section">断面選択...</button> <button id="popup-delete-member">削除</button>
             <button id="popup-cancel">キャンセル</button>
             <button id="popup-save">保存</button>

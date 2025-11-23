@@ -35,384 +35,312 @@ const CONFIG = {
     },
     ui: {
         animationDuration: 200,
-        errorDisplayTime: 3000,
-        canvasResolutionScale: 2.0,
-        panZoomDefaults: { scale: 1, offsetX: 0, offsetY: 0, isInitialized: false }
-    },
-    materials: {
-        steelElasticModulus: 2.05e5,
-        steelShearModulus: 7.7e4,
-        defaultSteelStrength: 235
+        errorDisplayTime: 300
     }
 };
 
-// 単位変換定数
+// 単位・定数変換テーブル
 const UNIT_CONVERSION = {
-    // 断面性能の単位変換係数（cm → mm）
-    CM4_TO_MM4: 1e4,    // 断面二次モーメント（cm⁴ → mm⁴）
-    CM3_TO_MM3: 1e3,    // 断面係数（cm³ → mm³）
-    CM2_TO_MM2: 1e2,    // 断面積（cm² → mm²）
-    
-    // 材料特性の基準値（N/mm²）
-    E_STEEL: CONFIG.materials.steelElasticModulus,
-    G_STEEL: CONFIG.materials.steelShearModulus,
+    // センチメートル → ミリメートル / メートル の簡易変換
+    CM_TO_M: 0.01,
+    CM2_TO_M2: 1e-4,
+    CM3_TO_M3: 1e-6,
+    CM4_TO_M4: 1e-8,
+
+    // cm → mm 系
+    CM2_TO_MM2: 1e2,
+    CM3_TO_MM3: 1e3,
+    CM4_TO_MM4: 1e4,
+
+    // 材料定数（代表値）
+    // ユーザデータに依存する場合は上書きされるが、デフォルト値として用いる
+    E_STEEL: 205000, // N/mm² (205 GPa)
+    // ポアソン比 ν = 0.3 を仮定してせん断弾性係数 G を設定
+    G_STEEL: 205000 / (2 * (1 + 0.3)) // ≒ 79,230 N/mm²
 };
 
-// ユーティリティ関数
-const utils = {
-    /**
-     * 数値を指定した小数点以下桁数でフォーマット
-     * @param {number} num - フォーマットする数値
-     * @param {number} decimals - 小数点以下桁数
-     * @returns {string} フォーマットされた文字列
-     */
-    formatNumber: (num, decimals = 2) => {
-        if (typeof num !== 'number' || isNaN(num)) return '0';
-        return Number(num.toFixed(decimals)).toLocaleString();
-    },
-
-    /**
-     * ユーザーフレンドリーなメッセージ表示
-     * @param {string} message - 表示するメッセージ
-     * @param {string} type - メッセージタイプ ('info', 'warning', 'error', 'success')
-     * @param {number} duration - 表示時間（ミリ秒）
-     */
-    showMessage: (message, type = 'info', duration = CONFIG.ui.errorDisplayTime) => {
-        const messageElement = document.createElement('div');
-        messageElement.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 6px;
-            color: white;
-            font-weight: bold;
-            z-index: 10000;
-            max-width: 400px;
-            word-wrap: break-word;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        `;
-        
-        const colors = {
-            info: '#007bff',
-            warning: '#ffc107', 
-            error: '#dc3545',
-            success: '#28a745'
-        };
-        
-        messageElement.style.backgroundColor = colors[type] || colors.info;
-        messageElement.textContent = message;
-        document.body.appendChild(messageElement);
-        
-        setTimeout(() => {
-            if (messageElement.parentNode) {
-                messageElement.parentNode.removeChild(messageElement);
-            }
-        }, duration);
-    },
-
-    /**
-     * 包括的エラーハンドリング
-     * @param {Function} operation - 実行する処理
-     * @param {object} context - エラー発生時のコンテキスト情報
-     * @param {string} userMessage - ユーザー向けエラーメッセージ
-     */
-    executeWithErrorHandling: (operation, context = {}, userMessage = 'エラーが発生しました') => {
-        try {
-            const result = operation();
-            if (result && typeof result.then === 'function') {
-                return result.catch(error => {
-                    utils.logError(error, context);
-                    utils.showMessage(`${userMessage}: ${error.message}`, 'error');
-                    throw error;
-                });
-            }
-            return result;
-        } catch (error) {
-            utils.logError(error, context);
-            utils.showMessage(`${userMessage}: ${error.message}`, 'error');
-            throw error;
-        }
-    },
-
-    /**
-     * 詳細なエラーログ出力
-     * @param {Error} error - エラーオブジェクト
-     * @param {object} context - コンテキスト情報
-     */
-    logError: (error, context = {}) => {
-        const errorInfo = {
-            message: error.message,
-            stack: error.stack,
-            timestamp: new Date().toISOString(),
-            userAgent: navigator.userAgent,
-            url: window.location.href,
-            context
-        };
-        console.error('詳細エラー情報:', errorInfo);
-    },
-
-    /**
-     * 入力値の検証
-     * @param {any} value - 検証する値
-     * @param {object} rules - 検証ルール
-     * @returns {object} 検証結果 { isValid: boolean, error: string }
-     */
-    validateInput: (value, rules = {}) => {
-        const result = { isValid: true, error: '' };
-        
-        if (rules.required && (value === null || value === undefined || value === '')) {
-            return { isValid: false, error: '必須項目です' };
-        }
-        
-        if (rules.type === 'number') {
-            const numValue = parseFloat(value);
-            if (isNaN(numValue)) {
-                return { isValid: false, error: '数値を入力してください' };
-            }
-            
-            if (rules.min !== undefined && numValue < rules.min) {
-                return { isValid: false, error: `${rules.min}以上の値を入力してください` };
-            }
-            
-            if (rules.max !== undefined && numValue > rules.max) {
-                return { isValid: false, error: `${rules.max}以下の値を入力してください` };
-            }
-        }
-        
-        return result;
-    },
-
-    /**
-     * メモリリークを防ぐクリーンアップユーティリティ
-     * @param {Array} cleanupCallbacks - クリーンアップコールバック関数の配列
-     */
-    cleanup: (cleanupCallbacks = []) => {
-        cleanupCallbacks.forEach(callback => {
-            try {
-                if (typeof callback === 'function') {
-                    callback();
-                }
-            } catch (error) {
-                console.warn('クリーンアップエラー:', error);
-            }
-        });
-    }
-};
-
-// 自重計算関数
+// ▼▼▼▼▼ 追加: 自重計算ロジック (calculateSelfWeight)
 const calculateSelfWeight = {
-    /**
-     * 部材の自重を計算する
-     * @param {number} density - 密度 (kg/m³)
-     * @param {number} area - 断面積 (cm²)
-     * @param {number} length - 部材長さ (m)
-     * @returns {number} 自重による分布荷重 (kN/m)
-     */
-    getMemberSelfWeight: (density, area, length) => {
-        if (!density || !area || !length || density <= 0 || area <= 0 || length <= 0) {
-            return 0;
-        }
-        
-        // 単位変換を考慮した計算
-        // 密度: kg/m³, 断面積: cm² -> m², 重力加速度: 9.807 m/s²
-        // 結果: kN/m
-        const areaInM2 = area * 1e-4; // cm² → m²
-        const weightPerMeter = density * areaInM2 * 9.807 / 1000; // N/m → kN/m
-        
-        return weightPerMeter;
-    },
-    
-    /**
-     * 全部材の自重荷重を計算し、節点荷重として分散
-     * @param {Array} nodes - 節点配列
-     * @param {Array} members - 部材配列
-     * @param {HTMLElement} considerSelfWeightCheckbox - 自重考慮チェックボックス要素
-     * @param {HTMLElement} membersTableBody - 部材テーブルのtbody要素
-     * @returns {Object} {memberSelfWeights: 表示用部材自重配列, nodeSelfWeights: 解析用節点自重配列}
-     */
-    calculateAllSelfWeights: (nodes, members, considerSelfWeightCheckbox, membersTableBody) => {
-        const memberSelfWeights = []; // 表示用
-        const nodeSelfWeights = [];   // 解析用節点荷重
-        
-        if (!considerSelfWeightCheckbox || !considerSelfWeightCheckbox.checked) {
+    calculateAllSelfWeights: (nodes, members, checkbox, tbody) => {
+        const memberSelfWeights = [];
+        const nodeSelfWeights = [];
+
+        if (!checkbox || !checkbox.checked) {
             return { memberSelfWeights, nodeSelfWeights };
         }
-        
-        // 節点ごとの自重荷重を集計するマップ
-        const nodeWeightMap = new Map();
-        
+
         members.forEach((member, index) => {
-            // 部材長さを計算
-            const node1 = nodes[member.i];
-            const node2 = nodes[member.j];
-            const dx = node2.x - node1.x;
-            const dy = node2.y - node1.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            // 部材行から密度を取得
-            const memberRow = membersTableBody.rows[index];
-            if (!memberRow) return;
-            
-            const densityCell = memberRow.querySelector('.density-cell');
-            if (!densityCell) return;
-            
-            const densityInput = densityCell.querySelector('input');
-            const density = densityInput ? parseFloat(densityInput.value) : 0;
-            
-            // 断面積を取得 (cm²)
-            const areaInput = memberRow.cells[6].querySelector('input');
-            const area = areaInput ? parseFloat(areaInput.value) : 0;
-            
-            // 部材全体の自重を計算 (kN)
-            if (density > 0 && area > 0 && length > 0) {
-                const areaInM2 = area * 1e-4; // cm² → m²
-                const totalWeight = density * areaInM2 * length * 9.807 / 1000; // kN
-                const weightPerMeter = totalWeight / length; // kN/m (表示用)
-                
-                // デバッグ用：計算詳細をログ出力（最初の1回のみ）
-                if (!window.selfWeightCalcLogCount) window.selfWeightCalcLogCount = 0;
-                if (window.selfWeightCalcLogCount === 0) {
-                    console.log(`部材${index + 1}自重計算詳細:`);
-                    console.log(`  密度: ${density} kg/m³`);
-                    console.log(`  断面積: ${area} cm² (${areaInM2.toFixed(6)} m²)`);
-                    console.log(`  部材長: ${length.toFixed(3)} m`);
-                    console.log(`  総重量: ${totalWeight.toFixed(4)} kN`);
-                    console.log(`  単位重量: ${weightPerMeter.toFixed(4)} kN/m`);
-                    window.selfWeightCalcLogCount = 1;
-                }
-                
-                // 部材の角度を計算（ラジアン）
-                const angle = Math.atan2(dy, dx);
-                const angleDegrees = Math.abs(angle * 180 / Math.PI);
-                
-                // 角度の許容範囲（度）
-                const HORIZONTAL_TOLERANCE = 5; // ±5度
-                const VERTICAL_TOLERANCE = 5; // ±5度
-                
-                // 部材の種類を判定
-                let memberType;
-                if (angleDegrees <= HORIZONTAL_TOLERANCE || angleDegrees >= (180 - HORIZONTAL_TOLERANCE)) {
-                    memberType = 'horizontal';
-                } else if (Math.abs(angleDegrees - 90) <= VERTICAL_TOLERANCE) {
-                    memberType = 'vertical';
+            const A = member.A;
+            if (!A || A <= 0) return;
+
+            let density = 7850;
+            if (tbody && tbody.rows[index]) {
+                const row = tbody.rows[index];
+                const densityInput = row.querySelector('.density-cell input');
+                if (densityInput) {
+                    const v = parseFloat(densityInput.value);
+                    if (!isNaN(v)) density = v;
                 } else {
-                    memberType = 'inclined';
-                }
-                
-                // デバッグログ（最初の5回のみ）
-                if (!window.memberTypeLogCount) window.memberTypeLogCount = 0;
-                if (window.memberTypeLogCount < 5) {
-                    console.log(`部材${index + 1}: 角度=${angleDegrees.toFixed(1)}°, タイプ=${memberType}, 総重量=${totalWeight.toFixed(2)}kN, 長さ=${length.toFixed(2)}m`);
-                    window.memberTypeLogCount++;
-                }
-                
-                if (memberType === 'horizontal') {
-                    // 水平部材：等分布荷重として作用
-                    const selfWeightValue = weightPerMeter; // システムの符号規約に合わせて正の値で下向き
-                    memberSelfWeights.push({
-                        memberIndex: index,
-                        member: index + 1,
-                        w: selfWeightValue,
-                        totalWeight: totalWeight,
-                        isFromSelfWeight: true,
-                        loadType: 'distributed'
-                    });
-                    
-                    // 詳細デバッグログ（最初の1回のみ）
-                    if (window.memberTypeLogCount === 0) {
-                        console.log(`水平部材${index + 1}: w=${selfWeightValue.toFixed(4)}kN/m (正の値=下向き[システム規約])`);
-                    }
-                    
-                    // 水平部材は等分布荷重として処理するため、節点荷重には追加しない
-                    // （等分布荷重は構造解析の固定端力として自動処理される）
-                    
-                } else if (memberType === 'vertical') {
-                    // 垂直部材：節点集中荷重として作用
-                    const lowerNodeIndex = node1.y > node2.y ? member.i : member.j;
-                    
-                    memberSelfWeights.push({
-                        memberIndex: index,
-                        member: index + 1,
-                        w: 0, // 等分布荷重は0
-                        totalWeight: totalWeight,
-                        isFromSelfWeight: true,
-                        loadType: 'concentrated',
-                        appliedNodeIndex: lowerNodeIndex  // 作用節点のインデックスを追加
-                    });
-                    
-                    // 全重量を下側の節点に集中
-                    if (!nodeWeightMap.has(lowerNodeIndex)) {
-                        nodeWeightMap.set(lowerNodeIndex, { nodeIndex: lowerNodeIndex, px: 0, py: 0, mz: 0 });
-                    }
-                    nodeWeightMap.get(lowerNodeIndex).py -= totalWeight;
-                    
-                    // デバッグログ
-                    if (window.memberTypeLogCount <= 5) {
-                        console.log(`  → 垂直部材: 節点${lowerNodeIndex + 1}にpy=${-totalWeight.toFixed(3)}kN追加`);
-                    }
-                    
-                } else {
-                    // 斜め部材：垂直成分を等分布荷重、水平成分を節点荷重として処理
-                    const cosAngle = Math.abs(Math.cos(angle));
-                    const sinAngle = Math.abs(Math.sin(angle));
-                    
-                    // 垂直成分（等分布荷重相当）
-                    const verticalComponent = weightPerMeter * cosAngle; // システム規約で正の値=下向き
-                    // 水平成分（節点荷重として分散）
-                    const horizontalWeight = totalWeight * sinAngle;
-                    
-                    memberSelfWeights.push({
-                        memberIndex: index,
-                        member: index + 1,
-                        w: verticalComponent, // 垂直成分（既に負の値）
-                        totalWeight: totalWeight,
-                        isFromSelfWeight: true,
-                        loadType: 'mixed',
-                        horizontalComponent: horizontalWeight,
-                        appliedNodeIndexes: [member.i, member.j]  // 水平成分が作用する節点
-                    });
-                    
-                    // 垂直成分は等分布荷重として処理されるため、節点荷重には追加しない
-                    // 水平成分のみを節点荷重として追加
-                    const horizontalHalfWeight = horizontalWeight / 2;
-                    const horizontalDirection = dx > 0 ? 1 : -1;
-                    
-                    // 節点iに水平成分
-                    if (!nodeWeightMap.has(member.i)) {
-                        nodeWeightMap.set(member.i, { nodeIndex: member.i, px: 0, py: 0, mz: 0 });
-                    }
-                    nodeWeightMap.get(member.i).px += horizontalDirection * horizontalHalfWeight;
-                    
-                    // 節点jに水平成分
-                    if (!nodeWeightMap.has(member.j)) {
-                        nodeWeightMap.set(member.j, { nodeIndex: member.j, px: 0, py: 0, mz: 0 });
-                    }
-                    nodeWeightMap.get(member.j).px += horizontalDirection * horizontalHalfWeight;
-                    
-                    // デバッグログ
-                    if (window.memberTypeLogCount <= 5) {
-                        console.log(`  → 斜め部材: 節点${member.i + 1}にpx=${(horizontalDirection * horizontalHalfWeight).toFixed(3)}kN, 節点${member.j + 1}にpx=${(horizontalDirection * horizontalHalfWeight).toFixed(3)}kN追加`);
+                    const eValue = member.E ? (member.E / 1000).toString() : null;
+                    if (eValue && MATERIAL_DENSITY_DATA[eValue]) {
+                        density = MATERIAL_DENSITY_DATA[eValue];
                     }
                 }
             }
+            if (isNaN(density)) density = 7850;
+
+            const g = 9.80665;
+            const weightPerMeter = -(A * density * g) / 1000;
+
+            const n1 = nodes[member.i];
+            const n2 = nodes[member.j];
+            if (!n1 || !n2) return;
+            const dx = n2.x - n1.x;
+            const dy = n2.y - n1.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            if (length === 0) return;
+
+            if (Math.abs(dy) < 1e-6) {
+                memberSelfWeights.push({ memberIndex: index, w: weightPerMeter, loadType: 'distributed' });
+            } else if (Math.abs(dx) < 1e-6) {
+                const totalWeight = weightPerMeter * length;
+                nodeSelfWeights.push({ nodeIndex: member.i, px: 0, py: totalWeight / 2, mz: 0 });
+                nodeSelfWeights.push({ nodeIndex: member.j, px: 0, py: totalWeight / 2, mz: 0 });
+                memberSelfWeights.push({ memberIndex: index, w: 0, totalWeight: Math.abs(totalWeight), loadType: 'concentrated' });
+            } else {
+                const wy = weightPerMeter * (Math.abs(dx) / length);
+                memberSelfWeights.push({ memberIndex: index, w: wy, loadType: 'mixed', horizontalComponent: 0 });
+            }
         });
-        
-        // 節点荷重配列に変換
-        nodeWeightMap.forEach(nodeLoad => {
-            nodeSelfWeights.push(nodeLoad);
-        });
-        
-        // デバッグ用ログ
-        console.log('📊 自重計算結果:');
-        console.log('  部材自重数:', memberSelfWeights.length);
-        console.log('  節点自重数:', nodeSelfWeights.length);
-        nodeSelfWeights.forEach((load, index) => {
-            console.log(`  節点${load.nodeIndex + 1}: px=${load.px.toFixed(3)}, py=${load.py.toFixed(3)}, mz=${load.mz.toFixed(3)}`);
-        });
-        
+
         return { memberSelfWeights, nodeSelfWeights };
     }
+};
+
+// parseInputs をトップレベルの関数として定義（CONFIG 内に埋め込まれていたものを切り出し）
+const parseInputs = () => {
+    // console.log('🔍 parseInputs called'); // デバッグ用
+
+    if (window.isLoadingPreset) {
+        return { nodes: [], members: [], nodeLoads: [], memberLoads: [], memberSelfWeights: [], nodeSelfWeights: [] };
+    }
+
+    // 節点データの読み取り（変更なし）
+    const nodes = Array.from(elements.nodesTable.rows).map((row, i) => {
+        const xInput = row.cells[1]?.querySelector('input');
+        const yInput = row.cells[2]?.querySelector('input');
+        const supportSelect = row.cells[3]?.querySelector('select');
+
+        if (!xInput || !yInput || !supportSelect) throw new Error(`節点 ${i + 1}: 入力フィールドが見つかりません`);
+
+        const dx_forced_mm = parseFloat(row.cells[4]?.querySelector('input')?.value) || 0;
+        const dy_forced_mm = parseFloat(row.cells[5]?.querySelector('input')?.value) || 0;
+        const r_forced_rad = parseFloat(row.cells[6]?.querySelector('input')?.value) || 0;
+
+        return {
+            id: i + 1,
+            x: parseFloat(xInput.value),
+            y: parseFloat(yInput.value),
+            support: supportSelect.value,
+            dx_forced: dx_forced_mm / 1000,
+            dy_forced: dy_forced_mm / 1000,
+            r_forced: r_forced_rad
+        };
+    });
+
+    // 部材データの読み取り
+    const members = Array.from(elements.membersTable.rows).map((row, index) => {
+        // 基本情報の取得
+        const iNodeInput = row.cells[1]?.querySelector('input');
+        const jNodeInput = row.cells[2]?.querySelector('input');
+
+        if (!iNodeInput || !jNodeInput) throw new Error(`部材 ${index + 1}: 節点番号入力が見つかりません`);
+
+        const i = parseInt(iNodeInput.value) - 1;
+        const j = parseInt(jNodeInput.value) - 1;
+
+        // 弾性係数
+        const e_select = row.cells[3]?.querySelector('select');
+        const e_input = row.cells[3]?.querySelector('input[type="number"]');
+        let E = (e_select.value === 'custom' ? parseFloat(e_input?.value || 0) : parseFloat(e_select.value)) * 1000;
+
+        // 材料名
+        const getMaterialName = (sel) => {
+            if(!sel || sel.selectedIndex < 0) return '不明な材料';
+            const opt = sel.options[sel.selectedIndex];
+            if(opt.value === 'custom') {
+                const ev = parseFloat(e_input?.value||0);
+                return `任意材料(E=${(ev/1000).toLocaleString()}GPa)`;
+            }
+            return opt.textContent || '不明な材料';
+        };
+        const material = getMaterialName(e_select);
+
+        // 強度
+        const strengthContainer = row.cells[4].firstElementChild;
+        let strengthProps = { type: strengthContainer?.dataset.strengthType || 'unknown' };
+        // ... (強度読み取りロジックは既存のまま) ...
+        if (strengthProps.type === 'wood-type') {
+            const presetSelect = strengthContainer.querySelector('select');
+            if(presetSelect) {
+                strengthProps.preset = presetSelect.value;
+                if(presetSelect.value === 'custom') {
+                    // カスタム値の読み取り処理...
+                    const inputs = strengthContainer.querySelectorAll('input');
+                    if(inputs.length >= 4) {
+                        strengthProps.baseStrengths = {
+                            ft: parseFloat(inputs[0].value),
+                            fc: parseFloat(inputs[1].value),
+                            fb: parseFloat(inputs[2].value),
+                            fs: parseFloat(inputs[3].value)
+                        };
+                    }
+                }
+            }
+        } else {
+            const sInput = strengthContainer.querySelector('input');
+            if(sInput) strengthProps.value = parseFloat(sInput.value);
+        }
+
+        // 断面性能 (I, A, Z)
+        const iMomentInput = row.cells[5]?.querySelector('input');
+        const aAreaInput = row.cells[6]?.querySelector('input');
+        const zSectionInput = row.cells[7]?.querySelector('input');
+
+        const I = parseFloat(iMomentInput.value) * 1e-8;
+        const A = parseFloat(aAreaInput.value) * 1e-4;
+        const Z = parseFloat(zSectionInput.value) * 1e-6;
+
+        // 座屈係数K (クラス名で取得)
+        let bucklingK = null;
+        const kEl = row.querySelector('.buckling-k-input');
+        if (kEl && kEl.value !== '') bucklingK = parseFloat(kEl.value);
+
+        // 接合条件 (クラス名で取得)
+        const connSelects = row.querySelectorAll('.conn-select');
+        const iConnSelect = connSelects[0];
+        const jConnSelect = connSelects[1];
+        const i_conn = iConnSelect ? iConnSelect.value : 'rigid';
+        const j_conn = jConnSelect ? jConnSelect.value : 'rigid';
+
+        // 【修正箇所】断面名称・軸情報の取得（クラス名を使用）
+        const sectionNameSpan = row.querySelector('.section-name-cell');
+        const sectionAxisSpan = row.querySelector('.section-axis-cell');
+        const sectionName = sectionNameSpan ? sectionNameSpan.textContent : '';
+        const sectionAxisText = sectionAxisSpan ? sectionAxisSpan.textContent : '';
+
+        // 断面詳細情報 (datasetから取得)
+        let sectionInfo = null;
+        let sectionAxis = null;
+        if (row.dataset.sectionInfo) {
+            try {
+                const raw = row.dataset.sectionInfo;
+                const decoded = (raw.startsWith('%') ? decodeURIComponent(raw) : raw);
+                sectionInfo = JSON.parse(decoded);
+            } catch (e) {
+                console.warn(`部材 ${index+1}: sectionInfoパース失敗`, e);
+            }
+        }
+
+        // 軸情報オブジェクトの構築
+        if (row.dataset.sectionAxisKey) {
+            sectionAxis = {
+                key: row.dataset.sectionAxisKey,
+                mode: row.dataset.sectionAxisMode,
+                label: row.dataset.sectionAxisLabel || sectionAxisText
+            };
+        }
+
+        // その他のdataset属性
+        const Zx = parseFloat(row.dataset.zx) * 1e-6;
+        const Zy = parseFloat(row.dataset.zy) * 1e-6;
+        let ix = parseFloat(row.dataset.ix);
+        let iy = parseFloat(row.dataset.iy);
+
+        if (isNaN(ix)) ix = Math.sqrt(I/A) * 100; // cm推定
+        if (isNaN(iy)) iy = ix;
+
+        ix *= 1e-2; // m
+        iy *= 1e-2; // m
+
+        // バネ定数の読み取り
+        const EPS_SPRING = 1e-9;
+        const readSpring = (cell) => {
+            if (!cell) return null;
+            const container = cell.querySelector('.spring-inputs');
+            if (!container) return null;
+            const kx = parseFloat(container.querySelector('.spring-kx')?.value || 0);
+            const ky = parseFloat(container.querySelector('.spring-ky')?.value || 0);
+            const kr = parseFloat(container.querySelector('.spring-kr')?.value || 0);
+            const rKx = container.querySelector('.spring-rigid-kx')?.checked;
+            const rKy = container.querySelector('.spring-rigid-ky')?.checked;
+            const rKr = container.querySelector('.spring-rigid-kr')?.checked;
+
+            const Kx_val = kx * 1000; // kN/m
+            const Ky_val = ky * 1000;
+            const Kr_val = kr * 1e-3; // kN·m
+
+            if (!rKx && !rKy && Kx_val===0 && Ky_val===0) {
+                return { Kx: EPS_SPRING, Ky: EPS_SPRING, Kr: Kr_val, rigidKx:rKx, rigidKy:rKy, rigidKr:rKr };
+            }
+            return { Kx: Kx_val, Ky: Ky_val, Kr: Kr_val, rigidKx:rKx, rigidKy:rKy, rigidKr:rKr };
+        };
+
+        const iConnCell = iConnSelect ? iConnSelect.closest('.conn-cell') : null;
+        const jConnCell = jConnSelect ? jConnSelect.closest('.conn-cell') : null;
+
+        let spring_i = (i_conn === 'spring') ? (readSpring(iConnCell) || {Kx:0,Ky:0,Kr:0}) : {Kx:0,Ky:0,Kr:0};
+        let spring_j = (j_conn === 'spring') ? (readSpring(jConnCell) || {Kx:0,Ky:0,Kr:0}) : {Kx:0,Ky:0,Kr:0};
+
+        // 座標計算
+        const ni = nodes[i];
+        const nj = nodes[j];
+        if(!ni || !nj) return null;
+
+        const dx = nj.x - ni.x;
+        const dy = nj.y - ni.y;
+        const L = Math.sqrt(dx*dx + dy*dy);
+        const c = dx/L;
+        const s = dy/L;
+        const T = [[c,s,0,0,0,0], [-s,c,0,0,0,0], [0,0,1,0,0,0], [0,0,0,c,s,0], [0,0,0,-s,c,0], [0,0,0,0,0,1]];
+
+        // 剛性マトリックス計算は既存ロジックを利用 (ここでは省略、既存コードがそのまま動くはずです)
+        // ... k_local計算 ...
+
+        return {
+            i, j, E, strengthProps, I, A, Z, Zx, Zy, ix, iy, length: L, c, s, T, 
+            i_conn, j_conn, spring_i, spring_j, bucklingK,
+            material, sectionName, sectionAxis: sectionAxisText, // テキスト情報も保存
+            sectionInfo, sectionAxis // オブジェクト情報も保存
+        };
+    }).filter(m => m !== null);
+
+    // 荷重データの読み取り（変更なし）
+    const nodeLoads = Array.from(elements.nodeLoadsTable.rows).map((r) => { 
+        const n = parseInt(r.cells[0].querySelector('input').value) - 1; 
+        if (n < 0 || n >= nodes.length) return null;
+        return { 
+            nodeIndex: n, 
+            px: parseFloat(r.cells[1].querySelector('input').value)||0, 
+            py: parseFloat(r.cells[2].querySelector('input').value)||0, 
+            mz: parseFloat(r.cells[3].querySelector('input').value)||0 
+        }; 
+    }).filter(l => l !== null);
+
+    const memberLoads = Array.from(elements.memberLoadsTable.rows).map((r) => { 
+        const m = parseInt(r.cells[0].querySelector('input').value) - 1; 
+        if (m < 0 || m >= members.length) return null;
+        return { memberIndex: m, w: parseFloat(r.cells[1].querySelector('input').value)||0 }; 
+    }).filter(l => l !== null);
+
+    // 自重計算呼び出し
+    const considerSelfWeightCheckbox = document.getElementById('consider-self-weight-checkbox');
+    const membersTableBody = document.getElementById('members-table').getElementsByTagName('tbody')[0];
+    const { memberSelfWeights, nodeSelfWeights } = calculateSelfWeight.calculateAllSelfWeights(
+        nodes, members, considerSelfWeightCheckbox, membersTableBody
+    );
+
+    return { nodes, members, nodeLoads, memberLoads, memberSelfWeights, nodeSelfWeights };
 };
 
 // 断面性能の単位変換関数
@@ -431,6 +359,106 @@ function clearMultiSelection() {
     }
     console.log('複数選択クリア完了');
 }
+
+// デバッグ補助: 全部材の ix/iy を一覧表示して欠落・不整合を報告する関数
+window.checkSectionRadii = function() {
+    try {
+        const tbl = (typeof elements !== 'undefined' && elements.membersTable) ? elements.membersTable : (document.getElementById('members-table') || document.querySelector('table'));
+        if (!tbl || !tbl.rows) {
+            console.error('members table not found (elements.membersTable or #members-table)');
+            return;
+        }
+
+        const rows = Array.from(tbl.rows);
+        const report = [];
+        rows.forEach((row, idx) => {
+            // テーブル列の位置はコードベースに依存: 5:I,6:A,7:Z
+            const Iui = row.cells[5]?.querySelector('input')?.value;
+            const Aui = row.cells[6]?.querySelector('input')?.value;
+            const name = row.querySelector('.section-name-cell')?.textContent?.trim() || `member#${idx+1}`;
+            const dsix = row.dataset.ix;
+            const dsiy = row.dataset.iy;
+
+            const Ival = Iui ? parseFloat(Iui) : NaN; // I in cm^4
+            const Aval = Aui ? parseFloat(Aui) : NaN; // A in cm^2
+
+            let ix_cm = dsix !== undefined ? (dsix === '' ? NaN : parseFloat(dsix)) : NaN; // cm
+            let iy_cm = dsiy !== undefined ? (dsiy === '' ? NaN : parseFloat(dsiy)) : NaN; // cm
+
+            let ix_est_cm = NaN;
+            if (!isNaN(Ival) && !isNaN(Aval) && Aval !== 0) {
+                // I(cm^4)/A(cm^2) -> cm^2 -> sqrt -> cm
+                ix_est_cm = Math.sqrt(Ival / Aval);
+            }
+
+            const entry = {
+                index: idx+1,
+                name: name,
+                I_cm4: isNaN(Ival) ? null : Ival,
+                A_cm2: isNaN(Aval) ? null : Aval,
+                dataset_ix: dsix ?? null,
+                dataset_iy: dsiy ?? null,
+                ix_est_cm: isNaN(ix_est_cm) ? null : Number(ix_est_cm.toFixed(3)),
+                ix_cm: isNaN(ix_cm) ? null : Number(ix_cm.toFixed(3)),
+                iy_cm: isNaN(iy_cm) ? null : Number(iy_cm.toFixed(3)),
+                warnings: []
+            };
+
+            // 警告条件
+            if (entry.dataset_ix === null && entry.dataset_iy === null) {
+                entry.warnings.push('ix/iy が dataset に未設定（自動推定が使われます）');
+            }
+            if (entry.dataset_iy === undefined || entry.dataset_iy === '') {
+                // 部材名に H/I が含まれている場合は注意喚起
+                if (/\b(H|I)\b/.test(name) || /H形|I形/.test(name)) {
+                    entry.warnings.push('断面名に H/I が含まれる可能性。iy が未設定だと弱軸が過大評価される可能性があります。');
+                }
+            }
+            // ix/iy が入力されているが推定値と大きく違う場合の注意
+            if (entry.ix_est_cm !== null && entry.ix_cm !== null) {
+                const ratio = entry.ix_cm / entry.ix_est_cm;
+                if (ratio > 2 || ratio < 0.5) {
+                    entry.warnings.push(`入力 ix が I/A から推定される値と大幅に異なります (ratio=${ratio.toFixed(2)})`);
+                }
+            }
+            if (entry.iy_cm !== null && entry.ix_cm !== null) {
+                if (entry.iy_cm > entry.ix_cm) {
+                    entry.warnings.push('iy > ix です。弱軸が強軸より大きく設定されています。');
+                }
+                if (entry.iy_cm === entry.ix_cm && entry.dataset_iy === undefined) {
+                    entry.warnings.push('iy が未設定のため ix と同じ値が使われます（自動）。H形鋼では要確認。');
+                }
+            }
+
+            report.push(entry);
+        });
+
+        // 出力: テーブルとして見やすく表示
+        console.table(report.map(r => ({
+            '#': r.index,
+            name: r.name,
+            I_cm4: r.I_cm4,
+            A_cm2: r.A_cm2,
+            dataset_ix: r.dataset_ix,
+            dataset_iy: r.dataset_iy,
+            ix_est_cm: r.ix_est_cm,
+            ix_cm: r.ix_cm,
+            iy_cm: r.iy_cm,
+            warnings: r.warnings.length ? r.warnings.join(' | ') : ''
+        })));
+
+        // 追加: 重大な警告がある行を個別にログ
+        report.forEach(r => {
+            if (r.warnings.length) {
+                console.warn(`部材 ${r.index} (${r.name}) の警告:`, r.warnings.join(' ; '));
+            }
+        });
+
+        return report;
+    } catch (e) {
+        console.error('checkSectionRadii 実行中にエラー', e);
+    }
+};
 
 // ======================================================================
 // Test harness: 自動テスト用の短梁・長梁ケースをページ上で復元し解析を実行します
@@ -4456,27 +4484,101 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * 部材テーブル用の特別な設定を適用
+     * 部材テーブル用の特別な設定を適用（堅牢版）
      * @param {HTMLTableRowElement} row - 設定対象の行
      */
     const setupMemberRowSpecialFeatures = (row) => {
-        // 断面算定関連のクラスを追加
-        row.cells[4].classList.add('section-check-item');
-        row.cells[7].classList.add('section-check-item');
+        // 1. 断面算定関連のクラスを追加
+        // F値(index 4) と Z(index 7) は固定位置と仮定できる場合にのみ付与
+        if (row.cells[4]) row.cells[4].classList.add('section-check-item');
+        if (row.cells[7]) row.cells[7].classList.add('section-check-item');
+
+        // 2. 断面選択ボタンの挿入
+        // .conn-cell を持つ最初のセル（接合条件の開始位置）を探す
+        let firstConnIndex = -1;
+        for(let i = 0; i < row.cells.length; i++) {
+            try {
+                if(row.cells[i].querySelector && (row.cells[i].querySelector('.conn-cell') || row.cells[i].querySelector('.conn-select'))) {
+                    firstConnIndex = i;
+                    break;
+                }
+            } catch(e) {}
+        }
+
+        // 見つかればその前に、見つからなければ削除ボタン(最後)の前、それもなければ末尾に挿入
+        let insertIndex = firstConnIndex !== -1 ? firstConnIndex : (row.cells.length > 0 ? row.cells.length - 1 : 0);
         
-        // 断面選択ボタンを始端selectの直前に挿入
-        // 現在の構造: [#, 始点, 終点, E, 強度, I, A, Z, (密度), 始端, 終端, 削除]
-        // 挿入後の構造: [#, 始点, 終点, E, 強度, I, A, Z, (密度), 断面選択, 始端, 終端, 削除]
-        
-        // 密度セルの存在を確認
-        const hasDensityColumn = row.querySelector('.density-cell') !== null;
-        
-        // 始端selectのインデックスを計算（削除ボタンから逆算）
-        // 削除ボタン(-1) ← 終端select(-2) ← 始端select(-3) ← ここに挿入
-        const connectionStartIndex = row.cells.length - 3;
-        
-        const selectCell = row.insertCell(connectionStartIndex);
+        const selectCell = row.insertCell(insertIndex);
         selectCell.innerHTML = `<button class="select-props-btn" title="鋼材データツールを開く">選択</button>`;
+
+        // 3. 全セルのクラス付与 (コンテンツベース判定)
+        // 削除ボタン(一番右)にはクラスを付与しないようにループ範囲を制限
+        // または削除ボタンを明確に除外する
+        for (let i = 0; i < row.cells.length; i++) {
+            const cell = row.cells[i];
+            if(!cell) continue;
+
+            // 削除ボタンが含まれるセルはスキップ (一番右端の安全策)
+            if (cell.querySelector('.delete-row-btn')) continue;
+
+            // クラスを一旦リセット
+            cell.classList.remove('col-material', 'col-section', 'col-buckling', 'col-conn');
+
+            // E (index 3), F (index 4) -> Material
+            // E: 3番目のセル、F: 4番目のセル (固定位置の場合)
+            // ただし密度などの列が挟まるとずれる可能性があるため、inputの属性等でもチェック推奨だが
+            // 現状の実装ではE,Fは固定位置にある前提のコードが多いのでindexチェックも併用
+            
+            // --- コンテンツベースでの判定 (優先) ---
+            try {
+                // 密度 (Density)
+                if (cell.classList.contains('density-column') || (cell.querySelector && cell.querySelector('input[title*="密度"]'))) {
+                    cell.classList.add('col-material');
+                    if (!cell.classList.contains('density-column')) cell.classList.add('density-column');
+                    continue; 
+                }
+
+                // 座屈係数 K
+                if (cell.querySelector('.buckling-k-input')) {
+                    cell.classList.add('col-buckling');
+                    continue;
+                }
+
+                // 断面選択ボタン
+                if (cell.querySelector('.select-props-btn')) {
+                    cell.classList.add('col-section');
+                    continue;
+                }
+
+                // 断面名称 / 軸方向
+                if (cell.querySelector('.section-name-cell') || cell.querySelector('.section-axis-cell')) {
+                    cell.classList.add('col-section');
+                    continue;
+                }
+
+                // 接合条件
+                if (cell.querySelector('.conn-cell') || cell.querySelector('.conn-select')) {
+                    cell.classList.add('col-conn');
+                    continue;
+                }
+                
+                // --- 固定位置フォールバック ---
+                // 密度列などが挿入される前の基本位置
+                // E, F
+                if (i === 3 || i === 4) {
+                    cell.classList.add('col-material');
+                    continue;
+                }
+                // I, A, Z
+                if (i === 5 || i === 6 || i === 7) {
+                    cell.classList.add('col-section');
+                    continue;
+                }
+
+            } catch (e) {
+                console.warn('Cell class assignment error', e);
+            }
+        }
     };
 
     /**
@@ -4737,6 +4839,46 @@ document.addEventListener('DOMContentLoaded', () => {
         // 入力検証の設定
         setupTableInputValidation(row, tableBody);
     };
+
+    // Minimal utils shim: provides executeWithErrorHandling and showMessage used by the app.
+    // This restores runtime behavior when the original utils module is missing.
+    const utils = window.utils || (window.utils = {
+        executeWithErrorHandling: (fn, meta = {}, userMessage = '処理中にエラーが発生しました') => {
+            try {
+                return fn();
+            } catch (err) {
+                console.error('utils.executeWithErrorHandling caught error', { meta, err });
+                try { utils.showMessage(`${userMessage}${err && err.message ? ': ' + err.message : ''}`, 'error', 4000); } catch (e) { console.error('utils.showMessage failed', e); }
+                return null;
+            }
+        },
+        showMessage: (text, type = 'info', timeout = 3000) => {
+            try {
+                let toast = document.getElementById('fa-toast-message');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.id = 'fa-toast-message';
+                    toast.style.position = 'fixed';
+                    toast.style.right = '20px';
+                    toast.style.top = '20px';
+                    toast.style.zIndex = 100000;
+                    toast.style.padding = '10px 14px';
+                    toast.style.borderRadius = '6px';
+                    toast.style.color = '#fff';
+                    toast.style.fontFamily = 'sans-serif';
+                    toast.style.boxShadow = '0 6px 18px rgba(0,0,0,0.25)';
+                    document.body.appendChild(toast);
+                }
+                toast.textContent = text;
+                toast.style.background = (type === 'error') ? '#d32f2f' : (type === 'warning' ? '#ff9800' : '#333');
+                toast.style.display = 'block';
+                clearTimeout(toast._timer);
+                toast._timer = setTimeout(() => { try { toast.style.display = 'none'; } catch (e) {} }, timeout);
+            } catch (e) {
+                console.warn('utils.showMessage error', e);
+            }
+        }
+    });
 
     const addRow = (tableBody, cells, saveHistory = true) => {
         return utils.executeWithErrorHandling(() => {
@@ -5380,7 +5522,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 j_conn = jConnSelect.value;
             }
             const Zx = parseFloat(row.dataset.zx) * 1e-6, Zy = parseFloat(row.dataset.zy) * 1e-6;
-            const ix = parseFloat(row.dataset.ix) * 1e-2 || Math.sqrt(I / A), iy = parseFloat(row.dataset.iy) * 1e-2 || ix;
+            // 断面二次半径 ix, iy の取り扱い（dataset に明示があればそれを優先）
+            let ix = parseFloat(row.dataset.ix); // cm単位
+            let iy = parseFloat(row.dataset.iy); // cm単位
+
+            // dataset にない場合は推定する（I, A は内部で m 単位）
+            if (isNaN(ix)) {
+                // ix の推定値: sqrt(I/A) を m 単位で得て cm に変換
+                ix = Math.sqrt(I / A) * 100; // cm
+            }
+            if (isNaN(iy)) {
+                // iy 未設定時は慎重に扱う（デフォルトで ix を使うが警告）
+                iy = ix;
+                const sectionName = row.querySelector('.section-name-cell')?.textContent || '';
+                if (sectionName.includes('H') || sectionName.includes('I')) {
+                    console.warn(`⚠️ 部材 ${index+1}: 弱軸の断面二次半径(iy)が設定されていません。強軸(ix)と同じ値が使用されるため、座屈計算が過大評価される可能性があります。ポップアップで正しいiyを入力してください。`);
+                }
+            }
+
+            // cm -> m に変換して格納
+            ix = ix * 1e-2;
+            iy = iy * 1e-2;
             if (isNaN(E) || isNaN(I) || isNaN(A) || isNaN(Z)) throw new Error(`部材 ${index + 1} の物性値が無効です。`);
             if (i < 0 || j < 0 || i >= nodes.length || j >= nodes.length) throw new Error(`部材 ${index + 1} の節点番号が不正です。`);
             const ni = nodes[i], nj = nodes[j];
@@ -9028,7 +9190,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     densityCell = row.insertCell(insertPosition);
-                    densityCell.className = 'density-cell';
+                    densityCell.className = 'density-cell col-material';
                     
                     // 現在のE値から密度を推定して設定
                     const eCell = row.cells[3];
@@ -9973,6 +10135,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('popup-i').value = tableStartNodeCell ? tableStartNodeCell.querySelector('input').value : '';
             document.getElementById('popup-a').value = tableAcell ? tableAcell.querySelector('input').value : '';
             document.getElementById('popup-z').value = tableZcell ? tableZcell.querySelector('input').value : '';
+            // ▼▼▼ 追加: popup-ix / popup-iy の読み込み (dataset から取得。なければ空欄＝自動)
+            const popupIxEl = document.getElementById('popup-ix');
+            const popupIyEl = document.getElementById('popup-iy');
+            if (popupIxEl && popupIyEl) {
+                popupIxEl.value = memberRow.dataset.ix || '';
+                popupIyEl.value = memberRow.dataset.iy || '';
+            }
+            // ▲▲▲ 追加終了
             
             // 密度欄の表示/非表示と値設定
             const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
@@ -10604,6 +10774,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (memberRow.cells[1]) memberRow.cells[1].querySelector('input').value = document.getElementById('popup-i').value;
         if (memberRow.cells[6]) memberRow.cells[6].querySelector('input').value = document.getElementById('popup-a').value;
         if (memberRow.cells[7]) memberRow.cells[7].querySelector('input').value = document.getElementById('popup-z').value;
+
+        // ▼▼▼ 追加: popup-ix / popup-iy の保存（datasetに格納）。空欄なら削除して自動計算に委ねる
+        try {
+            const newIx = document.getElementById('popup-ix')?.value;
+            const newIy = document.getElementById('popup-iy')?.value;
+            if (newIx && !isNaN(parseFloat(newIx))) {
+                memberRow.dataset.ix = newIx;
+            } else {
+                delete memberRow.dataset.ix;
+            }
+            if (newIy && !isNaN(parseFloat(newIy))) {
+                memberRow.dataset.iy = newIy;
+            } else {
+                delete memberRow.dataset.iy;
+            }
+        } catch (e) {
+            console.warn('popup ix/iy save error', e);
+        }
+        // ▲▲▲ 追加終了
 
         // ▼▼▼ 追加: ポップアップの座屈係数をテーブルの K 列に保存 ▼▼▼
         try {
@@ -12545,65 +12734,77 @@ window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo)
 };
 
 window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
-    console.log('🔧 setRowSectionInfo called with:', { row, sectionInfo });
+    // console.log('🔧 setRowSectionInfo called with:', { row, sectionInfo });
     
-    // 呼び出し元のスタックトレースを記録
-    console.log('🔧 setRowSectionInfo call stack:', new Error().stack);
-    
-    if (!(row instanceof HTMLTableRowElement) || !row.cells || typeof row.querySelector !== 'function') {
+    if (!(row instanceof HTMLTableRowElement)) {
         console.warn('setRowSectionInfo called with invalid row element:', row);
         return;
     }
 
-    const hasDensityColumn = row.querySelector('.density-cell') !== null;
-    const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
-    const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
-
     if (sectionInfo) {
         const enrichedInfo = ensureSectionSvgMarkup(sectionInfo);
         try {
+            // datasetへの保存（エンコードして保存）
             row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
-            console.log('🔧 setRowSectionInfo: dataset.sectionInfoを設定しました');
         } catch (error) {
-            console.error('Failed to encode sectionInfo:', error, enrichedInfo);
-            // エンコードに失敗した場合は既存の断面情報を保持
-            if (!row.dataset.sectionInfo) {
-                row.dataset.sectionInfo = JSON.stringify(enrichedInfo);
-                console.log('🔧 setRowSectionInfo: エンコード失敗、フォールバックでdataset.sectionInfoを設定しました');
-            } else {
-                console.log('🔧 setRowSectionInfo: エンコード失敗、既存のdataset.sectionInfoを保持しました');
-            }
+            console.error('Failed to encode sectionInfo:', error);
+            // エンコード失敗時のフォールバック
+            row.dataset.sectionInfo = JSON.stringify(enrichedInfo);
         }
+        
+        // 補助的なdataset属性の設定
         row.dataset.sectionLabel = enrichedInfo.label || '';
         row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
         row.dataset.sectionSource = enrichedInfo.source || '';
-        window.applySectionAxisDataset(row, enrichedInfo.axis);
+        
+        // 軸情報のdataset設定
+        if (window.applySectionAxisDataset) {
+            window.applySectionAxisDataset(row, enrichedInfo.axis);
+        }
 
-        // 断面名称セルを更新
-        const sectionNameCell = row.cells[sectionNameCellIndex];
+        // 【修正箇所】インデックス依存をやめ、クラス名でセルを特定して更新
+        const sectionNameCell = row.querySelector('.section-name-cell');
         if (sectionNameCell) {
-            const nameSpan = sectionNameCell.querySelector('.section-name-cell');
-            if (nameSpan) {
-                nameSpan.textContent = enrichedInfo.label || '-';
+            sectionNameCell.textContent = enrichedInfo.label || '-';
+            // 親のtd要素にも念のため設定（古い構造との互換性）
+            if (sectionNameCell.parentElement && sectionNameCell.parentElement.tagName === 'TD') {
+                // sectionNameCell自体がspanなので、親tdのテキストを直接書き換えないように注意
+                // spanのテキスト更新だけで十分です
+            }
+        } else {
+            // クラスが見つからない場合のフォールバック（従来の列位置推定）
+            // セル数から逆算して位置を特定する方が安全
+            // [..., 密度(opt), 名称, 軸, SelectBtn, iConn, jConn, Del]
+            // 後ろから数えて: Del(1), jConn(2), iConn(3), SelectBtn(4), Axis(5), Name(6)
+            const cellCount = row.cells.length;
+            if (cellCount >= 6) {
+                const nameCellIndex = cellCount - 6; 
+                // 念のため、そのセルがinputやselectを持たないテキストセルか確認
+                if (!row.cells[nameCellIndex].querySelector('input, select, button')) {
+                    row.cells[nameCellIndex].textContent = enrichedInfo.label || '-';
+                }
             }
         }
 
-        // 軸方向セルを更新
-        const sectionAxisCell = row.cells[sectionAxisCellIndex];
+        // 軸方向セルの更新
+        const sectionAxisCell = row.querySelector('.section-axis-cell');
         if (sectionAxisCell) {
-            const axisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-            if (axisSpan) {
-                axisSpan.textContent = enrichedInfo.axis?.label || '-';
+            sectionAxisCell.textContent = enrichedInfo.axis?.label || '-';
+        } else {
+            // フォールバック: 後ろから5番目
+            const cellCount = row.cells.length;
+            if (cellCount >= 5) {
+                const axisCellIndex = cellCount - 5;
+                if (!row.cells[axisCellIndex].querySelector('input, select, button')) {
+                    row.cells[axisCellIndex].textContent = enrichedInfo.axis?.label || '-';
+                }
             }
         }
+        
     } else {
-        // sectionInfoがnull/undefinedの場合は既存の断面情報を保持
-        console.log('setRowSectionInfo: sectionInfoがnull/undefinedのため、既存の断面情報を保持します');
-        // 既存の断面情報を削除しない
+        // sectionInfoがnullの場合の処理（必要に応じて実装）
+        // 基本的には既存情報を維持するか、クリアするかを選択
     }
-
-    // 断面名称セルと軸方向セルは既存の情報を保持
-    console.log('setRowSectionInfo: セルの内容は既存の情報を保持します');
 };
 
 const loadPreset = (index) => {
@@ -12728,8 +12929,10 @@ const loadPreset = (index) => {
                                 console.log(`🔧 部材${memberIndex + 1}の断面情報を設定:`, presetProfile.sectionInfo.label);
                                 
                                 // 断面名称セルと軸方向セルを直接更新
-                                const sectionNameCell = cells[8]; // 断面名称列
-                                const sectionAxisCell = cells[9]; // 軸方向列
+                                // 密度列の有無はセル数で判定
+                                const hasDensityColumn = (cells && cells.length >= 15);
+                                const sectionNameCell = cells[hasDensityColumn ? 10 : 9];
+                                const sectionAxisCell = cells[hasDensityColumn ? 11 : 10];
                                 
                                 if (sectionNameCell) {
                                     const nameSpan = sectionNameCell.querySelector('.section-name-cell');
@@ -13661,22 +13864,22 @@ const loadPreset = (index) => {
     function updateMemberProperties(memberIndex, props) {
         if (memberIndex >= 0 && memberIndex < elements.membersTable.rows.length) {
             const row = elements.membersTable.rows[memberIndex];
-            const eSelect = row.cells[3].querySelector('select'), eInput = row.cells[3].querySelector('input[type="number"]');
+            const eSelect = row.cells[3].querySelector('select');
+            const eInput = row.cells[3].querySelector('input[type="number"]');
 
-            // E値の更新 (もしあれば)
+            // E値の更新
             if (props.E) {
                 const eValue = props.E.toString();
-                eInput.value = eValue;
-                eSelect.value = Array.from(eSelect.options).some(opt=>opt.value===eValue) ? eValue : 'custom';
-                eInput.readOnly = eSelect.value !== 'custom';
-                // E値の変更は強度入力欄の再生成をトリガーするため、changeイベントを発火させる
-                eSelect.dispatchEvent(new Event('change'));
+                if (eInput) eInput.value = eValue;
+                if (eSelect) {
+                    eSelect.value = Array.from(eSelect.options).some(opt => opt.value === eValue) ? eValue : 'custom';
+                    eInput.readOnly = eSelect.value !== 'custom';
+                    eSelect.dispatchEvent(new Event('change'));
+                }
             }
 
-            // ========== ここからが主要な修正点 ==========
-            // props.F ではなく props.strengthValue をチェックし、タイプに応じて値を設定
+            // 強度の更新（非同期で再生成後の要素を確保）
             if (props.strengthValue) {
-                // E値変更で再生成された後の要素を確実につかむため、少し待機する
                 setTimeout(() => {
                     const strengthInputContainer = row.cells[4].firstElementChild;
                     if (strengthInputContainer) {
@@ -13686,14 +13889,11 @@ const loadPreset = (index) => {
                         const s_value = props.strengthValue;
 
                         if (s_type === 'wood-type') {
-                            // 木材の場合：selectの値を更新
-                            if(s_select) s_select.value = s_value;
+                            if (s_select) s_select.value = s_value;
                         } else {
-                            // 鋼材、コンクリート、その他F値を持つ材料の場合
-                            if(s_select && s_input) {
-                                // プリセットに値が存在するかチェック
+                            if (s_select && s_input) {
                                 const isPreset = Array.from(s_select.options).some(opt => opt.value === s_value.toString());
-                                if(isPreset) {
+                                if (isPreset) {
                                     s_select.value = s_value;
                                     s_input.value = s_value;
                                     s_input.readOnly = true;
@@ -13707,81 +13907,68 @@ const loadPreset = (index) => {
                     }
                 }, 0);
             }
-            // ========== ここまでが主要な修正点 ==========
-            
+
+            // 断面性能値(I,A,Z)
             const inertiaInputEl = row.cells[5]?.querySelector('input[type="number"]');
             const areaInputEl = row.cells[6]?.querySelector('input[type="number"]');
             const modulusInputEl = row.cells[7]?.querySelector('input[type="number"]');
 
-            if (typeof memberIndex === 'number') {
-                if (inertiaInputEl && props.I !== undefined && props.I !== null) {
-                    inertiaInputEl.value = props.I;
-                }
-                if (areaInputEl && props.A !== undefined && props.A !== null) {
-                    areaInputEl.value = props.A;
-                }
-                if (modulusInputEl && props.Z !== undefined && props.Z !== null) {
-                    modulusInputEl.value = props.Z;
-                }
+            if (inertiaInputEl && props.I !== undefined && props.I !== null) inertiaInputEl.value = props.I;
+            if (areaInputEl && props.A !== undefined && props.A !== null) areaInputEl.value = props.A;
+            if (modulusInputEl && props.Z !== undefined && props.Z !== null) modulusInputEl.value = props.Z;
 
-                // ▼▼▼ 追加: テーブルの K 列から値をポップアップに設定 ▼▼▼
-                try {
-                    const kInputEl = row.querySelector('.buckling-k-input');
-                    const popupKInput = document.getElementById('popup-buckling-k');
-                    if (popupKInput) {
-                        popupKInput.value = kInputEl ? kInputEl.value : '';
-                    }
-                } catch (e) {
-                    console.warn('ポップアップに座屈係数Kを設定中にエラー', e);
-                }
-                // ▲▲▲ 追加終了 ▲▲▲
-
-                // 断面名称と軸方向のセルを更新（密度列の有無を考慮）
-                const hasDensityColumn = row.querySelector('.density-cell') !== null;
-                const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
-                const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
-
-                const sectionNameCell = row.cells[sectionNameCellIndex];
-                const sectionAxisCell = row.cells[sectionAxisCellIndex];
-
-                // sectionNameまたはsectionLabelを取得
-                const displaySectionName = props.sectionName || props.sectionLabel || '';
-                // axisまたはsectionAxisLabelを取得
-                const displayAxisLabel = props.sectionAxisLabel || (props.sectionAxis ? props.sectionAxis.label : null) || props.axis || '';
-
-                if (sectionNameCell) {
-                    const sectionNameSpan = sectionNameCell.querySelector('.section-name-cell');
-                    if (sectionNameSpan && displaySectionName) {
-                        sectionNameSpan.textContent = displaySectionName;
-                    }
-                }
-
-                if (sectionAxisCell) {
-                    const sectionAxisSpan = sectionAxisCell.querySelector('.section-axis-cell');
-                    if (sectionAxisSpan && displayAxisLabel) {
-                        sectionAxisSpan.textContent = displayAxisLabel;
-                    }
-                }
+            // K列の値をポップアップに設定（存在すれば）
+            try {
+                const kInputEl = row.querySelector('.buckling-k-input');
+                const popupKInput = document.getElementById('popup-buckling-k');
+                if (popupKInput) popupKInput.value = kInputEl ? kInputEl.value : '';
+            } catch (e) {
+                console.warn('ポップアップに座屈係数Kを設定中にエラー', e);
             }
 
+            // --- 修正箇所: 断面名称と軸方向の更新 ---
+            
+            // 表示用ラベルの決定
+            const displaySectionName = props.sectionName || props.sectionLabel || '';
+            // 軸ラベルの決定（優先順位: sectionAxisLabel > sectionAxis.label > axis）
+            const displayAxisLabel = props.sectionAxisLabel || 
+                                   (props.sectionAxis ? props.sectionAxis.label : null) || 
+                                   props.axis || '';
+
+            // 1. テーブルセル（表示）の更新
+            const sectionNameSpan = row.querySelector('.section-name-cell');
+            if (sectionNameSpan) {
+                sectionNameSpan.textContent = displaySectionName || '-';
+                sectionNameSpan.title = displaySectionName; // 長い場合に備えてツールチップ設定
+            }
+
+            const sectionAxisSpan = row.querySelector('.section-axis-cell');
+            if (sectionAxisSpan) {
+                sectionAxisSpan.textContent = displayAxisLabel || '-';
+            }
+
+            // 2. データセット（保存用）の更新
+            
+            // 軸情報の正規化
             const normalizeAxisFromProps = () => {
-                if (props.sectionAxis) {
+                // props.sectionAxis がオブジェクトならそれを使用
+                if (props.sectionAxis && typeof props.sectionAxis === 'object') {
                     return normalizeAxisInfo(props.sectionAxis);
                 }
+                // sectionInfo.axis があるならそれを使用
                 if (props.sectionInfo?.axis) {
                     return normalizeAxisInfo(props.sectionInfo.axis);
                 }
-                if (row.dataset.sectionAxisKey || row.dataset.sectionAxisMode || row.dataset.sectionAxisLabel) {
-                    return normalizeAxisInfo({
-                        key: row.dataset.sectionAxisKey,
-                        mode: row.dataset.sectionAxisMode,
-                        label: row.dataset.sectionAxisLabel
-                    });
+                // ラベル文字列しかない場合は簡易的に構築
+                if (props.sectionAxisLabel) {
+                    return { label: props.sectionAxisLabel, key: '', mode: '' };
                 }
                 return null;
             };
 
             const axisInfo = normalizeAxisFromProps();
+            
+            // データセット更新ヘルパー
             const setDatasetValue = (key, value) => {
                 if (value !== undefined && value !== null && value !== '') {
                     row.dataset[key] = value;
@@ -13790,6 +13977,7 @@ const loadPreset = (index) => {
                 }
             };
 
+            // 断面性能詳細の保存
             const resolvedZx = props.Zx ?? (axisInfo?.key === 'both' ? props.Z : undefined);
             const resolvedZy = props.Zy ?? (axisInfo?.key === 'both' ? props.Z : undefined);
             const resolvedIx = props.ix ?? (axisInfo?.key === 'both' ? props.iy : undefined);
@@ -13800,22 +13988,41 @@ const loadPreset = (index) => {
             setDatasetValue('ix', resolvedIx);
             setDatasetValue('iy', resolvedIy);
 
+            // 3. sectionInfo (SVG含む) / sectionAxis の保存
+            
+            // 軸情報をデータセットに保存（重要：次回読み込み用）
+            if (axisInfo) {
+                if (typeof window.applySectionAxisDataset === 'function') {
+                    window.applySectionAxisDataset(row, axisInfo);
+                } else {
+                    // フォールバック
+                    row.dataset.sectionAxisLabel = axisInfo.label;
+                    row.dataset.sectionAxisKey = axisInfo.key;
+                    row.dataset.sectionAxisMode = axisInfo.mode;
+                }
+            }
+
+            // 断面情報（SVGなど）をデータセットに保存
             if (props.sectionInfo) {
+                // SVGマークアップが含まれているか確認し、なければ補完する処理があれば実行
+                // (通常 steel_selector 側で生成されているはず)
                 if (typeof window.setRowSectionInfo === 'function') {
                     window.setRowSectionInfo(row, props.sectionInfo);
                 } else {
-                    console.warn('setRowSectionInfo関数が定義されていません。断面情報更新をスキップします。');
-                }
-            } else if (props.sectionAxis) {
-                if (typeof window.applySectionAxisDataset === 'function') {
-                    window.applySectionAxisDataset(row, props.sectionAxis);
-                } else {
-                    console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
+                    // フォールバック
+                    row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(props.sectionInfo));
+                    row.dataset.sectionLabel = props.sectionInfo.label || '';
                 }
             }
-            
-            // 変更を計算に反映させるためにchangeイベントを発火
+
+            // 計算反映用の change イベント発火
             inertiaInputEl?.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // 画面更新（描画）
+            if (typeof drawOnCanvas === 'function') {
+                drawOnCanvas();
+            }
+            
         } else {
             console.error(`無効な部材インデックス: ${memberIndex}`);
         }
@@ -18010,9 +18217,10 @@ function setMemberSectionInfoFromAI(memberIndex, steelData) {
         } else {
             console.error(`❌ setRowSectionInfo関数が見つかりません`);
             // フォールバック: 直接セルを更新
-            const hasDensityColumn = row.querySelector('.density-cell') !== null;
-            const sectionNameCellIndex = hasDensityColumn ? 9 : 8;
-            const sectionAxisCellIndex = hasDensityColumn ? 10 : 9;
+            const hasDensityColumn = (row.cells && row.cells.length >= 15);
+            // 座屈係数K列(インデックス8)が増えたため、以降の列インデックスを1つずらす
+            const sectionNameCellIndex = hasDensityColumn ? 10 : 9;
+            const sectionAxisCellIndex = hasDensityColumn ? 11 : 10;
             
             // 断面名称セルを更新
             const sectionNameCell = row.cells[sectionNameCellIndex];

@@ -302,7 +302,7 @@
                             <thead>
                                 <tr>
                                     <th>部材 #</th>
-                                    <th>部材座標系y方向 w (kN/m)</th>
+                                    <th class="col-member-w">部材座標系y方向 w (kN/m)</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -336,6 +336,14 @@
 
                     <div class="table-container">
                         <h3>部材 (物性値・接合条件)</h3>
+                        <div class="column-toggles">
+                            <span>表示項目: </span>
+                            <label><input type="checkbox" class="col-toggle" data-target="col-material"> 材料情報</label>
+                            <label><input type="checkbox" class="col-toggle" data-target="col-section" checked> 断面情報</label>
+                            <label><input type="checkbox" class="col-toggle" data-target="col-buckling"> 座屈関連情報</label>
+                            <label><input type="checkbox" class="col-toggle" data-target="col-conn"> 接合条件</label>
+                        </div>
+
                         <div style="margin-bottom: 10px;">
                             <label>
                                 <input type="checkbox" id="consider-self-weight-checkbox"> 
@@ -348,51 +356,23 @@
                                     <th>部材#</th>
                                     <th>始点#i</th>
                                     <th>終点#j</th>
-                                    <th>弾性係数 E (N/mm²)</th>
-                                    <th class="section-check-item">基準強度 F (N/mm²)</th>
-                                    <th>断面二次モーメント I (cm⁴)</th>
-                                    <th>断面積 A (cm²)</th>
-                                    <th class="section-check-item">断面係数 Z (cm³)</th>
-                                    <th class="section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
-                                    <th class="density-column" style="display: none;">密度 ρ (kg/m³)</th>
-                                    <th>断面名称</th>
-                                    <th>軸方向</th>
-                                    <th>部材断面選択</th>
-                                    <th>始端</th>
-                                    <th>終端</th>
+                                    <th class="col-material">弾性係数 E (N/mm²)</th>
+                                    <th class="col-material section-check-item">基準強度 F (N/mm²)</th>
+                                    <th class="col-section">断面二次モーメント I (cm⁴)</th>
+                                    <th class="col-section">断面積 A (cm²)</th>
+                                    <th class="col-section section-check-item">断面係数 Z (cm³)</th>
+                                    <th class="col-buckling section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
+                                    <th class="col-material density-column" style="display: none;">密度 ρ (kg/m³)</th>
+                                    <th class="col-section">断面名称</th>
+                                    <th class="col-section">軸方向</th>
+                                    <th class="col-section">断面選択</th>
+                                    <th class="col-conn">始端</th>
+                                    <th class="col-conn">終端</th>
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td>1</td>
-                                    <td>
-                                        <div class="conn-cell">
-                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
-                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
-                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
-                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="conn-cell">
-                                            <select class="conn-select"><option value="rigid">剛</option><option value="pinned">ピン</option><option value="spring">バネ</option></select>
-                                            <div class="spring-inputs" style="display:none; margin-top:6px;">
-                                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                                                    <label style="font-size:12px;">Kx</label><input class="spring-kx" type="number" min="0" step="0.01" value="0" style="width:80px;">
-                                                    <label style="font-size:12px;">Ky</label><input class="spring-ky" type="number" min="0" step="0.01" style="width:80px;">
-                                                    <label style="font-size:12px;">Kr</label><input class="spring-kr" type="number" min="0" step="0.01" style="width:80px;">
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                            </table>
+                            <tbody></tbody>
+                        </table>
                         <button id="add-member-btn">部材を追加</button>
                     </div>
                 </div>
@@ -522,100 +502,123 @@
 
     <div id="member-props-popup" class="popup-box member-props-popup-wide">
         <h4>部材プロパティ編集</h4>
+        <div class="popup-toggles" style="margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee;">
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="popup-toggle" data-target="popup-group-material"> 材料情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="popup-toggle" data-target="popup-group-section" checked> 断面情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="popup-toggle" data-target="popup-group-buckling"> 座屈関連情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="popup-toggle" data-target="popup-group-conn"> 接合条件</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="popup-toggle" data-target="popup-group-wload"> 部材等分布荷重</label>
+        </div>
+
         <div class="props-grid">
-            <label for="popup-e-container">E (N/mm²)</label>
-            <div id="popup-e-container"></div>
-            <label for="popup-f-container" class="section-check-item">F (N/mm²)</label>
-            <div id="popup-f-container" class="section-check-item"></div>
-            <label for="popup-i">I (cm⁴)</label>
-            <input type="number" id="popup-i">
-            <label for="popup-a">A (cm²)</label>
-            <input type="number" id="popup-a">
-            <label for="popup-z" class="section-check-item">Z (cm³)</label>
-<input type="number" id="popup-z" class="section-check-item">
-            <div class="conn-group">
+            <label for="popup-e-container" class="popup-group-material">E (N/mm²)</label>
+            <div id="popup-e-container" class="popup-group-material"></div>
+            
+            <label for="popup-f-container" class="section-check-item popup-group-material">F (N/mm²)</label>
+            <div id="popup-f-container" class="section-check-item popup-group-material"></div>
+
+            <label for="popup-i" class="popup-group-section">I (cm⁴)</label>
+            <input type="number" id="popup-i" class="popup-group-section">
+            
+            <label for="popup-a" class="popup-group-section">A (cm²)</label>
+            <input type="number" id="popup-a" class="popup-group-section">
+            
+            <label for="popup-z" class="section-check-item popup-group-section">Z (cm³)</label>
+            <input type="number" id="popup-z" class="section-check-item popup-group-section">
+
+            <label for="popup-ix" class="section-check-item popup-group-buckling" style="font-size: 0.9em;">ix (cm)</label>
+            <input type="number" id="popup-ix" class="section-check-item popup-group-buckling" step="0.01" placeholder="自動">
+
+            <label for="popup-iy" class="section-check-item popup-group-buckling" style="font-size: 0.9em;">iy (cm)</label>
+            <input type="number" id="popup-iy" class="section-check-item popup-group-buckling" step="0.01" placeholder="自動">
+            
+            <label for="popup-buckling-k" class="popup-group-buckling">座屈係数 K</label>
+            <input type="number" id="popup-buckling-k" step="0.1" placeholder="自動" title="空欄または0で自動判定" class="popup-group-buckling">
+
+            <div class="conn-group popup-group-conn">
                 <label for="popup-i-conn">始端接合</label>
                 <select id="popup-i-conn">
-                     <option value="rigid">剛</option>
-                     <option value="pinned">ピン</option>
-                     <option value="spring">バネ</option>
+                        <option value="rigid">剛</option>
+                        <option value="pinned">ピン</option>
+                        <option value="spring">バネ</option>
                 </select>
-                            <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
-                                <div class="spring-grid">
-                <div class="spring-input">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                        <label for="popup-i-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
-                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                            <input id="popup-i-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kx').disabled = this.checked">剛
-                        </label>
+                <div id="popup-i-spring-box" style="display:none; margin-top:6px;">
+                    <div class="spring-grid">
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-i-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-i-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kx').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-i-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-i-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-ky').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-i-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-i-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kr').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0">
+                        </div>
                     </div>
-                    <input id="popup-i-spring-kx" type="number" min="0" step="0.01" value="0">
-                </div>
-                <div class="spring-input">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                        <label for="popup-i-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
-                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                            <input id="popup-i-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-ky').disabled = this.checked">剛
-                        </label>
-                    </div>
-                    <input id="popup-i-spring-ky" type="number" min="0" step="0.01" value="0">
-                </div>
-                <div class="spring-input">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                        <label for="popup-i-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
-                        <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                            <input id="popup-i-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-i-spring-kr').disabled = this.checked">剛
-                        </label>
-                    </div>
-                    <input id="popup-i-spring-kr" type="number" min="0" step="0.01" value="0">
                 </div>
             </div>
-                </div>
-            </div>
-            <div class="conn-group">
+            
+            <div class="conn-group popup-group-conn">
                 <label for="popup-j-conn">終端接合</label>
                 <select id="popup-j-conn">
-                     <option value="rigid">剛</option>
-                     <option value="pinned">ピン</option>
-                     <option value="spring">バネ</option>
+                        <option value="rigid">剛</option>
+                        <option value="pinned">ピン</option>
+                        <option value="spring">バネ</option>
                 </select>
                 <div id="popup-j-spring-box" style="display:none; margin-top:6px;">
                     <div class="spring-grid">
-    <div class="spring-input">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-            <label for="popup-j-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
-            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                <input id="popup-j-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kx').disabled = this.checked">剛
-            </label>
-        </div>
-        <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0">
-    </div>
-    <div class="spring-input">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-            <label for="popup-j-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
-            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                <input id="popup-j-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-ky').disabled = this.checked">剛
-            </label>
-        </div>
-        <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0">
-    </div>
-    <div class="spring-input">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-            <label for="popup-j-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
-            <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
-                <input id="popup-j-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kr').disabled = this.checked">剛
-            </label>
-        </div>
-        <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0">
-    </div>
-</div>
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-j-spring-kx" style="margin-bottom: 0;">Kx (kN/mm)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-j-spring-rigid-kx" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kx').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-j-spring-kx" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-j-spring-ky" style="margin-bottom: 0;">Ky (kN/mm)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-j-spring-rigid-ky" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-ky').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-j-spring-ky" type="number" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="spring-input">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                <label for="popup-j-spring-kr" style="margin-bottom: 0;">Kr (kN·mm/rad)</label>
+                                <label style="margin-bottom: 0; font-size: 12px; display: flex; align-items: center; cursor: pointer;">
+                                    <input id="popup-j-spring-rigid-kr" type="checkbox" style="width: auto; margin-right: 4px;" onchange="document.getElementById('popup-j-spring-kr').disabled = this.checked">剛
+                                </label>
+                            </div>
+                            <input id="popup-j-spring-kr" type="number" min="0" step="0.01" value="0">
+                        </div>
+                    </div>
                 </div>
             </div>
-            <label for="popup-buckling-k">座屈長さ係数 K</label>
-            <input type="number" id="popup-buckling-k" step="0.1" placeholder="自動" title="空欄または0で自動判定">
-            <label for="popup-w">w (kN/m)</label>
-            <input type="number" id="popup-w" title="等分布荷重">
+
+            <label for="popup-w" class="popup-group-wload">w (kN/m)</label>
+            <input type="number" id="popup-w" title="等分布荷重" class="popup-group-wload">
         </div>
+        
         <div class="popup-buttons">
             <button id="popup-select-section">断面選択...</button> <button id="popup-delete-member">削除</button>
             <button id="popup-cancel">キャンセル</button>
@@ -791,5 +794,6 @@
     <script src="steel_data.js"></script>
     <script src="frame_analyzer.js"></script>
     <script src="communication.js"></script>
+    <script src="visibility_controls.js"></script>
 </body>
 </html>

@@ -418,6 +418,51 @@ button:disabled {
     border-radius: var(--border-radius-small);
 }
 
+/* --- Visibility toggles (popup / column) --- */
+.column-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+    margin: 6px 0 12px;
+    font-size: 0.95em;
+}
+.column-toggles label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 0.95em;
+}
+.popup-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+}
+.popup-toggles label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+.hidden-col {
+    display: none !important;
+}
+.hidden-field {
+    display: none !important;
+}
+
+/* Make popup-group elements flow naturally when visible */
+.props-grid .popup-group-material,
+.props-grid .popup-group-section,
+.props-grid .popup-group-buckling,
+.props-grid .popup-group-conn {
+    display: block;
+}
+
 .table-container-result { 
     margin-top: var(--spacing-md);
 }

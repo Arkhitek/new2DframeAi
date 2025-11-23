@@ -1427,6 +1427,18 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         });
 
         if (props.I !== undefined && props.A !== undefined) {
+            // 防御的補強: sectionInfo に svgMarkup があるか確認し、なければ空文字で埋める
+            try {
+                if (props.sectionInfo && !props.sectionInfo.svgMarkup) {
+                    props.sectionInfo.svgMarkup = props.sectionInfo.svgMarkup || '';
+                }
+                if (props.sectionInfo && !props.sectionInfo.axis) {
+                    props.sectionInfo.axis = props.sectionAxis || props.sectionAxisLabel || null;
+                }
+            } catch (err) {
+                console.warn('sectionInfo 補完時のエラー', err);
+            }
+
             console.log('✅ 必須プロパティ確認OK、sendDataToParentを呼び出します');
             sendDataToParent(props);
         } else {

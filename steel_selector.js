@@ -1427,13 +1427,23 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         });
 
         if (props.I !== undefined && props.A !== undefined) {
-            // 防御的補強: sectionInfo に svgMarkup があるか確認し、なければ空文字で埋める
+            // 防御的補強: sectionInfo に svgMarkup があるか確認し、なければ再生成を試みる
             try {
-                if (props.sectionInfo && !props.sectionInfo.svgMarkup) {
-                    props.sectionInfo.svgMarkup = props.sectionInfo.svgMarkup || '';
-                }
-                if (props.sectionInfo && !props.sectionInfo.axis) {
-                    props.sectionInfo.axis = props.sectionAxis || props.sectionAxisLabel || null;
+                if (props.sectionInfo) {
+                    if (!props.sectionInfo.svgMarkup) {
+                        try {
+                            props.sectionInfo.svgMarkup = typeof serializeSectionSvg === 'function'
+                                ? serializeSectionSvg(selectedTypeKey, dims)
+                                : (props.sectionInfo.svgMarkup || '');
+                        } catch (regenErr) {
+                            console.warn('SVG 再生成に失敗しました:', regenErr);
+                            props.sectionInfo.svgMarkup = props.sectionInfo.svgMarkup || '';
+                        }
+                    }
+
+                    if (!props.sectionInfo.axis) {
+                        props.sectionInfo.axis = props.sectionAxis || (props.sectionAxisLabel ? { label: props.sectionAxisLabel } : null);
+                    }
                 }
             } catch (err) {
                 console.warn('sectionInfo 補完時のエラー', err);

@@ -5783,7 +5783,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
             return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis, spring_i, spring_j, bucklingK };
         }).filter(member => member !== null); // 長さ0の部材(null)を除外
-        
+
+        // フォールバック: sectionInfo が欠落している行に対して最小限の sectionInfo を自動生成して設定する
+        try {
+            Array.from(elements.membersTable.rows).forEach((row, rIdx) => {
+                try {
+                    if (!row.dataset || !row.dataset.sectionInfo) {
+                        const nameCellText = row.querySelector('.section-name-cell')?.textContent?.trim() || '';
+                        const axisFromDataset = (row.dataset && (row.dataset.sectionAxisKey || row.dataset.sectionAxisMode || row.dataset.sectionAxisLabel)) ? {
+                            key: row.dataset.sectionAxisKey || 'x',
+                            mode: row.dataset.sectionAxisMode || 'strong',
+                            label: row.dataset.sectionAxisLabel || '強軸 (X軸)'
+                        } : null;
+
+                        const zx = row.dataset?.zx || row.cells[7]?.querySelector('input')?.value || '';
+                        const a = row.cells[6]?.querySelector('input')?.value || '';
+
+                        const fallbackInfo = {
+                            typeKey: 'unknown',
+                            label: nameCellText || `自動補完: unknown`,
+                            axis: axisFromDataset || { key: 'x', mode: 'strong', label: '強軸 (X軸)' },
+                            dimensions: [],
+                            dimensionSummary: `Zx:${zx} A:${a}`,
+                            source: 'fallback'
+                        };
+
+                        if (typeof window.setRowSectionInfo === 'function') {
+                            window.setRowSectionInfo(row, fallbackInfo);
+                        } else {
+                            try { row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(fallbackInfo)); }
+                            catch (err) { row.dataset.sectionInfo = JSON.stringify(fallbackInfo); }
+                        }
+                        console.log(`🔧 フォールバック設定: 行${rIdx + 1} に sectionInfo を設定しました`, fallbackInfo);
+                    }
+                } catch (innerErr) {
+                    console.warn('フォールバック生成中に行単位でエラーが発生しました:', innerErr);
+                }
+            });
+        } catch (err) {
+            console.warn('フォールバック：sectionInfo 自動設定でエラー発生', err);
+        }
+
         console.log(`📊 部材処理結果: 全${elements.membersTable.rows.length}行中、有効な部材${members.length}個`);
         
         const nodeLoads = Array.from(elements.nodeLoadsTable.rows).map((r, i) => { 
@@ -12734,64 +12774,99 @@ window.applySectionAxisDataset = function applySectionAxisDataset(row, axisInfo)
 };
 
 window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
-    // console.log('🔧 setRowSectionInfo called with:', { row, sectionInfo });
-    
+    console.log('🔧 setRowSectionInfo called', { row, hasSectionInfo: !!sectionInfo });
+
     if (!(row instanceof HTMLTableRowElement)) {
-        console.warn('setRowSectionInfo called with invalid row element:', row);
+        console.warn('setRowSectionInfo: invalid `row` argument (expected HTMLTableRowElement).', row);
         return;
     }
 
-    if (sectionInfo) {
-        const enrichedInfo = ensureSectionSvgMarkup(sectionInfo);
-        try {
-            // datasetへの保存（エンコードして保存）
-            row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(enrichedInfo));
-        } catch (error) {
-            console.error('Failed to encode sectionInfo:', error);
-            // エンコード失敗時のフォールバック
-            row.dataset.sectionInfo = JSON.stringify(enrichedInfo);
+    // Show existing encoded value for debugging
+    try {
+        const prevEncoded = row.dataset.sectionInfo;
+        if (prevEncoded) {
+            let prevDecoded = null;
+            try {
+                prevDecoded = JSON.parse(decodeURIComponent(prevEncoded));
+            } catch (e) {
+                try { prevDecoded = JSON.parse(prevEncoded); } catch (e2) { prevDecoded = null; }
+            }
+            console.log('setRowSectionInfo: previous sectionInfo (decoded):', prevDecoded);
+        } else {
+            console.log('setRowSectionInfo: no previous sectionInfo on row.dataset');
         }
-        
-        // 補助的なdataset属性の設定
+    } catch (err) {
+        console.warn('setRowSectionInfo: error while reading previous dataset.sectionInfo', err);
+    }
+
+    if (!sectionInfo) {
+        console.log('setRowSectionInfo: called with null/undefined sectionInfo — skipping write (no-op).');
+        return;
+    }
+
+    // Ensure the object has SVG markup and axis normalized
+    const enrichedInfo = ensureSectionSvgMarkup(sectionInfo || {});
+    if (!enrichedInfo || typeof enrichedInfo !== 'object') {
+        console.error('setRowSectionInfo: enriched sectionInfo is invalid:', enrichedInfo);
+        return;
+    }
+
+    // Save to dataset with encoding, but guard against circular structures
+    try {
+        const json = JSON.stringify(enrichedInfo);
+        row.dataset.sectionInfo = encodeURIComponent(json);
+        console.log('setRowSectionInfo: wrote encoded sectionInfo to dataset (length=' + row.dataset.sectionInfo.length + ')');
+    } catch (err) {
+        console.error('setRowSectionInfo: failed to stringify/encode sectionInfo, attempting raw string write.', err);
+        try {
+            row.dataset.sectionInfo = String(enrichedInfo);
+        } catch (err2) {
+            console.error('setRowSectionInfo: final fallback write failed.', err2);
+        }
+    }
+
+    // Supplementary dataset fields for quicker access
+    try {
         row.dataset.sectionLabel = enrichedInfo.label || '';
         row.dataset.sectionSummary = enrichedInfo.dimensionSummary || '';
         row.dataset.sectionSource = enrichedInfo.source || '';
-        
-        // 軸情報のdataset設定
+    } catch (err) {
+        console.warn('setRowSectionInfo: failed to set supplementary dataset fields', err);
+    }
+
+    // Apply axis dataset if helper exists
+    try {
         if (window.applySectionAxisDataset) {
             window.applySectionAxisDataset(row, enrichedInfo.axis);
+            console.log('setRowSectionInfo: applied axis dataset via applySectionAxisDataset', enrichedInfo.axis);
+        } else if (enrichedInfo.axis) {
+            // fallback: write axis fields directly
+            row.dataset.sectionAxisKey = enrichedInfo.axis.key || '';
+            row.dataset.sectionAxisMode = enrichedInfo.axis.mode || '';
+            row.dataset.sectionAxisLabel = enrichedInfo.axis.label || '';
+            console.log('setRowSectionInfo: wrote axis fields directly to dataset', { key: row.dataset.sectionAxisKey, mode: row.dataset.sectionAxisMode });
         }
+    } catch (err) {
+        console.warn('setRowSectionInfo: error while applying axis dataset', err);
+    }
 
-        // 【修正箇所】インデックス依存をやめ、クラス名でセルを特定して更新
+    // Update visible cells (name / axis) using class-based selectors; fall back to position-based.
+    try {
         const sectionNameCell = row.querySelector('.section-name-cell');
-        if (sectionNameCell) {
-            sectionNameCell.textContent = enrichedInfo.label || '-';
-            // 親のtd要素にも念のため設定（古い構造との互換性）
-            if (sectionNameCell.parentElement && sectionNameCell.parentElement.tagName === 'TD') {
-                // sectionNameCell自体がspanなので、親tdのテキストを直接書き換えないように注意
-                // spanのテキスト更新だけで十分です
-            }
-        } else {
-            // クラスが見つからない場合のフォールバック（従来の列位置推定）
-            // セル数から逆算して位置を特定する方が安全
-            // [..., 密度(opt), 名称, 軸, SelectBtn, iConn, jConn, Del]
-            // 後ろから数えて: Del(1), jConn(2), iConn(3), SelectBtn(4), Axis(5), Name(6)
+        if (sectionNameCell) sectionNameCell.textContent = enrichedInfo.label || '-';
+        else {
             const cellCount = row.cells.length;
             if (cellCount >= 6) {
-                const nameCellIndex = cellCount - 6; 
-                // 念のため、そのセルがinputやselectを持たないテキストセルか確認
+                const nameCellIndex = cellCount - 6;
                 if (!row.cells[nameCellIndex].querySelector('input, select, button')) {
                     row.cells[nameCellIndex].textContent = enrichedInfo.label || '-';
                 }
             }
         }
 
-        // 軸方向セルの更新
         const sectionAxisCell = row.querySelector('.section-axis-cell');
-        if (sectionAxisCell) {
-            sectionAxisCell.textContent = enrichedInfo.axis?.label || '-';
-        } else {
-            // フォールバック: 後ろから5番目
+        if (sectionAxisCell) sectionAxisCell.textContent = enrichedInfo.axis?.label || '-';
+        else {
             const cellCount = row.cells.length;
             if (cellCount >= 5) {
                 const axisCellIndex = cellCount - 5;
@@ -12800,10 +12875,18 @@ window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
                 }
             }
         }
-        
-    } else {
-        // sectionInfoがnullの場合の処理（必要に応じて実装）
-        // 基本的には既存情報を維持するか、クリアするかを選択
+    } catch (err) {
+        console.warn('setRowSectionInfo: failed to update visible name/axis cells', err);
+    }
+
+    // For debugging: read back the dataset and show decoded value
+    try {
+        const afterEncoded = row.dataset.sectionInfo;
+        let afterDecoded = null;
+        try { afterDecoded = JSON.parse(decodeURIComponent(afterEncoded)); } catch (e) { try { afterDecoded = JSON.parse(afterEncoded); } catch (e2) { afterDecoded = afterEncoded; } }
+        console.log('setRowSectionInfo: post-write dataset.sectionInfo (decoded):', afterDecoded);
+    } catch (err) {
+        console.warn('setRowSectionInfo: error while decoding written dataset.sectionInfo', err);
     }
 };
 
@@ -13864,6 +13947,14 @@ const loadPreset = (index) => {
     function updateMemberProperties(memberIndex, props) {
         if (memberIndex >= 0 && memberIndex < elements.membersTable.rows.length) {
             const row = elements.membersTable.rows[memberIndex];
+            // デバッグ: 受信 props と行の既存データを出力
+            try {
+                console.log('[updateMemberProperties] called. memberIndex=', memberIndex);
+                console.log('[updateMemberProperties] props=', props);
+                console.log('[updateMemberProperties] row.dataset (before)=', Object.assign({}, row.dataset));
+            } catch (dbgErr) {
+                console.warn('updateMemberProperties: debug logging failed', dbgErr);
+            }
             const eSelect = row.cells[3].querySelector('select');
             const eInput = row.cells[3].querySelector('input[type="number"]');
 
@@ -13926,12 +14017,14 @@ const loadPreset = (index) => {
                 console.warn('ポップアップに座屈係数Kを設定中にエラー', e);
             }
 
-            // --- 修正箇所: 断面名称と軸方向の更新 ---
+            // ▼▼▼ 修正: 断面名称と軸方向の更新ロジックを強化 ▼▼▼
             
             // 表示用ラベルの決定
             const displaySectionName = props.sectionName || props.sectionLabel || '';
-            // 軸ラベルの決定（優先順位: sectionAxisLabel > sectionAxis.label > axis）
-            const displayAxisLabel = props.sectionAxisLabel || 
+            
+            // 軸ラベルの決定（優先順位: selectedAxis > sectionAxisLabel > sectionAxis.label > axis）
+            const displayAxisLabel = props.selectedAxis || 
+                                   props.sectionAxisLabel || 
                                    (props.sectionAxis ? props.sectionAxis.label : null) || 
                                    props.axis || '';
 
@@ -13939,7 +14032,7 @@ const loadPreset = (index) => {
             const sectionNameSpan = row.querySelector('.section-name-cell');
             if (sectionNameSpan) {
                 sectionNameSpan.textContent = displaySectionName || '-';
-                sectionNameSpan.title = displaySectionName; // 長い場合に備えてツールチップ設定
+                sectionNameSpan.title = displaySectionName;
             }
 
             const sectionAxisSpan = row.querySelector('.section-axis-cell');
@@ -13947,72 +14040,76 @@ const loadPreset = (index) => {
                 sectionAxisSpan.textContent = displayAxisLabel || '-';
             }
 
-            // 2. データセット（保存用）の更新
-            
-            // 軸情報の正規化
-            const normalizeAxisFromProps = () => {
-                // props.sectionAxis がオブジェクトならそれを使用
-                if (props.sectionAxis && typeof props.sectionAxis === 'object') {
-                    return normalizeAxisInfo(props.sectionAxis);
-                }
-                // sectionInfo.axis があるならそれを使用
-                if (props.sectionInfo?.axis) {
-                    return normalizeAxisInfo(props.sectionInfo.axis);
-                }
-                // ラベル文字列しかない場合は簡易的に構築
-                if (props.sectionAxisLabel) {
-                    return { label: props.sectionAxisLabel, key: '', mode: '' };
-                }
-                return null;
-            };
+            // 2. 断面詳細プロパティのdataset保存
+            // datasetはキャメルケース(zx)でアクセスするがHTML上はdata-zxとなる
+            if (props.Zx) row.dataset.zx = props.Zx;
+            if (props.Zy) row.dataset.zy = props.Zy;
+            if (props.ix) row.dataset.ix = props.ix;
+            if (props.iy) row.dataset.iy = props.iy;
 
-            const axisInfo = normalizeAxisFromProps();
-            
-            // データセット更新ヘルパー
-            const setDatasetValue = (key, value) => {
-                if (value !== undefined && value !== null && value !== '') {
-                    row.dataset[key] = value;
-                } else {
-                    delete row.dataset[key];
-                }
-            };
+            // フォールバック: props.sectionInfo が無い場合は親側で最小限の sectionInfo を再生成する
+            if (!props.sectionInfo) {
+                try {
+                    const fallbackInfo = {};
+                    if (displaySectionName) fallbackInfo.label = displaySectionName;
+                    if (props.sectionAxis) {
+                        fallbackInfo.axis = props.sectionAxis;
+                    } else if (displayAxisLabel) {
+                        fallbackInfo.axis = { label: displayAxisLabel };
+                    }
 
-            // 断面性能詳細の保存
-            const resolvedZx = props.Zx ?? (axisInfo?.key === 'both' ? props.Z : undefined);
-            const resolvedZy = props.Zy ?? (axisInfo?.key === 'both' ? props.Z : undefined);
-            const resolvedIx = props.ix ?? (axisInfo?.key === 'both' ? props.iy : undefined);
-            const resolvedIy = props.iy ?? (axisInfo?.key === 'both' ? props.ix : undefined);
+                    // 性能値から可能な限り寸法候補を埋める（内部で generate できる場合に役立つ）
+                    const dimsGuess = {};
+                    if (props.Zx !== undefined) dimsGuess.Zx = props.Zx;
+                    if (props.Zy !== undefined) dimsGuess.Zy = props.Zy;
+                    if (props.ix !== undefined) dimsGuess.ix = props.ix;
+                    if (props.iy !== undefined) dimsGuess.iy = props.iy;
+                    if (Object.keys(dimsGuess).length) fallbackInfo.rawDims = dimsGuess;
 
-            setDatasetValue('zx', resolvedZx);
-            setDatasetValue('zy', resolvedZy);
-            setDatasetValue('ix', resolvedIx);
-            setDatasetValue('iy', resolvedIy);
-
-            // 3. sectionInfo (SVG含む) / sectionAxis の保存
-            
-            // 軸情報をデータセットに保存（重要：次回読み込み用）
-            if (axisInfo) {
-                if (typeof window.applySectionAxisDataset === 'function') {
-                    window.applySectionAxisDataset(row, axisInfo);
-                } else {
-                    // フォールバック
-                    row.dataset.sectionAxisLabel = axisInfo.label;
-                    row.dataset.sectionAxisKey = axisInfo.key;
-                    row.dataset.sectionAxisMode = axisInfo.mode;
+                    if (typeof window.ensureSectionSvgMarkup === 'function') {
+                        props.sectionInfo = window.ensureSectionSvgMarkup(fallbackInfo);
+                    } else {
+                        props.sectionInfo = fallbackInfo;
+                    }
+                    console.log('updateMemberProperties: 親側で補完した sectionInfo:', props.sectionInfo);
+                } catch (regenErr) {
+                    console.warn('updateMemberProperties: sectionInfo 再生成に失敗しました', regenErr);
                 }
             }
 
-            // 断面情報（SVGなど）をデータセットに保存
+            // 3. sectionInfo (SVG含む) の保存
+            // props.sectionInfo が存在する場合、確実にdatasetへ保存する
             if (props.sectionInfo) {
-                // SVGマークアップが含まれているか確認し、なければ補完する処理があれば実行
-                // (通常 steel_selector 側で生成されているはず)
+                // 軸情報が不足している場合は補完
+                if (!props.sectionInfo.axis && (props.sectionAxis || displayAxisLabel)) {
+                    props.sectionInfo.axis = props.sectionAxis || { label: displayAxisLabel };
+                }
+                
+                // ヘルパー関数を使って保存（エンコード処理などを含む）
                 if (typeof window.setRowSectionInfo === 'function') {
                     window.setRowSectionInfo(row, props.sectionInfo);
                 } else {
                     // フォールバック
                     row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(props.sectionInfo));
-                    row.dataset.sectionLabel = props.sectionInfo.label || '';
                 }
+            }
+
+            // 4. 軸情報のdataset個別保存（重要：次回読み込みや復元のため）
+            if (props.sectionAxis) {
+                if (typeof window.applySectionAxisDataset === 'function') {
+                    window.applySectionAxisDataset(row, props.sectionAxis);
+                }
+            } else if (displayAxisLabel) {
+                // ラベル文字列しかない場合のフォールバック保存
+                row.dataset.sectionAxisLabel = displayAxisLabel;
+            }
+
+            // 計算反映用の change イベント発火
+            inertiaInputEl?.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // 画面更新（描画）
+            if (typeof drawOnCanvas === 'function') {
+                drawOnCanvas();
             }
 
             // 計算反映用の change イベント発火
@@ -14033,6 +14130,7 @@ const loadPreset = (index) => {
         if (e.key === 'steelSelectionForFrameAnalyzer' && e.newValue) {
             try {
                 const data = JSON.parse(e.newValue);
+                console.log('[storage event] steelSelectionForFrameAnalyzer received:', data);
                 if (data && data.targetMemberIndex !== undefined && data.properties) {
                     if (data.targetMemberIndex === 'bulk') {
                         window.bulkSectionProperties = data.properties;
@@ -14073,7 +14171,91 @@ const loadPreset = (index) => {
                             }
                         }
                     } else {
-                        updateMemberProperties(data.targetMemberIndex, data.properties);
+                        // 受信プロパティに sectionInfo が無い場合、親側で最小限の sectionInfo を補完しておく
+                        try {
+                            const props = data.properties || {};
+                            // 追加トレース: 受信生データの要約を出力
+                            try {
+                                console.log('[storage event] raw e.key:', e.key);
+                                console.log('[storage event] raw e.newValue length:', e.newValue ? e.newValue.length : 0);
+                                console.log('[storage event] parsed data.targetMemberIndex:', data.targetMemberIndex);
+                                console.log('[storage event] parsed properties keys:', Object.keys(props));
+                            } catch (tErr) {
+                                console.warn('storage event: summary logging failed', tErr);
+                            }
+
+                            if (!props.sectionInfo) {
+                                const fallback = {};
+                                // ラベル/名称
+                                if (props.sectionLabel || props.sectionName) {
+                                    fallback.label = props.sectionLabel || props.sectionName;
+                                }
+
+                                // 軸情報の補完
+                                if (props.sectionAxis) {
+                                    fallback.axis = props.sectionAxis;
+                                } else if (props.selectedAxis || props.sectionAxisLabel) {
+                                    fallback.axis = { label: props.selectedAxis || props.sectionAxisLabel };
+                                }
+
+                                // 型や寸法が渡されていれば保持
+                                const typeKey = props.typeKey || props.selectedTypeKey || props.sectionTypeKey;
+                                if (typeKey) fallback.typeKey = typeKey;
+                                if (props.dims) fallback.rawDims = typeof props.dims === 'object' ? { ...props.dims } : props.dims;
+
+                                // できれば SVG を生成して埋める（親側の ensureSectionSvgMarkup / buildSectionDiagramData を利用）
+                                try {
+                                    if (typeof window.ensureSectionSvgMarkup === 'function') {
+                                        const enriched = window.ensureSectionSvgMarkup(fallback);
+                                        props.sectionInfo = enriched;
+                                    } else if (typeKey && props.dims && typeof window.buildSectionDiagramData === 'function') {
+                                        try {
+                                            const diagram = window.buildSectionDiagramData(typeKey, props.dims, { labelScaleMultiplier: 0.5, showDimensions: false });
+                                            if (diagram && diagram.markup) {
+                                                fallback.svgMarkup = `<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"${diagram.viewBox}\" width=\"240\" height=\"180\" role=\"img\" aria-label=\"断面図\">${diagram.markup}</svg>`;
+                                            }
+                                        } catch (bdErr) {
+                                            console.warn('buildSectionDiagramData による SVG 生成に失敗しました', bdErr);
+                                        }
+                                        props.sectionInfo = fallback;
+                                    } else {
+                                        // 最低でもラベル/軸だけを入れておく
+                                        if (Object.keys(fallback).length > 0) props.sectionInfo = fallback;
+                                    }
+                                } catch (innerErr) {
+                                    console.warn('sectionInfo フォールバック生成でエラー', innerErr);
+                                    if (Object.keys(fallback).length > 0) props.sectionInfo = fallback;
+                                }
+                                    }
+                                } catch (err) {
+                                    console.warn('受信データの補完処理でエラーが発生しました', err);
+                                }
+
+                                // ターゲット行に関する詳細トレース
+                                try {
+                                    const tgt = data.targetMemberIndex;
+                                    const propsForUpdate = data.properties || {};
+                                    let targetRow = null;
+                                    if (typeof tgt === 'number' && elements && elements.membersTable && elements.membersTable.rows[tgt]) {
+                                        targetRow = elements.membersTable.rows[tgt];
+                                    }
+                                    console.log('[storage event] about to call updateMemberProperties', { targetMemberIndex: tgt, targetRowExists: !!targetRow });
+                                    if (targetRow) {
+                                        try { console.log('[storage event] targetRow.dataset (before)=', Object.assign({}, targetRow.dataset)); } catch (dErr) { console.warn('dataset before logging failed', dErr); }
+                                    } else {
+                                        // もし行が見つからなければ、行数や範囲情報も出す
+                                        try { console.log('[storage event] membersTable rows count=', elements && elements.membersTable ? elements.membersTable.rows.length : 'no-membersTable'); } catch (_) {}
+                                    }
+
+                                    updateMemberProperties(data.targetMemberIndex, propsForUpdate);
+
+                                    // 直後に dataset の状態を確認（updateMemberProperties は大部分が同期でdatasetに書き込む）
+                                    if (targetRow) {
+                                        try { console.log('[storage event] targetRow.dataset (after)=', Object.assign({}, targetRow.dataset)); } catch (dErr2) { console.warn('dataset after logging failed', dErr2); }
+                                    }
+                                } catch (traceErr) {
+                                    console.warn('storage event: tracing around updateMemberProperties failed', traceErr);
+                                }
                     }
                     localStorage.removeItem('steelSelectionForFrameAnalyzer');
                 }

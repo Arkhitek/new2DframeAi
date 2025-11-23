@@ -11275,6 +11275,197 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 // --- Table Row Templates & Presets ---
+// ==========================================================
+// ▼▼▼ 追加: 断面図描画ロジック (steel_selector.js から移植) ▼▼▼
+// ==========================================================
+
+// ラベルオプションの計算
+const calculateLabelOptions = (maxDim, scale = 1) => {
+    const fontSize = 24; 
+    const labelStrokeWidth = 0.6;
+    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    const baseFontSize = fontSize;
+    return { fontSize, baseFontSize, scale: safeScale, labelStrokeWidth };
+};
+
+// マージンの計算
+const calculateDiagramMargin = (maxDim, labelOptions = {}) => {
+    let options = labelOptions;
+    if (typeof labelOptions === 'number') options = { fontSize: labelOptions };
+    else if (!labelOptions || typeof labelOptions !== 'object') options = {};
+    const { fontSize } = options;
+    const safeFont = Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 32;
+    const fontBasedMargin = safeFont * 4.5;
+    return Math.max(80, fontBasedMargin);
+};
+
+// SVG描画データの生成メイン関数
+window.buildSectionDiagramData = function(typeKey, rawDims = {}, options = {}) {
+    const { labelScaleMultiplier = 1, showDimensions = true } = options || {};
+
+    const sanitize = (value) => (Number.isFinite(value) && value > 0 ? value : null);
+    
+    // 数値の整形用ヘルパー
+    const formatPrimaryDimension = (value) => (!Number.isFinite(value) ? '' : Math.round(value).toString());
+    const formatThicknessDimension = (value) => (!Number.isFinite(value) ? '' : (Math.round(value * 10) / 10).toFixed(1));
+    
+    const buildLabelLines = (lines) => {
+        if (!Array.isArray(lines)) return [];
+        return lines.map(line => (line === null || line === undefined ? '' : String(line).trim())).filter(line => line.length > 0);
+    };
+
+    // ラベル生成ヘルパー
+    const mmLabel = (symbol, value) => {
+        const formatted = formatPrimaryDimension(value);
+        if (symbol === 'B') {
+            const singleLine = formatted ? `${symbol} = ${formatted} mm` : `${symbol} = ―`;
+            return buildLabelLines([singleLine]);
+        }
+        return buildLabelLines([`${symbol} =`, formatted ? `${formatted} mm` : '―']);
+    };
+    const thicknessLabel = (symbol, value) => {
+        const formatted = formatThicknessDimension(value);
+        return buildLabelLines([`${symbol} =`, formatted ? `${formatted} mm` : '―']);
+    };
+    const phiLabel = (value) => {
+        const formatted = formatPrimaryDimension(value);
+        return buildLabelLines([formatted ? `φ ${formatted} mm` : 'φ ―']);
+    };
+
+    // 寸法線生成ヘルパー
+    const createHelpers = (maxDim, fontSize) => {
+        const baseGap = Math.max(maxDim * 0.02, fontSize * 0.5, 10);
+        const smallGap = Math.max(maxDim * 0.01, fontSize * 0.4, 8);
+        const lineHeight = fontSize * 1.2;
+
+        const normalizeLabelLines = (label) => {
+            if (Array.isArray(label)) return label.map(String).filter(s => s.trim().length > 0);
+            if (label === null || label === undefined) return ['―'];
+            const value = String(label).trim();
+            return value.length > 0 ? [value] : ['―'];
+        };
+
+        const buildLabelMarkup = (lines, x) => {
+            if (!Array.isArray(lines) || lines.length === 0) return '';
+            const totalHeight = lineHeight * Math.max(0, lines.length - 1);
+            const firstDy = lines.length === 1 ? 0 : -(totalHeight / 2);
+            return lines.map((line, index) => {
+                const dyValue = index === 0 ? firstDy : lineHeight;
+                const dyAttr = index === 0 && lines.length === 1 ? '' : ` dy="${dyValue.toFixed(2)}px"`;
+                return `<tspan x="${x}"${dyAttr}>${line}</tspan>`;
+            }).join('');
+        };
+
+        const adjustGapForLines = (gap, lineCount) => (lineCount <= 1 ? gap : gap + lineHeight * (lineCount - 1) * 0.65);
+
+        const horizontalDim = (x1, x2, y, label, { position = 'below', gap = baseGap, anchor = 'middle', extraClass = '' } = {}) => {
+            const textX = anchor === 'start' ? x1 : anchor === 'end' ? x2 : (x1 + x2) / 2;
+            const lines = normalizeLabelLines(label);
+            const adjustedGap = adjustGapForLines(gap, lines.length);
+            const textY = position === 'below' ? y + adjustedGap : y - adjustedGap;
+            return `<g class="dimension horizontal ${extraClass}"><text class="dim-label" x="${textX}" y="${textY}" text-anchor="${anchor}" dominant-baseline="middle" font-size="${fontSize.toFixed(2)}px">${buildLabelMarkup(lines, textX)}</text></g>`;
+        };
+
+        const verticalDim = (x, y1, y2, label, { side = 'left', gap = baseGap, extraClass = '' } = {}) => {
+            const textAnchor = side === 'right' ? 'start' : 'end';
+            const textY = (y1 + y2) / 2;
+            const lines = normalizeLabelLines(label);
+            const adjustedGap = adjustGapForLines(gap, lines.length);
+            const finalX = side === 'right' ? x + adjustedGap : x - adjustedGap;
+            return `<g class="dimension vertical ${extraClass}"><text class="dim-label" x="${finalX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="middle" font-size="${fontSize.toFixed(2)}px">${buildLabelMarkup(lines, finalX)}</text></g>`;
+        };
+
+        return { horizontalDim, verticalDim, baseGap, smallGap };
+    };
+
+    const wrapSvg = (viewBox, bodyMarkup, dimensionMarkup = '', thicknessMarkup = '', { fontSize = 18, labelStrokeWidth = 0.6 } = {}) => {
+        const style = `.section-body { fill: #3b82f6; stroke: #1d4ed8; stroke-width: 1.4; stroke-linejoin: round; } .section-body .void { fill: #ffffff; } .dimension .dim-line { stroke: #0f172a; stroke-width: 1.2; fill: none; } .dimension .dim-label { font-family: sans-serif; font-weight: 600; fill: #0f172a; stroke: #ffffff; stroke-width: ${labelStrokeWidth}; paint-order: stroke fill; } .dimension.thickness .dim-label { fill: #1e3a8a; }`;
+        const finalDim = showDimensions ? dimensionMarkup : '';
+        const finalThick = showDimensions ? thicknessMarkup : '';
+        return { viewBox, markup: `<defs><style>${style}</style></defs><g class="section-body">${bodyMarkup}</g><g class="dim-layer">${finalDim}</g><g class="dim-layer thickness">${finalThick}</g>` };
+    };
+
+    // 各断面のレンダラー
+    const renderHSection = (dims, { includeLip = false } = {}) => {
+        const H = sanitize(dims.H), B = sanitize(dims.B), web = sanitize(dims.t1), flange = sanitize(dims.t2), lip = includeLip ? sanitize(dims.C) : null;
+        if (!H || !B || !web || !flange) return null;
+        const width = B, height = H, maxDim = Math.max(width, height);
+        const labelOptions = calculateLabelOptions(maxDim, labelScaleMultiplier);
+        const margin = calculateDiagramMargin(maxDim, labelOptions.fontSize);
+        const viewBox = `${-width/2 - margin} ${-height/2 - margin} ${width + margin*2} ${height + margin*2}`;
+        const { horizontalDim, verticalDim, baseGap, smallGap } = createHelpers(maxDim, labelOptions.fontSize);
+
+        let shapes = [`<rect x="${-web/2}" y="${-height/2}" width="${web}" height="${height}" />`, `<rect x="${-width/2}" y="${-height/2}" width="${width}" height="${flange}" />`, `<rect x="${-width/2}" y="${height/2 - flange}" width="${width}" height="${flange}" />`];
+        if (includeLip && lip && lip > flange/1.5) {
+            const lh = Math.min(lip, height/2);
+            shapes.push(`<rect x="${-width/2}" y="${-height/2}" width="${flange}" height="${lh}" />`, `<rect x="${width/2-flange}" y="${-height/2}" width="${flange}" height="${lh}" />`, `<rect x="${-width/2}" y="${height/2-lh}" width="${flange}" height="${lh}" />`, `<rect x="${width/2-flange}" y="${height/2-lh}" width="${flange}" height="${lh}" />`);
+        }
+        const dimensions = [verticalDim(-width/2 - margin*0.55, -height/2, height/2, mmLabel('H', H), {side:'left', gap:baseGap}), horizontalDim(-width/2, width/2, height/2 + margin*0.55, mmLabel('B', B), {position:'below', gap:baseGap})].join('');
+        const thickness = [horizontalDim(-web/2, web/2, -height/2 - margin*0.35, thicknessLabel('t₁', web), {position:'above', gap:smallGap}), verticalDim(width/2 + margin*0.45, -height/2, -height/2+flange, thicknessLabel('t₂', flange), {side:'right', gap:baseGap})];
+        if (includeLip && lip) thickness.push(verticalDim(width/2 + margin*0.7, -height/2, -height/2+lip, thicknessLabel('C', lip), {side:'right', gap:baseGap*0.8}));
+        
+        return wrapSvg(viewBox, shapes.join(''), dimensions, thickness.join(''), labelOptions);
+    };
+
+    const renderChannelSection = (dims) => {
+        const H = sanitize(dims.H), W = sanitize(dims.B)||sanitize(dims.A), tw = sanitize(dims.t1)||sanitize(dims.t), tf = sanitize(dims.t2)||sanitize(dims.t), lip = sanitize(dims.C);
+        if (!H || !W || !tw) return null;
+        const maxDim = Math.max(W, H);
+        const labelOptions = calculateLabelOptions(maxDim, labelScaleMultiplier);
+        const margin = calculateDiagramMargin(maxDim, labelOptions.fontSize);
+        const viewBox = `${-W/2 - margin} ${-H/2 - margin} ${W + margin*2} ${H + margin*2}`;
+        const { horizontalDim, verticalDim, baseGap, smallGap } = createHelpers(maxDim, labelOptions.fontSize);
+        const webX = -W/2;
+        let shapes = [`<rect x="${webX}" y="${-H/2}" width="${tw}" height="${H}" />`, `<rect x="${webX}" y="${-H/2}" width="${W}" height="${tf}" />`, `<rect x="${webX}" y="${H/2-tf}" width="${W}" height="${tf}" />`];
+        if (lip && lip > tf) { const lh = Math.min(lip, H/2); shapes.push(`<rect x="${W/2-tf}" y="${-H/2}" width="${tf}" height="${lh}" />`, `<rect x="${W/2-tf}" y="${H/2-lh}" width="${tf}" height="${lh}" />`); }
+        const dimensions = [verticalDim(-W/2 - margin*0.55, -H/2, H/2, mmLabel('H', H), {side:'left', gap:baseGap}), horizontalDim(-W/2, W/2, H/2 + margin*0.55, mmLabel('B', W), {position:'below', gap:baseGap})].join('');
+        const thickness = [horizontalDim(-tw/2, tw/2, -H/2 - margin*0.3, thicknessLabel('t₁', tw), {position:'above', gap:smallGap}), verticalDim(W/2 + margin*0.45, -H/2, -H/2+tf, thicknessLabel('t₂', tf), {side:'right', gap:baseGap})];
+        if (lip && lip > tf) thickness.push(verticalDim(W/2 + margin*0.7, -H/2, -H/2+lip, thicknessLabel('C', lip), {side:'right', gap:baseGap*0.8}));
+        return wrapSvg(viewBox, shapes.join(''), dimensions, thickness.join(''), labelOptions);
+    };
+
+    const renderRectTube = (dims) => {
+        const H = sanitize(dims.A)||sanitize(dims.H), B = sanitize(dims.B)||sanitize(dims.A), t = sanitize(dims.t);
+        if (!H || !B || !t) return null;
+        const maxDim = Math.max(H, B);
+        const labelOptions = calculateLabelOptions(maxDim, labelScaleMultiplier);
+        const margin = calculateDiagramMargin(maxDim, labelOptions.fontSize);
+        const viewBox = `${-B/2 - margin} ${-H/2 - margin} ${B + margin*2} ${H + margin*2}`;
+        const { horizontalDim, verticalDim, baseGap, smallGap } = createHelpers(maxDim, labelOptions.fontSize);
+        const body = `<g><rect x="${-B/2}" y="${-H/2}" width="${B}" height="${H}" /><rect class="void" x="${-B/2+t}" y="${-H/2+t}" width="${B-2*t}" height="${H-2*t}" /></g>`;
+        const dimensions = [verticalDim(-B/2 - margin*0.45, -H/2, H/2, mmLabel('H', H), {side:'left', gap:baseGap}), horizontalDim(-B/2, B/2, H/2 + margin*0.5, mmLabel('B', B), {position:'below', gap:baseGap})].join('');
+        const thickness = verticalDim(B/2 + margin*0.45, -H/2, -H/2+t, thicknessLabel('t', t), {side:'right', gap:smallGap});
+        return wrapSvg(viewBox, body, dimensions, thickness, labelOptions);
+    };
+
+    const renderPipe = (dims) => {
+        const D = sanitize(dims.D), t = sanitize(dims.t);
+        if (!D) return null;
+        const labelOptions = calculateLabelOptions(D, labelScaleMultiplier);
+        const margin = calculateDiagramMargin(D, labelOptions.fontSize);
+        const viewBox = `${-D/2 - margin} ${-D/2 - margin} ${D + margin*2} ${D + margin*2}`;
+        const { horizontalDim, verticalDim, baseGap, smallGap } = createHelpers(D, labelOptions.fontSize);
+        const body = `<g><circle cx="0" cy="0" r="${D/2}" />${t && t < D/2 ? `<circle class="void" cx="0" cy="0" r="${D/2-t}" />` : ''}</g>`;
+        const dimensions = horizontalDim(-D/2, D/2, D/2 + margin*0.55, phiLabel(D), {position:'below', gap:baseGap});
+        const thickness = t ? verticalDim(D/2 + margin*0.45, -D/2, -D/2+t, thicknessLabel('t', t), {side:'right', gap:smallGap}) : '';
+        return wrapSvg(viewBox, body, dimensions, thickness, labelOptions);
+    };
+
+    // ビルダーの呼び出し
+    const numericDims = Object.fromEntries(Object.entries(rawDims || {}).map(([k, v]) => [k, Number(v)]));
+    if (['hkatakou_hiro','hkatakou_naka','hkatakou_hoso','ikatakou','keiryouhkatakou'].includes(typeKey)) return renderHSection(numericDims);
+    if (['keiryourippuhkatakou'].includes(typeKey)) return renderHSection(numericDims, {includeLip:true});
+    if (['mizogatakou','keimizogatakou','rippumizokatakou'].includes(typeKey)) return renderChannelSection(numericDims);
+    if (['seihoukei','tyouhoukei','矩形'].includes(typeKey)) return renderRectTube(numericDims);
+    if (['koukan','円形'].includes(typeKey)) return renderPipe(numericDims);
+    
+    // フォールバック
+    return { viewBox: '-120 -80 240 160', markup: `<defs><style>.section-body * { fill: #ccc; }</style></defs><g class="section-body"><rect x="-40" y="-40" width="80" height="80" /></g>` };
+};
+// ==========================================================
+// ▲▲▲ 追加終了 ▲▲▲
+// ==========================================================
+
 const createEInputHTML = (idPrefix, currentE = '205000') => {
 
         const materials = { "205000": "スチール", "193000": "ステンレス", "70000": "アルミニウム", "8000": "木材" };

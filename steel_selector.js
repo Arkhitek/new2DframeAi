@@ -12,6 +12,46 @@ const CONFIG = {
     }
 };
 
+// Ensure outgoing props always contain a usable `sectionInfo` object
+function ensureOutgoingSectionInfo(props) {
+    try {
+        if (!props || typeof props !== 'object') return props;
+
+        props.dims = props.dims || (props.sectionInfo && props.sectionInfo.dims) || {};
+
+        if (!props.sectionInfo || typeof props.sectionInfo !== 'object') {
+            props.sectionInfo = {
+                label: props.sectionLabel || props.sectionName || 'unknown',
+                typeKey: props.selectedTypeKey || props.typeKey || 'estimated',
+                rawDims: props.dims || {},
+                svgMarkup: ''
+            };
+        }
+
+        // ensure typeKey and axis exist
+        props.sectionInfo.typeKey = props.sectionInfo.typeKey || props.selectedTypeKey || props.typeKey || 'estimated';
+        props.sectionInfo.rawDims = props.sectionInfo.rawDims || props.dims || {};
+
+        if (!props.sectionInfo.svgMarkup) {
+            try {
+                if (typeof serializeSectionSvg === 'function') {
+                    props.sectionInfo.svgMarkup = serializeSectionSvg(props.sectionInfo.typeKey, props.sectionInfo.rawDims) || '';
+                }
+            } catch (sErr) {
+                // ignore serialization errors — leave empty string
+                console.warn('ensureOutgoingSectionInfo: svg generation failed', sErr);
+            }
+        }
+
+        if (!props.sectionInfo.axis) {
+            props.sectionInfo.axis = props.sectionAxis || (props.sectionAxisLabel ? { label: props.sectionAxisLabel } : null) || props.sectionInfo.axis;
+        }
+    } catch (e) {
+        console.warn('ensureOutgoingSectionInfo failed', e);
+    }
+    return props;
+}
+
 const utils = (() => {
     const globalUtils = window.utils || (window.utils = {});
 
@@ -1336,125 +1376,73 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
     });
     
     applySelectionBtn.addEventListener('click', () => {
-        console.log('🎯 適用ボタンがクリックされました');
         const selectedRow = document.querySelector('.full-table .selected-row');
         if (!selectedRow) {
-            console.warn('⚠️ 行が選択されていません');
             alert('テーブルから適用したい鋼材の行を選択してください。');
             return;
         }
-        console.log('✅ 選択行:', selectedRow);
+
         const selectedTypeKey = document.getElementById('steel-type-select').value;
-        console.log('✅ 選択された鋼材タイプ:', selectedTypeKey);
-        const steel = window.steelData[selectedTypeKey], rowIndex = selectedRow.dataset.index, rowData = steel.data[rowIndex];
+        const steel = window.steelData[selectedTypeKey];
+        const rowIndex = selectedRow.dataset.index;
+        const rowData = steel.data[rowIndex];
         const normalizedHeaders = steel.headers.map(normalizeHeaderKey);
         const getProp = (...keys) => findRowValueByKeys(steel.headers, normalizedHeaders, rowData, ...keys);
-        const selectedAxis = document.querySelector('#pickup-axis-selector input[name="axis-select"]:checked')?.value || 'x';
-        console.log('✅ 選択された軸:', selectedAxis);
 
+        // 基本プロパティ
         const areaValue = getProp('断面積', '面積', 'A');
         const ixValue = getProp('Ix', '強軸断面2次モーメント', 'I');
         const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
         const zxValue = getProp('Zx', '強軸断面係数', 'Z');
         const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
-        const radiusXValue = getProp('ix', '強軸断面2次半径', 'i');
-        const radiusYValue = getProp('iy', '弱軸断面2次半径', 'i');
-        const densityValue = getProp('単位体積重量', '比重', '密度');
 
-        const numericZx = parseNumericValue(zxValue ?? zyValue ?? getProp('Z'));
-        const numericZy = parseNumericValue(zyValue ?? zxValue ?? getProp('Z'));
         const numericIx = parseNumericValue(ixValue ?? iyValue ?? getProp('I'));
         const numericIy = parseNumericValue(iyValue ?? ixValue ?? getProp('I'));
-        const isSymmetricAxis = valuesApproximatelyEqual(numericZx, numericZy) || valuesApproximatelyEqual(numericIx, numericIy);
+        const isSymmetricAxis = valuesApproximatelyEqual(parseNumericValue(zxValue ?? getProp('Z')), parseNumericValue(zyValue ?? getProp('Z'))) || valuesApproximatelyEqual(numericIx, numericIy);
+        const selectedAxis = document.querySelector('#pickup-axis-selector input[name="axis-select"]:checked')?.value || 'x';
         const resolvedAxisKey = isSymmetricAxis ? 'both' : selectedAxis;
 
+        // 断面寸法と sectionInfo の構築
+        const dims = getDimensionsFromRow(selectedTypeKey, rowData, steel.headers);
+        const numericRawDims = {};
+        if (dims && typeof dims === 'object') {
+            Object.entries(dims).forEach(([key, value]) => {
+                const k = String(key).replace(/[\s＿‐－–—\u00A0]/g, '').replace(/[＊*×✕✖]/g, 'x').replace(/[（）()]/g, '').toLowerCase();
+                // 簡易マッピング
+                const map = { h: 'H', b: 'B', a: 'A', d: 'D', t: 't', t1: 't1', t2: 't2', c: 'C', tw: 't1', tf: 't2', 'φ': 'D' };
+                const canonical = map[k] || map[k.replace('φ','phi')] || (typeof key === 'string' && /^[HBtTdCa]{1,3}$/.test(key) ? key : null);
+                const num = parseFloat(value);
+                if (canonical && Number.isFinite(num)) numericRawDims[canonical] = num;
+            });
+        }
+
+        const sectionAxisInfo = buildAxisInfo(resolvedAxisKey);
+        const sectionInfo = {
+            label: rowData?.[0] ? String(rowData[0]) : 'Unknown',
+            typeKey: selectedTypeKey,
+            rawDims: numericRawDims,
+            source: 'library',
+            dimensionSummary: Object.entries(numericRawDims).map(([k, v]) => `${k}=${v}`).join(', '),
+            svgMarkup: typeof serializeSectionSvg === 'function' ? serializeSectionSvg(selectedTypeKey, numericRawDims) : ''
+        };
+        if (sectionAxisInfo) sectionInfo.axis = sectionAxisInfo;
+
+        // 送信用props
         const props = {
-            E: '205000', // JIS規格は鋼材なのでE値を固定
-            strengthType: 'F-value', // JIS規格は鋼材なのでF-value固定
-            strengthValue: '235', // JIS規格選択時はF値をデフォルト値に戻す
-            Ix: ixValue,
-            Iy: iyValue,
             I: resolvedAxisKey === 'y' ? (iyValue ?? ixValue ?? getProp('I')) : (ixValue ?? iyValue ?? getProp('I')),
             A: areaValue,
-            Zx: zxValue ?? (isSymmetricAxis ? getProp('Z') : undefined),
-            Zy: zyValue ?? (isSymmetricAxis ? getProp('Z') : undefined),
-            Z: (() => {
-                if (resolvedAxisKey === 'y') return zyValue ?? zxValue ?? getProp('Z');
-                if (resolvedAxisKey === 'x') return zxValue ?? zyValue ?? getProp('Z');
-                return zxValue ?? zyValue ?? getProp('Z');
-            })(),
-            ix: resolvedAxisKey === 'y' ? (radiusYValue ?? radiusXValue ?? getProp('i')) : (radiusXValue ?? radiusYValue ?? getProp('i')),
-            iy: radiusYValue,
-            density: densityValue
+            Z: resolvedAxisKey === 'y' ? (zyValue ?? zxValue ?? getProp('Z')) : (zxValue ?? zyValue ?? getProp('Z')),
+            sectionInfo: sectionInfo,
+            typeKey: selectedTypeKey,
+            dims: numericRawDims,
+            sectionName: sectionInfo.label,
+            sectionAxis: sectionAxisInfo,
+            sectionAxisLabel: sectionAxisInfo?.label
         };
 
-        const dims = getDimensionsFromRow(selectedTypeKey, rowData, steel.headers);
-        const typeLabel = typeSelect.options[typeSelect.selectedIndex]?.text || selectedTypeKey;
-        const sectionAxisInfo = buildAxisInfo(resolvedAxisKey);
-        const sectionInfo = buildSectionInfoFromDims({
-            typeKey: selectedTypeKey,
-            typeLabel,
-            designation: rowData?.[0] ? String(rowData[0]) : '',
-            dims,
-            imageUrl: steelImages[selectedTypeKey] || '',
-            source: 'library',
-            axisInfo: sectionAxisInfo
-        });
-
-        props.sectionInfo = sectionInfo;
-        props.sectionLabel = sectionInfo.label;
-        props.sectionName = sectionInfo.label; // 互換性のため追加
-        props.sectionAxis = sectionAxisInfo;
-        props.sectionAxisLabel = sectionAxisInfo.label;
-        props.sectionAxisMode = sectionAxisInfo.mode;
-        props.sectionAxisKey = sectionAxisInfo.key;
-        props.sectionSummary = sectionInfo.dimensionSummary;
-        props.sectionSource = sectionInfo.source;
-        props.selectedAxis = sectionAxisInfo.label; // 互換性のため追加
-        if (targetMemberIndex !== null) {
-            props.targetMemberIndex = targetMemberIndex;
-        }
-
-        console.log('📋 送信準備完了 - props:', {
-            sectionName: props.sectionName,
-            sectionLabel: props.sectionLabel,
-            selectedAxis: props.selectedAxis,
-            sectionAxisLabel: props.sectionAxisLabel,
-            I: props.I,
-            A: props.A,
-            Z: props.Z,
-            targetMemberIndex: props.targetMemberIndex
-        });
-
-        if (props.I !== undefined && props.A !== undefined) {
-            // 防御的補強: sectionInfo に svgMarkup があるか確認し、なければ再生成を試みる
-            try {
-                if (props.sectionInfo) {
-                    if (!props.sectionInfo.svgMarkup) {
-                        try {
-                            props.sectionInfo.svgMarkup = typeof serializeSectionSvg === 'function'
-                                ? serializeSectionSvg(selectedTypeKey, dims)
-                                : (props.sectionInfo.svgMarkup || '');
-                        } catch (regenErr) {
-                            console.warn('SVG 再生成に失敗しました:', regenErr);
-                            props.sectionInfo.svgMarkup = props.sectionInfo.svgMarkup || '';
-                        }
-                    }
-
-                    if (!props.sectionInfo.axis) {
-                        props.sectionInfo.axis = props.sectionAxis || (props.sectionAxisLabel ? { label: props.sectionAxisLabel } : null);
-                    }
-                }
-            } catch (err) {
-                console.warn('sectionInfo 補完時のエラー', err);
-            }
-
-            console.log('✅ 必須プロパティ確認OK、sendDataToParentを呼び出します');
-            sendDataToParent(props);
-        } else {
-            console.error('❌ 必須プロパティが不足:', { I: props.I, A: props.A });
-            alert('性能値の取得に失敗しました。');
-        }
+        // 親へ送信（最終チェック）
+        try { ensureOutgoingSectionInfo(props); } catch (e) { /* ignore */ }
+        try { sendDataToParent(props); } catch (e) { console.warn('sendDataToParent failed', e); }
     });
 
     applyCustomBtn.addEventListener('click', () => {
@@ -1568,6 +1556,36 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             source: 'custom',
             axisInfo: sectionAxisInfo
         });
+        // 明示的に typeKey を確実に設定（念のための上書き）
+        if (sectionInfo && typeof sectionInfo === 'object') {
+            sectionInfo.typeKey = selectedTypeKey;
+            // --- 追加: custom パスでも rawDims を数値化/正規化して設定する ---
+            try {
+                const allowedKeyMap = {
+                    h: 'H', b: 'B', a: 'A', d: 'D', t: 't', t1: 't1', t2: 't2', c: 'C',
+                    tw: 't1', tf: 't2', phi: 'D', r: 'D'
+                };
+                const numericRawDims = {};
+                if (latestCustomInputs && typeof latestCustomInputs === 'object') {
+                    Object.entries(latestCustomInputs).forEach(([key, value]) => {
+                        try {
+                            const lkey = String(key).replace(/[\s＿‐－–—\u00A0]/g, '').replace(/[＊*×✕✖]/g, 'x').replace(/[（）()]/g, '').toLowerCase();
+                            const canonical = allowedKeyMap[lkey] || (allowedKeyMap[lkey.replace('φ','phi')] || null);
+                            const num = Number(value);
+                            if (canonical && Number.isFinite(num)) {
+                                numericRawDims[canonical] = num;
+                            }
+                        } catch (e) {
+                            // ignore per-key errors
+                        }
+                    });
+                }
+                sectionInfo.rawDims = numericRawDims;
+                console.log('🔧 steel_selector (custom): normalized sectionInfo.rawDims ->', sectionInfo.rawDims);
+            } catch (e) {
+                console.warn('steel_selector (custom): rawDims 正規化に失敗しました', e);
+            }
+        }
         props.sectionInfo = sectionInfo;
         props.sectionLabel = sectionInfo.label;
         props.sectionName = sectionInfo.label; // 互換性のため追加
@@ -1583,6 +1601,22 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         }
 
         if (props.I !== undefined && props.A !== undefined) {
+            // 互換性確保: 親が期待するトップレベルの識別子・寸法情報を入れておく
+            try {
+                props.selectedTypeKey = selectedTypeKey;
+                props.typeKey = selectedTypeKey;
+                // カスタムパスでは latestCustomInputs を dims として送る
+                props.dims = latestCustomInputs;
+                if (props.sectionInfo && typeof props.sectionInfo === 'object') {
+                    props.sectionInfo.typeKey = selectedTypeKey;
+                }
+            } catch (e) {
+                console.warn('送信前のprops補完でエラー (custom):', e);
+            }
+            // 最終ガード: sectionInfo を確実に埋める
+            try { ensureOutgoingSectionInfo(props); } catch (e) { console.warn('final ensureOutgoingSectionInfo failed (custom)', e); }
+            // DEBUG: 送信直前の生の props を完全に出力（解析用、一時追加）
+            try { console.log('🔔 sending full props (debug) - sendDataToParent (custom):', props); } catch (e) { /* ignore */ }
             sendDataToParent(props);
         } else {
             alert('カスタム計算結果から必要な性能値を取得できませんでした。');
@@ -1591,68 +1625,97 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
 
     const getDimensionsFromRow = (type, rowData, headers) => { 
         const dims = {}; 
+        
+        // ヘッダー名から値を取得するヘルパー
         const findValue = (namePart) => { 
             const name = namePart.toLowerCase(); 
             const index = headers.findIndex(h => h.toLowerCase().startsWith(name)); 
             const value = index !== -1 ? parseFloat(rowData[index]) : NaN; 
-            return isNaN(value) ? 0 : value; // NaNの場合は0を返す
+            return isNaN(value) ? 0 : value; 
         }; 
+
+        // 文字列から数値を抽出する強力なヘルパー関数
+        // "H-200×100", "H200x100", "200*100" などあらゆる形式から [200, 100] を抽出
+        const extractNumbers = (val) => {
+            if (!val) return [0, 0, 0, 0];
+            // 全角数字を半角に変換し、小文字化
+            const normalized = String(val)
+                .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+                .toLowerCase();
+            // 数字と小数点のマッチパターンで抽出
+            const matches = normalized.match(/[\d.]+/g);
+            return matches ? matches.map(Number) : [0, 0, 0, 0];
+        };
         
         try {
+            // 1列目の文字列（例: "H-200×100"）から主要寸法を抽出
+            const sizeValues = extractNumbers(rowData[0]);
+
             switch(type) { 
                 case 'hkatakou_hiro': 
                 case 'hkatakou_naka': 
                 case 'hkatakou_hoso': 
                 case 'ikatakou': 
                 case 'keiryouhkatakou': 
-                    const hSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.H, dims.B] = hSizes.length >= 2 ? hSizes : [0, 0];
+                    // [H, B] を抽出
+                    dims.H = sizeValues[0] || 0;
+                    dims.B = sizeValues[1] || 0;
                     dims.t1 = findValue('t1'); 
                     dims.t2 = findValue('t2'); 
                     break; 
                 case 'keiryourippuhkatakou': 
-                    const rippuSizes = String(rowData[0] || '0×0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.H, dims.B, dims.C] = rippuSizes.length >= 3 ? rippuSizes : [0, 0, 0];
+                    // [H, B, C] を抽出
+                    dims.H = sizeValues[0] || 0;
+                    dims.B = sizeValues[1] || 0;
+                    dims.C = sizeValues[2] || 0;
                     dims.t1 = findValue('t1'); 
                     dims.t2 = findValue('t2'); 
                     break; 
                 case 'mizogatakou': 
-                    const mizoSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.H, dims.B] = mizoSizes.length >= 2 ? mizoSizes : [0, 0];
+                    // [H, B] を抽出
+                    dims.H = sizeValues[0] || 0;
+                    dims.B = sizeValues[1] || 0;
                     dims.t1 = findValue('t1'); 
                     dims.t2 = findValue('t2'); 
                     break; 
                 case 'touhenyamakatakou': 
                 case 'futouhenyamagata': 
-                    const yamaSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.A, dims.B] = yamaSizes.length >= 2 ? yamaSizes : [0, 0];
+                    // [A, B] を抽出
+                    dims.A = sizeValues[0] || 0;
+                    dims.B = sizeValues[1] || dims.A; // 等辺の場合は2つ目がないことがあるので補完
                     dims.t = findValue('t'); 
                     break; 
                 case 'keimizogatakou': 
-                    const keimizoSizes = String(rowData[0] || '0×0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.H, dims.A, dims.B] = keimizoSizes.length >= 3 ? keimizoSizes : [0, 0, 0];
+                    // [H, A, B] または [H, A]
+                    dims.H = sizeValues[0] || 0;
+                    dims.A = sizeValues[1] || 0;
+                    dims.B = sizeValues[2] || 0; 
                     dims.t = findValue('t'); 
                     break; 
                 case 'rippumizokatakou': 
-                    const rippumizoSizes = String(rowData[0] || '0×0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.H, dims.A, dims.C] = rippumizoSizes.length >= 3 ? rippumizoSizes : [0, 0, 0];
+                    // [H, A, C]
+                    dims.H = sizeValues[0] || 0;
+                    dims.A = sizeValues[1] || 0;
+                    dims.C = sizeValues[2] || 0;
                     dims.t = findValue('t'); 
                     break; 
                 case 'seihoukei': 
                 case 'tyouhoukei': 
-                    const kakuSizes = String(rowData[0] || '0×0').split('×').map(v => parseFloat(v) || 0);
-                    [dims.A, dims.B] = kakuSizes.length >= 2 ? kakuSizes : [0, 0];
+                    // [A, B]
+                    dims.A = sizeValues[0] || 0;
+                    dims.B = sizeValues[1] || dims.A;
                     dims.t = findValue('t'); 
                     break; 
                 case 'koukan': 
+                    // [D]
                     dims.D = parseFloat(rowData[0]) || 0; 
                     dims.t = findValue('板厚'); 
                     break; 
             } 
         } catch (error) {
             console.error('Error parsing dimensions:', error);
-            // エラーが発生した場合はデフォルト値を設定
-            dims.H = dims.A = dims.B = dims.C = dims.D = dims.t = dims.t1 = dims.t2 = 10;
+            // エラー時は安全なデフォルト値
+            dims.H = dims.A = dims.B = dims.C = dims.D = dims.t = dims.t1 = dims.t2 = 100;
         }
         
         return dims; 

@@ -3712,11 +3712,8 @@ document.addEventListener('DOMContentLoaded', () => {
             [Iinput, Ainput, Zinput].forEach(inp => {
                 if (!inp) return;
                 inp.addEventListener('change', () => {
-                    const nameCell = row.querySelector('.section-name-cell');
-                    if (nameCell && !nameCell.textContent.includes('(手動変更)')) {
-                        nameCell.textContent = (nameCell.textContent || '') + ' (手動変更)';
-                        nameCell.style.color = '#e67e22';
-                    }
+                    // ユーザー要望: ラベル表示への「(手動変更)」追記を廃止しました。
+                    // ただし断面情報は手動変更により古くなる可能性があるため dataset はクリアします。
                     const axisCell = row.querySelector('.section-axis-cell');
                     if (axisCell) axisCell.textContent = '-';
                     delete row.dataset.sectionInfo;
@@ -9980,8 +9977,52 @@ document.addEventListener('DOMContentLoaded', () => {
                             const sectionName = newMemberDefaults.sectionName || '';
                             const sectionAxis = newMemberDefaults.sectionAxis || '';
                             console.log('🔍 部材追加: newMemberDefaults:', { sectionName, sectionAxis, I: newMemberDefaults.I, A: newMemberDefaults.A, Z: newMemberDefaults.Z });
-                            addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis, newMemberDefaults.bucklingK || '')]);
+                            const newRow = addRow(elements.membersTable, [`#`, ...memberRowHTML(firstMemberNode+1, targetNodeIndex+1, newMemberDefaults.E, newMemberDefaults.F, I_m4, A_m2, Z_m3, newMemberDefaults.i_conn, newMemberDefaults.j_conn, sectionName, sectionAxis, newMemberDefaults.bucklingK || '')]);
                             console.log('✅ 部材を作成しました:', { from: firstMemberNode, to: targetNodeIndex });
+
+                            // ★ 追加: 新規行に対して保存済みの sectionInfo を適用
+                            try {
+                                if (newRow) {
+                                    if (newMemberDefaults && newMemberDefaults.sectionInfo && typeof window.setRowSectionInfo === 'function') {
+                                        try { window.setRowSectionInfo(newRow, newMemberDefaults.sectionInfo); } catch (_e) { console.warn('setRowSectionInfo failed on newRow', _e); }
+                                    } else if (newRow) {
+                                        // 既存の setRowSectionInfo が無ければ、dataset に直接保存
+                                        try {
+                                            if (newMemberDefaults && newMemberDefaults.sectionInfo) {
+                                                newRow.dataset.sectionInfo = encodeURIComponent(JSON.stringify(newMemberDefaults.sectionInfo));
+                                            } else {
+                                                // なければ従来の推定断面（円形）を設定
+                                                if (typeof window.setRowSectionInfo === 'function') {
+                                                    const defaultSectionInfo = {
+                                                        typeKey: 'estimated',
+                                                        label: '推定断面（円形）',
+                                                        rawDims: {
+                                                            D: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10
+                                                        },
+                                                        source: '手動追加'
+                                                    };
+                                                    try { window.setRowSectionInfo(newRow, defaultSectionInfo); } catch (_) { newRow.dataset.sectionInfo = encodeURIComponent(JSON.stringify(defaultSectionInfo)); }
+                                                } else {
+                                                    const defaultSectionInfo = {
+                                                        typeKey: 'estimated',
+                                                        label: '推定断面（円形）',
+                                                        rawDims: { D: Math.sqrt(A_m2 * 1e4 / Math.PI) * 2 * 10 },
+                                                        source: '手動追加'
+                                                    };
+                                                    newRow.dataset.sectionInfo = encodeURIComponent(JSON.stringify(defaultSectionInfo));
+                                                }
+                                            }
+                                        } catch (_e) { console.warn('failed to apply sectionInfo to newRow via dataset', _e); }
+                                    }
+
+                                    // 3D ビューア更新通知（短遅延）
+                                    if (typeof sendModelToViewer === 'function') {
+                                        setTimeout(() => { try { sendModelToViewer(); } catch (e) { console.warn('sendModelToViewer failed', e); } }, 100);
+                                    }
+                                }
+                            } catch (applyErr) {
+                                console.warn('apply sectionInfo to newRow failed', applyErr);
+                            }
                         }
                     }
                     firstMemberNode = null;
@@ -12402,6 +12443,8 @@ const generateSectionSvgMarkup = (typeKey, dims) => {
 
 const deriveSectionTypeKey = (sectionInfo) => {
     if (!sectionInfo || typeof sectionInfo !== 'object') return null;
+
+    // 既に明示されている候補を優先。ただしプレースホルダ（'unknown' 等）は無視する。
     const candidates = [
         sectionInfo.typeKey,
         sectionInfo.sectionType,
@@ -12410,7 +12453,53 @@ const deriveSectionTypeKey = (sectionInfo) => {
         sectionInfo.profileType,
         sectionInfo.categoryKey
     ];
-    return candidates.find(value => typeof value === 'string' && value.trim().length > 0) || null;
+    const isPlaceholder = (v) => {
+        if (typeof v !== 'string') return false;
+        const t = v.trim().toLowerCase();
+        return t === '' || /^(unknown|不明|その他|n\/a|na|none|unk)$/i.test(t);
+    };
+    const explicit = candidates.find(value => typeof value === 'string' && value.trim().length > 0 && !isPlaceholder(value));
+    if (explicit) return explicit;
+
+    // ラベルや typeLabel からの推定（手動編集によって typeKey が欠落しているケースに備える）
+    const textSources = [sectionInfo.typeLabel, sectionInfo.label, sectionInfo.designation, sectionInfo.sectionLabel, sectionInfo.name]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase());
+
+    const combined = textSources.join(' ');
+    try {
+        // まず I 形鋼を判定（"I形" や "I形鋼"、英語の i-beam など）
+        if (combined.includes('i形') || combined.includes('i形鋼') || combined.includes('i-beam') || combined.includes('i beam') || combined.match(/\bi\b/) && combined.includes('形')) {
+            console.log('deriveSectionTypeKey: ラベルから I形鋼 を推定しました', sectionInfo.label);
+            return 'ikatakou';
+        }
+
+        if (combined.includes('h形鋼') || combined.includes('h形')) {
+            if (combined.includes('広幅') || combined.includes('ひろ') || combined.includes('wide') || combined.match(/\bwide\b/)) {
+                console.log('deriveSectionTypeKey: ラベルから H形鋼（広幅） を推定しました', sectionInfo.label);
+                return 'hkatakou_hiro';
+            }
+            if (combined.includes('細幅') || combined.includes('ほそ') || combined.includes('narrow') || combined.match(/\bnarrow\b/)) {
+                console.log('deriveSectionTypeKey: ラベルから H形鋼（細幅） を推定しました', sectionInfo.label);
+                return 'hkatakou_hoso';
+            }
+            // デフォルトで H 形鋼（細幅）をまず返す
+            console.log('deriveSectionTypeKey: ラベルに H形鋼 を含むが幅判定ができなかったため細幅を仮定します', sectionInfo.label);
+            return 'hkatakou_hoso';
+        }
+
+        // 他のキーワードベースの推定（円形、矩形など）
+        if (combined.includes('円形') || combined.includes('φ') || combined.includes('円')) {
+            return 'circle';
+        }
+        if (combined.includes('矩形') || combined.includes('角') || combined.includes('長方')) {
+            return 'rectangle';
+        }
+    } catch (e) {
+        console.warn('deriveSectionTypeKey: ラベル解析中にエラー', e, sectionInfo);
+    }
+
+    return null;
 };
 
 const parseDimensionValue = (value) => {
@@ -12460,6 +12549,15 @@ window.ensureSectionSvgMarkup = (sectionInfo) => {
     const dims = deriveSectionDimensions(sectionInfo);
 
     if (!typeKey || !dims) return sectionInfo;
+
+    // 補完: 推定できた typeKey は明示的に保存しておく
+    try {
+        if (!sectionInfo.typeKey || /^(unknown|不明|その他|n\/a|na|none|unk)$/i.test(String(sectionInfo.typeKey))) {
+            sectionInfo.typeKey = typeKey;
+        }
+    } catch (e) {
+        console.warn('ensureSectionSvgMarkup: typeKey 補完に失敗しました', e, sectionInfo);
+    }
 
     const diagram = buildSectionDiagramData(typeKey, dims, { labelScaleMultiplier: 0.5, showDimensions: false });
     if (diagram && diagram.markup) {
@@ -12996,10 +13094,39 @@ window.setRowSectionInfo = function setRowSectionInfo(row, sectionInfo) {
     }
 
     // Ensure the object has SVG markup and axis normalized
-    const enrichedInfo = ensureSectionSvgMarkup(sectionInfo || {});
+    let enrichedInfo = ensureSectionSvgMarkup(sectionInfo || {});
     if (!enrichedInfo || typeof enrichedInfo !== 'object') {
         console.error('setRowSectionInfo: enriched sectionInfo is invalid:', enrichedInfo);
         return;
+    }
+
+    // Detailed debug: log the enriched info before any guard/fix
+    try {
+        console.log('setRowSectionInfo: enrichedInfo (pre-guard):', JSON.parse(JSON.stringify(enrichedInfo)));
+    } catch (e) {
+        console.log('setRowSectionInfo: enrichedInfo (pre-guard) (stringify failed)', enrichedInfo);
+    }
+
+    // Guard: if typeKey is missing or unknown, attempt to derive a better typeKey
+    try {
+        if (!enrichedInfo.typeKey || enrichedInfo.typeKey === 'unknown') {
+            const derived = (typeof deriveSectionTypeKey === 'function') ? deriveSectionTypeKey(enrichedInfo) : null;
+            if (derived && derived !== 'unknown') {
+                enrichedInfo.typeKey = derived;
+                console.log('setRowSectionInfo: derived and applied typeKey:', derived);
+                // regenerate svg/axis now that typeKey is set
+                try {
+                    enrichedInfo = ensureSectionSvgMarkup(enrichedInfo || {});
+                    console.log('setRowSectionInfo: re-run ensureSectionSvgMarkup after typeKey derivation');
+                } catch (e2) {
+                    console.warn('setRowSectionInfo: ensureSectionSvgMarkup failed after typeKey derivation', e2);
+                }
+            } else {
+                console.log('setRowSectionInfo: could not derive typeKey (keeps unknown)');
+            }
+        }
+    } catch (err) {
+        console.warn('setRowSectionInfo: error during typeKey derivation guard', err);
     }
 
     // Save to dataset with encoding, but guard against circular structures
@@ -14135,186 +14262,182 @@ const loadPreset = (index) => {
 
 
 
+    // Queue for pending section updates when target row is not yet available
+    window.pendingSectionUpdates = window.pendingSectionUpdates || new Map();
+    function processPendingSectionUpdates() {
+        if (!elements || !elements.membersTable) return;
+        for (const [idx, pendingProps] of Array.from(window.pendingSectionUpdates.entries())) {
+            const i = Number(idx);
+            if (!isNaN(i) && i >= 0 && i < elements.membersTable.rows.length) {
+                window.pendingSectionUpdates.delete(idx);
+                try { updateMemberProperties(i, pendingProps); } catch (e) { console.warn('processPendingSectionUpdates: update failed', e); }
+                continue;
+            }
+
+            // If index is not available, try to find a matching row by stable identifiers
+            try {
+                let foundIndex = -1;
+                const rows = Array.from(elements.membersTable.rows || []);
+                // Prefer exact match on dataset.memberId or dataset.memberIndex if provided
+                if (pendingProps && typeof pendingProps === 'object') {
+                    const candidateId = pendingProps.memberId || pendingProps.member_index || pendingProps.memberIndex || pendingProps.id;
+                    const candidateLabel = pendingProps.sectionLabel || (pendingProps.sectionInfo && pendingProps.sectionInfo.label) || null;
+                    if (candidateId != null) {
+                        for (let r = 0; r < rows.length; r++) {
+                            const ds = rows[r].dataset || {};
+                            if (ds.memberId && String(ds.memberId) === String(candidateId)) { foundIndex = r; break; }
+                            if (ds.memberIndex && String(ds.memberIndex) === String(candidateId)) { foundIndex = r; break; }
+                        }
+                    }
+
+                    // If still not found, try matching by sectionLabel
+                    if (foundIndex === -1 && candidateLabel) {
+                        for (let r = 0; r < rows.length; r++) {
+                            const ds = rows[r].dataset || {};
+                            if (ds.sectionLabel && ds.sectionLabel === candidateLabel) { foundIndex = r; break; }
+                        }
+                    }
+                }
+
+                if (foundIndex >= 0) {
+                    window.pendingSectionUpdates.delete(idx);
+                    console.log(`processPendingSectionUpdates: matched pending update ${idx} -> row ${foundIndex} by identifier`);
+                    try { updateMemberProperties(foundIndex, pendingProps); } catch (e) { console.warn('processPendingSectionUpdates: update failed after match', e); }
+                } else {
+                    // keep the pending entry for future attempts
+                    // but log that it remains pending
+                    console.log(`processPendingSectionUpdates: pending update ${idx} could not be matched yet (rows=${elements.membersTable.rows.length})`);
+                }
+            } catch (matchErr) {
+                console.warn('processPendingSectionUpdates: error while matching pending update', matchErr);
+            }
+        }
+    }
+    // Periodically try to apply pending updates (will be no-op when map empty)
+    setInterval(() => { if (window.pendingSectionUpdates && window.pendingSectionUpdates.size > 0) processPendingSectionUpdates(); }, 250);
+
+    // Also watch the members table for row additions/removals and process pending updates immediately
+    try {
+        setTimeout(() => {
+            try {
+                if (elements && elements.membersTable) {
+                    const targetNode = elements.membersTable.tBodies && elements.membersTable.tBodies[0] ? elements.membersTable.tBodies[0] : elements.membersTable;
+                    const mo = new MutationObserver((mutationsList) => {
+                        if (window.pendingSectionUpdates && window.pendingSectionUpdates.size > 0) {
+                            console.log('MutationObserver: membersTable changed — processing pendingSectionUpdates');
+                            try { processPendingSectionUpdates(); } catch (e) { console.warn('processPendingSectionUpdates failed from MutationObserver', e); }
+                        }
+                    });
+                    mo.observe(targetNode, { childList: true });
+                    // Keep a reference so it isn't GC'd and can be used later if needed
+                    window._membersTableMutationObserver = mo;
+                    console.log('MutationObserver attached to membersTable for pendingSectionUpdates handling');
+                }
+            } catch (inner) {
+                console.warn('Failed to attach MutationObserver to membersTable', inner);
+            }
+        }, 0);
+    } catch (outerErr) {
+        console.warn('Error scheduling MutationObserver attachment', outerErr);
+    }
+
     function updateMemberProperties(memberIndex, props) {
         if (memberIndex >= 0 && memberIndex < elements.membersTable.rows.length) {
             const row = elements.membersTable.rows[memberIndex];
-            // デバッグ: 受信 props と行の既存データを出力
-            try {
-                console.log('[updateMemberProperties] called. memberIndex=', memberIndex);
-                console.log('[updateMemberProperties] props=', props);
-                console.log('[updateMemberProperties] row.dataset (before)=', Object.assign({}, row.dataset));
-            } catch (dbgErr) {
-                console.warn('updateMemberProperties: debug logging failed', dbgErr);
-            }
-            const eSelect = row.cells[3].querySelector('select');
-            const eInput = row.cells[3].querySelector('input[type="number"]');
 
-            // E値の更新
-            if (props.E) {
-                const eValue = props.E.toString();
-                if (eInput) eInput.value = eValue;
-                if (eSelect) {
-                    eSelect.value = Array.from(eSelect.options).some(opt => opt.value === eValue) ? eValue : 'custom';
-                    eInput.readOnly = eSelect.value !== 'custom';
-                    eSelect.dispatchEvent(new Event('change'));
-                }
-            }
+            // 基本的な表示更新
+            const displaySectionName = props.sectionName || (props.sectionInfo ? props.sectionInfo.label : '') || '-';
+            const displayAxisLabel = (props.sectionAxis ? props.sectionAxis.label : '') || props.sectionAxisLabel || '-';
 
-            // 強度の更新（非同期で再生成後の要素を確保）
-            if (props.strengthValue) {
-                setTimeout(() => {
-                    const strengthInputContainer = row.cells[4].firstElementChild;
-                    if (strengthInputContainer) {
-                        const s_input = strengthInputContainer.querySelector('input');
-                        const s_select = strengthInputContainer.querySelector('select');
-                        const s_type = props.strengthType;
-                        const s_value = props.strengthValue;
+            const sectionNameCell = row.querySelector('.section-name-cell');
+            if (sectionNameCell) sectionNameCell.textContent = displaySectionName;
 
-                        if (s_type === 'wood-type') {
-                            if (s_select) s_select.value = s_value;
-                        } else {
-                            if (s_select && s_input) {
-                                const isPreset = Array.from(s_select.options).some(opt => opt.value === s_value.toString());
-                                if (isPreset) {
-                                    s_select.value = s_value;
-                                    s_input.value = s_value;
-                                    s_input.readOnly = true;
-                                } else {
-                                    s_select.value = 'custom';
-                                    s_input.value = s_value;
-                                    s_input.readOnly = false;
-                                }
-                            }
-                        }
-                    }
-                }, 0);
-            }
+            const sectionAxisCell = row.querySelector('.section-axis-cell');
+            if (sectionAxisCell) sectionAxisCell.textContent = displayAxisLabel;
 
-            // 断面性能値(I,A,Z)
-            const inertiaInputEl = row.cells[5]?.querySelector('input[type="number"]');
-            const areaInputEl = row.cells[6]?.querySelector('input[type="number"]');
-            const modulusInputEl = row.cells[7]?.querySelector('input[type="number"]');
-
-            if (inertiaInputEl && props.I !== undefined && props.I !== null) inertiaInputEl.value = props.I;
-            if (areaInputEl && props.A !== undefined && props.A !== null) areaInputEl.value = props.A;
-            if (modulusInputEl && props.Z !== undefined && props.Z !== null) modulusInputEl.value = props.Z;
-
-            // K列の値をポップアップに設定（存在すれば）
-            try {
-                const kInputEl = row.querySelector('.buckling-k-input');
-                const popupKInput = document.getElementById('popup-buckling-k');
-                if (popupKInput) popupKInput.value = kInputEl ? kInputEl.value : '';
-            } catch (e) {
-                console.warn('ポップアップに座屈係数Kを設定中にエラー', e);
-            }
-
-            // ▼▼▼ 修正: 断面名称と軸方向の更新ロジックを強化 ▼▼▼
-            
-            // 表示用ラベルの決定
-            const displaySectionName = props.sectionName || props.sectionLabel || '';
-            
-            // 軸ラベルの決定（優先順位: selectedAxis > sectionAxisLabel > sectionAxis.label > axis）
-            const displayAxisLabel = props.selectedAxis || 
-                                   props.sectionAxisLabel || 
-                                   (props.sectionAxis ? props.sectionAxis.label : null) || 
-                                   props.axis || '';
-
-            // 1. テーブルセル（表示）の更新
-            const sectionNameSpan = row.querySelector('.section-name-cell');
-            if (sectionNameSpan) {
-                sectionNameSpan.textContent = displaySectionName || '-';
-                sectionNameSpan.title = displaySectionName;
-            }
-
-            const sectionAxisSpan = row.querySelector('.section-axis-cell');
-            if (sectionAxisSpan) {
-                sectionAxisSpan.textContent = displayAxisLabel || '-';
-            }
-
-            // 2. 断面詳細プロパティのdataset保存
-            // datasetはキャメルケース(zx)でアクセスするがHTML上はdata-zxとなる
+            // dataset にいくつかの性能値を保存
             if (props.Zx) row.dataset.zx = props.Zx;
             if (props.Zy) row.dataset.zy = props.Zy;
             if (props.ix) row.dataset.ix = props.ix;
             if (props.iy) row.dataset.iy = props.iy;
 
-            // フォールバック: props.sectionInfo が無い場合は親側で最小限の sectionInfo を再生成する
-            if (!props.sectionInfo) {
-                try {
-                    const fallbackInfo = {};
-                    if (displaySectionName) fallbackInfo.label = displaySectionName;
-                    if (props.sectionAxis) {
-                        fallbackInfo.axis = props.sectionAxis;
-                    } else if (displayAxisLabel) {
-                        fallbackInfo.axis = { label: displayAxisLabel };
-                    }
-
-                    // 性能値から可能な限り寸法候補を埋める（内部で generate できる場合に役立つ）
-                    const dimsGuess = {};
-                    if (props.Zx !== undefined) dimsGuess.Zx = props.Zx;
-                    if (props.Zy !== undefined) dimsGuess.Zy = props.Zy;
-                    if (props.ix !== undefined) dimsGuess.ix = props.ix;
-                    if (props.iy !== undefined) dimsGuess.iy = props.iy;
-                    if (Object.keys(dimsGuess).length) fallbackInfo.rawDims = dimsGuess;
-
-                    if (typeof window.ensureSectionSvgMarkup === 'function') {
-                        props.sectionInfo = window.ensureSectionSvgMarkup(fallbackInfo);
-                    } else {
-                        props.sectionInfo = fallbackInfo;
-                    }
-                    console.log('updateMemberProperties: 親側で補完した sectionInfo:', props.sectionInfo);
-                } catch (regenErr) {
-                    console.warn('updateMemberProperties: sectionInfo 再生成に失敗しました', regenErr);
-                }
-            }
-
-            // 3. sectionInfo (SVG含む) の保存
-            // props.sectionInfo が存在する場合、確実にdatasetへ保存する
+            // sectionInfo がある場合は確実に dataset に保存
             if (props.sectionInfo) {
-                // 軸情報が不足している場合は補完
-                if (!props.sectionInfo.axis && (props.sectionAxis || displayAxisLabel)) {
-                    props.sectionInfo.axis = props.sectionAxis || { label: displayAxisLabel };
-                }
-                
-                // ヘルパー関数を使って保存（エンコード処理などを含む）
-                if (typeof window.setRowSectionInfo === 'function') {
-                    window.setRowSectionInfo(row, props.sectionInfo);
-                } else {
-                    // フォールバック
-                    row.dataset.sectionInfo = encodeURIComponent(JSON.stringify(props.sectionInfo));
+                // 最終防衛: typeKey が無ければトップレベルの typeKey で補完
+                try {
+                    if ((!props.sectionInfo.typeKey || String(props.sectionInfo.typeKey).trim() === '') && (props.typeKey || props.selectedTypeKey)) {
+                        props.sectionInfo.typeKey = props.typeKey || props.selectedTypeKey;
+                    }
+                } catch (e) { /* ignore */ }
+
+                // 最終防衛: rawDims が無ければ props.dims から復元
+                try {
+                    if ((!props.sectionInfo.rawDims || Object.keys(props.sectionInfo.rawDims).length === 0) && props.dims && typeof props.dims === 'object') {
+                        props.sectionInfo.rawDims = { ...(props.dims || {}) };
+                    }
+                } catch (e) { /* ignore */ }
+
+                // 正規化: rawDims のキー/値を数値化して canonical keys のみを残す
+                try {
+                    const allowedKeyMap = { h: 'H', b: 'B', a: 'A', d: 'D', t: 't', t1: 't1', t2: 't2', c: 'C', tw: 't1', tf: 't2', phi: 'D', r: 'D' };
+                    const normalizeRawDimsObject = (source) => {
+                        const out = {};
+                        if (!source || typeof source !== 'object') return out;
+                        Object.entries(source).forEach(([k, v]) => {
+                            try {
+                                const lkey = String(k).replace(/[\s＿‐－–—\u00A0]/g, '').replace(/[＊*×✕✖]/g, 'x').replace(/[（）()]/g, '').toLowerCase();
+                                const canonical = allowedKeyMap[lkey] || (allowedKeyMap[lkey.replace('φ','phi')] || null) || (typeof k === 'string' && /^[HBtTdCa]{1,3}$/.test(k) ? k : null);
+                                const num = Number(v);
+                                if (canonical && Number.isFinite(num)) out[canonical] = num;
+                            } catch (_) { /* ignore */ }
+                        });
+                        return out;
+                    };
+
+                    if (props.sectionInfo.rawDims && typeof props.sectionInfo.rawDims === 'object') {
+                        props.sectionInfo.rawDims = normalizeRawDimsObject(props.sectionInfo.rawDims);
+                    }
+                } catch (e) { console.warn('updateMemberProperties: rawDims normalization failed', e); }
+
+                // dataset に保存（エンコードして JSON 化）
+                try {
+                    const json = JSON.stringify(props.sectionInfo);
+                    row.dataset.sectionInfo = encodeURIComponent(json);
+                    if (props.sectionInfo.label) row.dataset.sectionLabel = props.sectionInfo.label;
+                } catch (e) {
+                    console.error('sectionInfo save error:', e);
                 }
             }
 
-            // 4. 軸情報のdataset個別保存（重要：次回読み込みや復元のため）
+            // 軸情報の dataset 保存
             if (props.sectionAxis) {
                 if (typeof window.applySectionAxisDataset === 'function') {
                     window.applySectionAxisDataset(row, props.sectionAxis);
                 }
-            } else if (displayAxisLabel) {
-                // ラベル文字列しかない場合のフォールバック保存
-                row.dataset.sectionAxisLabel = displayAxisLabel;
             }
 
-            // 計算反映用の change イベント発火
-            inertiaInputEl?.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // 画面更新（描画）
-            if (typeof drawOnCanvas === 'function') {
-                drawOnCanvas();
+            // DOM 更新を確実にしてから 3D ビューアへ送信（100ms 遅延）
+            if (typeof sendModelToViewer === 'function') {
+                setTimeout(() => {
+                    try {
+                        sendModelToViewer();
+                        console.log(`🔧 部材${memberIndex + 1}の情報を3Dビューアへ送信しました`);
+                    } catch (e) {
+                        console.warn('sendModelToViewer failed', e);
+                    }
+                }, 100);
             }
-
-            // 計算反映用の change イベント発火
-            inertiaInputEl?.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // 画面更新（描画）
-            if (typeof drawOnCanvas === 'function') {
-                drawOnCanvas();
-            }
-            
         } else {
-            console.error(`無効な部材インデックス: ${memberIndex}`);
+            console.warn(`updateMemberProperties: 無効な部材インデックス ${memberIndex} — キューに保存して再試行します`);
+            try {
+                window.pendingSectionUpdates.set(String(memberIndex), props);
+            } catch (qErr) {
+                console.error('updateMemberProperties: キュー保存に失敗しました', qErr);
+            }
         }
     }
+
+            
 
 
     window.addEventListener('storage', (e) => {
@@ -14361,10 +14484,62 @@ const loadPreset = (index) => {
                                 infoDiv.style.display = 'block';
                             }
                         }
+                        // ★ 追加: 受信した sectionInfo と ix/iy を newMemberDefaults に保存（3D描画用）
+                        try {
+                            if (props) {
+                                if (props.sectionInfo) {
+                                    // 保存（直接代入でOK）
+                                    newMemberDefaults.sectionInfo = props.sectionInfo;
+
+                                    // 最低限の補完: typeKey と rawDims
+                                    if ((!newMemberDefaults.sectionInfo.typeKey || String(newMemberDefaults.sectionInfo.typeKey).trim() === '') && (props.typeKey || props.selectedTypeKey)) {
+                                        newMemberDefaults.sectionInfo.typeKey = props.typeKey || props.selectedTypeKey;
+                                    }
+                                    if ((!newMemberDefaults.sectionInfo.rawDims || Object.keys(newMemberDefaults.sectionInfo.rawDims || {}).length === 0) && props.dims) {
+                                        newMemberDefaults.sectionInfo.rawDims = props.dims;
+                                    }
+                                }
+
+                                // ix / iy を直接受け取れる場合は保存
+                                if (props.ix !== undefined) newMemberDefaults.ix = props.ix;
+                                if (props.iy !== undefined) newMemberDefaults.iy = props.iy;
+                                if (props.Ix !== undefined) newMemberDefaults.ix = props.Ix;
+                                if (props.Iy !== undefined) newMemberDefaults.iy = props.Iy;
+
+                                // なければ I と A から推定（表示単位に合わせて cm 単位で保存）
+                                if ((newMemberDefaults.ix === undefined || newMemberDefaults.ix === null || newMemberDefaults.ix === '') && props.I && props.A) {
+                                    const Ival = Number(props.I);
+                                    const Aval = Number(props.A);
+                                    if (Number.isFinite(Ival) && Number.isFinite(Aval) && Aval > 0) {
+                                        try { newMemberDefaults.ix = (Math.sqrt(Ival / Aval) * 100).toFixed(3); } catch(_) { /* ignore */ }
+                                    }
+                                }
+                                if ((newMemberDefaults.iy === undefined || newMemberDefaults.iy === null || newMemberDefaults.iy === '') && props.I && props.A) {
+                                    // 同じ推定を使う（対称断面時など）
+                                    if (newMemberDefaults.ix !== undefined) newMemberDefaults.iy = newMemberDefaults.ix;
+                                }
+                            }
+                        } catch (saveErr) {
+                            console.warn('storage:addDefaults - failed to save sectionInfo or ix/iy to newMemberDefaults', saveErr);
+                        }
                     } else {
                         // 受信プロパティに sectionInfo が無い場合、親側で最小限の sectionInfo を補完しておく
-                        try {
-                            const props = data.properties || {};
+                            try {
+                                const props = data.properties || {};
+                                // 【追加修正】受信直後にも typeKey の補完を行う
+                                try {
+                                    const typeKey = props.typeKey || props.selectedTypeKey || props.sectionTypeKey;
+                                    if (props.sectionInfo && typeof props.sectionInfo === 'object') {
+                                        const currentKey = props.sectionInfo.typeKey;
+                                        const isInvalidKey = !currentKey || /^(unknown|不明|その他|n\/a|na|none|unk)$/i.test(String(currentKey));
+                                        if (isInvalidKey && typeKey) {
+                                            console.log(`🔧 storage event: sectionInfo.typeKey (${currentKey}) を ${typeKey} で補完します`);
+                                            props.sectionInfo.typeKey = typeKey;
+                                        }
+                                    }
+                                } catch (typeKeyErr) {
+                                    console.warn('storage event: typeKey 補完処理でエラー', typeKeyErr);
+                                }
                             // 追加トレース: 受信生データの要約を出力
                             try {
                                 console.log('[storage event] raw e.key:', e.key);
@@ -14430,19 +14605,95 @@ const loadPreset = (index) => {
                                     if (typeof tgt === 'number' && elements && elements.membersTable && elements.membersTable.rows[tgt]) {
                                         targetRow = elements.membersTable.rows[tgt];
                                     }
-                                    console.log('[storage event] about to call updateMemberProperties', { targetMemberIndex: tgt, targetRowExists: !!targetRow });
+                                    console.log('[storage event] about to verify target row before update', { targetMemberIndex: tgt, targetRowExists: !!targetRow });
                                     if (targetRow) {
                                         try { console.log('[storage event] targetRow.dataset (before)=', Object.assign({}, targetRow.dataset)); } catch (dErr) { console.warn('dataset before logging failed', dErr); }
                                     } else {
-                                        // もし行が見つからなければ、行数や範囲情報も出す
+                                        // 行が見つからなければ、行数や範囲情報も出す
                                         try { console.log('[storage event] membersTable rows count=', elements && elements.membersTable ? elements.membersTable.rows.length : 'no-membersTable'); } catch (_) {}
                                     }
 
-                                    updateMemberProperties(data.targetMemberIndex, propsForUpdate);
+                                    // If the target row is missing or appears to represent a different section (label mismatch), queue the update instead of forcing it now.
+                                    let shouldQueue = false;
+                                    try {
+                                        if (!targetRow) {
+                                            // Try an immediate best-effort match by stable identifiers or sectionLabel
+                                            let immediateFound = -1;
+                                            try {
+                                                const rows = Array.from(elements.membersTable.rows || []);
+                                                const candidateId = propsForUpdate && typeof propsForUpdate === 'object' ? (propsForUpdate.memberId || propsForUpdate.member_index || propsForUpdate.memberIndex || propsForUpdate.id) : null;
+                                                const candidateLabel = propsForUpdate && typeof propsForUpdate === 'object' ? (propsForUpdate.sectionLabel || (propsForUpdate.sectionInfo && propsForUpdate.sectionInfo.label) || null) : null;
+                                                if (candidateId != null) {
+                                                    for (let r = 0; r < rows.length; r++) {
+                                                        const ds = rows[r].dataset || {};
+                                                        if (ds.memberId && String(ds.memberId) === String(candidateId)) { immediateFound = r; break; }
+                                                        if (ds.memberIndex && String(ds.memberIndex) === String(candidateId)) { immediateFound = r; break; }
+                                                    }
+                                                }
+                                                if (immediateFound === -1 && candidateLabel) {
+                                                    for (let r = 0; r < rows.length; r++) {
+                                                        const ds = rows[r].dataset || {};
+                                                        if (ds.sectionLabel && ds.sectionLabel === candidateLabel) { immediateFound = r; break; }
+                                                    }
+                                                }
+                                            } catch (matchErr) {
+                                                console.warn('storage event: immediate match search failed', matchErr);
+                                            }
 
-                                    // 直後に dataset の状態を確認（updateMemberProperties は大部分が同期でdatasetに書き込む）
-                                    if (targetRow) {
-                                        try { console.log('[storage event] targetRow.dataset (after)=', Object.assign({}, targetRow.dataset)); } catch (dErr2) { console.warn('dataset after logging failed', dErr2); }
+                                            if (immediateFound >= 0) {
+                                                console.log(`[storage event] immediate match found for queued index ${tgt} -> applying to row ${immediateFound}`);
+                                                try { updateMemberProperties(immediateFound, propsForUpdate); } catch (applyErr) { console.warn('storage event: immediate apply failed', applyErr); }
+                                            } else {
+                                                shouldQueue = true;
+                                                console.warn(`[storage event] targetRow not found for index ${tgt} — queuing update`);
+                                            }
+                                        } else if (propsForUpdate && propsForUpdate.sectionLabel) {
+                                            const currentLabel = (targetRow.dataset && targetRow.dataset.sectionLabel) ? String(targetRow.dataset.sectionLabel) : null;
+                                            if (currentLabel && currentLabel !== propsForUpdate.sectionLabel) {
+                                                // Labels differ — possible row mismatch or stale indexing. Try to find the correct row first.
+                                                let immediateFound = -1;
+                                                try {
+                                                    const rows = Array.from(elements.membersTable.rows || []);
+                                                    for (let r = 0; r < rows.length; r++) {
+                                                        const ds = rows[r].dataset || {};
+                                                        if (ds.sectionLabel && ds.sectionLabel === propsForUpdate.sectionLabel) { immediateFound = r; break; }
+                                                    }
+                                                } catch (matchErr2) {
+                                                    console.warn('storage event: label match search failed', matchErr2);
+                                                }
+
+                                                if (immediateFound >= 0) {
+                                                    console.log(`[storage event] label-based immediate match found -> applying to row ${immediateFound}`);
+                                                    try { updateMemberProperties(immediateFound, propsForUpdate); } catch (applyErr2) { console.warn('storage event: immediate apply after label-match failed', applyErr2); }
+                                                } else {
+                                                    shouldQueue = true;
+                                                    console.warn(`[storage event] targetRow label mismatch (rowLabel='${currentLabel}' vs propsLabel='${propsForUpdate.sectionLabel}') — queuing update for index ${tgt}`);
+                                                }
+                                            }
+                                        }
+                                    } catch (chkErr) {
+                                        console.warn('storage event: target row verification error', chkErr);
+                                    }
+
+                                    if (shouldQueue) {
+                                        try {
+                                            window.pendingSectionUpdates.set(String(tgt), propsForUpdate);
+                                            console.log(`[storage event] queued pendingSectionUpdates[${tgt}] (pending size=${window.pendingSectionUpdates.size})`);
+                                            // Try to process pending updates immediately (fast-path)
+                                            try { processPendingSectionUpdates(); } catch (procErr) { console.warn('processPendingSectionUpdates immediate call failed', procErr); }
+                                        } catch (qErr) {
+                                            console.error('storage event: failed to queue pendingSectionUpdates', qErr);
+                                            // fallback: attempt to apply immediately
+                                            try { updateMemberProperties(data.targetMemberIndex, propsForUpdate); } catch (eApply) { console.warn('storage event: immediate apply failed after queue failure', eApply); }
+                                        }
+                                    } else {
+                                        // Safe to apply immediately
+                                        updateMemberProperties(data.targetMemberIndex, propsForUpdate);
+
+                                        // 直後に dataset の状態を確認（updateMemberProperties は大部分が同期でdatasetに書き込む）
+                                        if (targetRow) {
+                                            try { console.log('[storage event] targetRow.dataset (after)=', Object.assign({}, targetRow.dataset)); } catch (dErr2) { console.warn('dataset after logging failed', dErr2); }
+                                        }
                                     }
                                 } catch (traceErr) {
                                     console.warn('storage event: tracing around updateMemberProperties failed', traceErr);
@@ -15973,8 +16224,44 @@ const initializeFrameGenerator = () => {
                                             }
                                         }
 
+                                        // --- 追加処理: sectionInfo を dataset に保存し、3D ビューアに通知 ---
+                                        try {
+                                            const props = data.properties || {};
+
+                                            if (props.sectionInfo) {
+                                                // typeKey の最終補完
+                                                if ((!props.sectionInfo.typeKey || String(props.sectionInfo.typeKey).trim() === '') && (props.typeKey || props.selectedTypeKey)) {
+                                                    props.sectionInfo.typeKey = props.typeKey || props.selectedTypeKey;
+                                                }
+
+                                                if (typeof window.setRowSectionInfo === 'function') {
+                                                    try { window.setRowSectionInfo(newRow, props.sectionInfo); } catch (_e) { /* ignore */ }
+                                                } else {
+                                                    try { newRow.dataset.sectionInfo = encodeURIComponent(JSON.stringify(props.sectionInfo)); } catch (_e) { /* ignore */ }
+                                                }
+                                            }
+
+                                            // 軸情報も dataset に保存
+                                            if (props.sectionAxis) {
+                                                if (typeof window.applySectionAxisDataset === 'function') {
+                                                    try { window.applySectionAxisDataset(newRow, props.sectionAxis); } catch (_e) { /* ignore */ }
+                                                } else if (props.sectionAxis.label) {
+                                                    newRow.dataset.sectionAxisLabel = props.sectionAxis.label;
+                                                }
+                                            }
+
+                                            // 3D ビューアへ更新を通知
+                                            if (typeof sendModelToViewer === 'function') {
+                                                setTimeout(() => {
+                                                    try { sendModelToViewer(); } catch (e) { console.warn('sendModelToViewer failed', e); }
+                                                }, 100);
+                                            }
+                                        } catch (outerErr) {
+                                            console.warn('addMemberToTable: sectionInfo 保存処理でエラー', outerErr);
+                                        }
+
                                         localStorage.removeItem('steelSelectionForFrameAnalyzer');
-                                        console.log('✅ 部材追加行: 断面データを適用しました');
+                                        console.log('✅ 部材追加行: 断面データを適用し、保存しました');
                                     }
                                 } catch (e) {
                                     console.error('断面選択データの解析エラー:', e);
@@ -16244,6 +16531,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
 });
 
+// Added to handle 'applySection' message from steel_selector
+window.addEventListener('message', function(event) {
+    if (event.defaultPrevented) {
+        return;
+    }
+
+    if (event.data && event.data.type === 'applySection') {
+        event.preventDefault();
+
+        const sectionData = event.data.section;
+        if (!sectionData) {
+            console.error('applySection message is missing section data.');
+            return;
+        }
+
+        if (!window.selectedMembers || window.selectedMembers.size === 0) {
+            alert('断面を適用する部材を先に選択してください。');
+            return;
+        }
+
+        try {
+            if (typeof pushState === 'function') {
+                pushState();
+            }
+
+            let updatedCount = 0;
+            for (const memberIndex of window.selectedMembers) {
+                if (typeof updateMemberSectionInTable === 'function') {
+                    updateMemberSectionInTable(memberIndex, sectionData);
+                    updatedCount++;
+                } else {
+                    console.error('updateMemberSectionInTable function not found.');
+                    break;
+                }
+            }
+
+            if (updatedCount > 0) {
+                console.log(`${updatedCount} 個の部材の断面を更新しました。`);
+                
+                if (typeof runFullAnalysis === 'function') {
+                    runFullAnalysis(); 
+                } else if (typeof drawOnCanvas === 'function') {
+                    drawOnCanvas();
+                }
+
+                if (window.viewerWindow && !window.viewerWindow.closed) {
+                     try {
+                        const { nodes, members } = parseInputs();
+                        const dataToSend = { nodes, members };
+                        
+                        localStorage.setItem('latestModelForViewer', JSON.stringify(dataToSend));
+                        window.viewerWindow.postMessage({ type: 'updateModel', data: dataToSend }, '*');
+                        
+                        console.log('3D Viewer にモデル更新を通知しました (断面適用後)。');
+                     } catch(e) {
+                        console.error("3D Viewerへの更新通知に失敗しました (断面適用後): ", e);
+                     }
+                }
+            }
+        } catch (error) {
+            console.error('断面の一括適用中にエラーが発生しました:', error);
+            alert('断面の適用中にエラーが発生しました。詳細はコンソールを確認してください。');
+        }
+    }
+});
+
 // デバッグ用：フレームジェネレーター要素の存在を確認する関数
 window.checkFrameGenerator = () => {
     console.log('=== フレームジェネレーター要素チェック ===');
@@ -16287,6 +16640,15 @@ function sendModelToViewer() {
                 sectionInfo: m.sectionInfo,
                 sectionAxis: m.sectionAxis
             })));
+            // Always write latest model to localStorage as a fallback
+            try {
+                localStorage.setItem('latestModelForViewer', JSON.stringify(modelData));
+                console.log('🔧 latestModelForViewer written to localStorage (fallback)');
+            } catch (lsErr) {
+                console.warn('sendModelToViewer: failed to write latestModelForViewer to localStorage', lsErr);
+            }
+
+            // Then try to postMessage to the viewer window if available
             viewerWindow.postMessage({ type: 'updateModel', data: modelData }, '*');
         } catch (error) {
             console.error("3Dビューアへのモデル更新送信に失敗しました:", error);

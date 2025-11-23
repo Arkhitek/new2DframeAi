@@ -57,6 +57,43 @@ function init() {
     window.addEventListener('resize', onWindowResize);
     window.addEventListener('message', receiveModelData);
 
+    // ▼▼▼ 追加: localStorageの変更監視（メイン画面との接続が切れた場合のフォールバック）
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'latestModelForViewer' && e.newValue) {
+            try {
+                const data = JSON.parse(e.newValue);
+                console.log('🔧 viewer_3d: localStorage経由でモデル更新を受信しました');
+
+                if (infoPanel) {
+                    const p = infoPanel.querySelector('p:last-child') || document.createElement('p');
+                    if (!infoPanel.contains(p)) infoPanel.appendChild(p);
+                    p.textContent = `最終更新(同期): ${new Date().toLocaleTimeString()}`;
+                }
+
+                update3DModel(data);
+            } catch (err) {
+                console.warn('viewer_3d: localStorageデータのパースに失敗しました', err);
+            }
+        }
+    });
+    // ▲▲▲ 追加終了 ▲▲▲
+
+    // 起動時に localStorage に最新モデルがあれば反映する（ポップアップが後から開かれた場合のフォールバック）
+    try {
+        const latest = localStorage.getItem('latestModelForViewer');
+        if (latest) {
+            try {
+                const parsed = JSON.parse(latest);
+                console.log('🔧 viewer_3d: loaded latestModelForViewer from localStorage (fallback)');
+                update3DModel(parsed);
+            } catch (e) {
+                console.warn('viewer_3d: failed to parse latestModelForViewer from localStorage', e);
+            }
+        }
+    } catch (err) {
+        console.warn('viewer_3d: unable to access localStorage for latestModelForViewer', err);
+    }
+
     // チェックボックスのイベントリスナー設定
     setupLabelControls();
 }
@@ -65,12 +102,29 @@ function init() {
  * メインウィンドウからのデータ受信と3Dモデル更新
  */
 function receiveModelData(event) {
+    // ログと ACK を追加して受信確認をしやすくする
+    try {
+        console.log('viewer_3d: receiveModelData event received', event && event.data && event.data.type);
+    } catch (e) { /* ignore */ }
+
     if (event.data && event.data.type === 'updateModel') {
         if (infoPanel) {
             const p = infoPanel.querySelector('p:last-child');
             if(p) p.textContent = `最終更新: ${new Date().toLocaleTimeString()}`;
         }
-        update3DModel(event.data.data);
+        try {
+            update3DModel(event.data.data);
+            // ACK を localStorage に記録
+            try {
+                const ack = { ts: Date.now(), members: (event.data.data?.members || []).length };
+                localStorage.setItem('latestModelForViewerAck', JSON.stringify(ack));
+                console.log('viewer_3d: wrote latestModelForViewerAck to localStorage', ack);
+            } catch (lsErr) {
+                console.warn('viewer_3d: failed to write latestModelForViewerAck', lsErr);
+            }
+        } catch (err) {
+            console.error('viewer_3d: update3DModel failed on received message', err);
+        }
     }
 }
 
@@ -79,6 +133,15 @@ function receiveModelData(event) {
  */
 function update3DModel(data) {
     if (!data || !data.nodes || !data.members) return;
+
+    // 受信データの要約ログ
+    try {
+        console.log('viewer_3d: update3DModel called', {
+            nodes: data.nodes.length,
+            members: data.members.length,
+            sampleMember0: data.members[0] ? { sectionInfo: data.members[0].sectionInfo?.typeKey || null } : null
+        });
+    } catch (e) { /* ignore */ }
 
     // シーン内の全オブジェクトを完全に削除する再帰関数
     function disposeObject(obj) {
@@ -327,9 +390,20 @@ function createMemberMesh(member, nodes) {
 }
 
 function createSectionShape(sectionInfo, member) {
-    const dims = sectionInfo.rawDims;
+    const rawDims = sectionInfo.rawDims;
     const typeKey = sectionInfo.typeKey;
-    if (!dims || !typeKey) return null;
+    if (!rawDims || !typeKey) return null;
+
+    // 【追加】寸法データを強制的に数値に変換した新しいオブジェクトを作成
+    const dims = {};
+    for (const key in rawDims) {
+        if (Object.prototype.hasOwnProperty.call(rawDims, key)) {
+            const val = Number(rawDims[key]);
+            // 有効な数値のみ採用、NaNなら0
+            dims[key] = Number.isFinite(val) ? val : 0;
+        }
+    }
+
     const shape = new THREE.Shape();
     const MM_TO_M = 0.001;
 

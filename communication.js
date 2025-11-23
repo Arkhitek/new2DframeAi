@@ -153,6 +153,13 @@ function sendDataToParent(properties) {
         
         // localStorageにデータを保存
         const serializedData = JSON.stringify(dataToSend);
+        // デバッグ用に生データのコピーも保存しておく（受信側で突合するため）
+        try {
+            localStorage.setItem('steelSelectionForFrameAnalyzer_debug', serializedData);
+            try { sessionStorage.setItem('steelSelectionForFrameAnalyzer_debug_ts', String(dataToSend.timestamp)); } catch (_) {}
+        } catch (dbgErr) {
+            console.warn('debug copy to localStorage/sessionStorage failed', dbgErr);
+        }
         localStorage.setItem('steelSelectionForFrameAnalyzer', serializedData);
 
         console.log('✅ データ送信完了:', {

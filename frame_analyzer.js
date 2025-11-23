@@ -3039,168 +3039,249 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existingDialog) {
             existingDialog.remove();
         }
+
+        // バネ入力生成用ヘルパー（ダイアログ内用）
+        const createBulkSpringInputs = (prefix) => `
+            <div id="${prefix}-spring-box" style="display:none; margin-top:6px; padding:8px; background:#f8f9fa; border:1px solid #ddd; border-radius:4px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; font-size:12px;">
+                    <div>
+                        <label style="display:block; margin-bottom:2px;">Kx (kN/mm)</label>
+                        <div style="display:flex; align-items:center;">
+                            <input type="number" id="${prefix}-kx" step="0.01" min="0" style="width:60px;">
+                            <label style="margin-left:4px; margin-bottom:0;"><input type="checkbox" id="${prefix}-rigid-kx">剛</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; margin-bottom:2px;">Ky (kN/mm)</label>
+                        <div style="display:flex; align-items:center;">
+                            <input type="number" id="${prefix}-ky" step="0.01" min="0" style="width:60px;">
+                            <label style="margin-left:4px; margin-bottom:0;"><input type="checkbox" id="${prefix}-rigid-ky">剛</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; margin-bottom:2px;">Kr (kN·mm/rad)</label>
+                        <div style="display:flex; align-items:center;">
+                            <input type="number" id="${prefix}-kr" step="0.01" min="0" style="width:60px;">
+                            <label style="margin-left:4px; margin-bottom:0;"><input type="checkbox" id="${prefix}-rigid-kr">剛</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
         
         // ダイアログを作成
         const dialog = document.createElement('div');
         dialog.id = 'bulk-edit-dialog';
-        dialog.style.position = 'fixed';
-        dialog.style.top = '50%';
-        dialog.style.left = '50%';
-        dialog.style.transform = 'translate(-50%, -50%)';
-        dialog.style.backgroundColor = 'white';
-        dialog.style.border = '2px solid #007bff';
-        dialog.style.borderRadius = '8px';
-        dialog.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
-        dialog.style.padding = '20px';
-        dialog.style.minWidth = '400px';
-        dialog.style.maxWidth = '90vw';
-        dialog.style.maxHeight = '90vh';
-        dialog.style.overflowY = 'auto';
-        dialog.style.zIndex = '3000';
+        dialog.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background-color: white; border: 2px solid #007bff; border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3); padding: 20px;
+            min-width: 500px; max-width: 90vw; max-height: 90vh; overflow-y: auto; z-index: 3000;
+            font-family: Arial, sans-serif;
+        `;
         
         dialog.innerHTML = `
-            <h3>部材一括編集 (${selectedMembers.size}つの部材)</h3>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-e"> 弾性係数 E (N/mm²)</label>
-                <div id="bulk-e-container" style="margin-left: 20px; display: none;"></div>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-f"> 基準強度 F (N/mm²)</label>
-                <div id="bulk-f-container" style="margin-left: 20px; display: none;"></div>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-i"> 断面二次モーメント I (cm⁴)</label>
-                <input type="number" id="bulk-i" style="margin-left: 20px; display: none;" step="0.01">
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-a"> 断面積 A (cm²)</label>
-                <input type="number" id="bulk-a" style="margin-left: 20px; display: none;" step="0.01">
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-z"> 断面係数 Z (cm³)</label>
-                <input type="number" id="bulk-z" style="margin-left: 20px; display: none;" step="0.01">
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-section"> 断面選択</label>
-                <div id="bulk-section-container" style="margin-left: 20px; display: none;">
-                    <button id="bulk-section-btn" style="padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer;">断面選択ツール</button>
-                    <div id="bulk-section-info" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+            <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:10px;">部材一括編集 (${selectedMembers.size}つの部材)</h3>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div>
+                    <h4 style="font-size:14px; color:#0056b3; margin:10px 0;">材料情報</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-e"> 弾性係数 E (N/mm²)</label>
+                        <div id="bulk-e-container" style="margin-left: 20px; display: none;"></div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-f"> 基準強度 F (N/mm²)</label>
+                        <div id="bulk-f-container" style="margin-left: 20px; display: none;"></div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-density"> 密度 ρ (kg/m³)</label>
+                        <div id="bulk-density-container" style="margin-left: 20px; display: none;"></div>
+                    </div>
+
+                    <h4 style="font-size:14px; color:#0056b3; margin:15px 0 10px;">荷重</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-load"> 等分布荷重 w (kN/m)</label>
+                        <div id="bulk-load-container" style="margin-left: 20px; display: none;">
+                            <input type="number" id="bulk-load-w" step="0.01" placeholder="kN/m" style="width: 100%;">
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-i-conn"> 始端接合</label>
-                <select id="bulk-i-conn" style="margin-left: 20px; display: none;">
-                    <option value="rigid">剛接合</option>
-                    <option value="pinned">ピン接合</option>
-                </select>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-j-conn"> 終端接合</label>
-                <select id="bulk-j-conn" style="margin-left: 20px; display: none;">
-                    <option value="rigid">剛接合</option>
-                    <option value="pinned">ピン接合</option>
-                </select>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label><input type="checkbox" id="bulk-edit-load"> 等分布荷重</label>
-                <div id="bulk-load-container" style="margin-left: 20px; display: none;">
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <label>部材座標系y方向 w:</label>
-                        <input type="number" id="bulk-load-w" step="0.01" placeholder="kN/m" style="width: 100px;">
-                        <span style="font-size: 12px;">kN/m</span>
+
+                <div>
+                    <h4 style="font-size:14px; color:#0056b3; margin:10px 0;">断面情報</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-section-vals"> 断面性能 (I, A, Z)</label>
+                        <div id="bulk-section-vals-container" style="margin-left: 20px; display: none; display:grid; gap:5px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between;"><span>I:</span><input type="number" id="bulk-i" step="0.01" style="width:80px;"></div>
+                            <div style="display:flex; align-items:center; justify-content:space-between;"><span>A:</span><input type="number" id="bulk-a" step="0.01" style="width:80px;"></div>
+                            <div style="display:flex; align-items:center; justify-content:space-between;"><span>Z:</span><input type="number" id="bulk-z" step="0.01" style="width:80px;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-section"> 断面選択ツール</label>
+                        <div id="bulk-section-container" style="margin-left: 20px; display: none;">
+                            <button id="bulk-section-btn" style="padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; width:100%;">断面選択...</button>
+                            <div id="bulk-section-info" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+                        </div>
+                    </div>
+
+                    <h4 style="font-size:14px; color:#0056b3; margin:15px 0 10px;">座屈関連</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-radius-i"> 断面2次半径 i (cm)</label>
+                        <input type="number" id="bulk-radius-i" step="0.01" style="margin-left: 20px; display: none; width: 80px;">
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-buckling-k"> 座屈係数 K</label>
+                        <input type="number" id="bulk-buckling-k" step="0.1" placeholder="自動" style="margin-left: 20px; display: none; width: 80px;">
                     </div>
                 </div>
             </div>
-            <div style="margin-top: 20px; text-align: center;">
-                <button id="bulk-apply-btn" style="margin-right: 10px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">適用</button>
+
+            <h4 style="font-size:14px; color:#0056b3; margin:15px 0 10px;">接合条件</h4>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div>
+                    <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-i-conn"> 始端接合</label>
+                    <div id="bulk-i-conn-container" style="margin-left: 20px; display: none;">
+                        <select id="bulk-i-conn" style="width:100%;">
+                            <option value="rigid">剛接合</option>
+                            <option value="pinned">ピン接合</option>
+                            <option value="spring">バネ接合</option>
+                        </select>
+                        ${createBulkSpringInputs('bulk-i')}
+                    </div>
+                </div>
+                <div>
+                    <label style="display:flex; align-items:center;"><input type="checkbox" id="bulk-edit-j-conn"> 終端接合</label>
+                    <div id="bulk-j-conn-container" style="margin-left: 20px; display: none;">
+                        <select id="bulk-j-conn" style="width:100%;">
+                            <option value="rigid">剛接合</option>
+                            <option value="pinned">ピン接合</option>
+                            <option value="spring">バネ接合</option>
+                        </select>
+                        ${createBulkSpringInputs('bulk-j')}
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; text-align: center; border-top: 1px solid #eee; padding-top: 15px;">
+                <button id="bulk-apply-btn" style="margin-right: 10px; padding: 10px 30px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;">適用</button>
                 <button id="bulk-cancel-btn" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">キャンセル</button>
             </div>
         `;
         
         document.body.appendChild(dialog);
         
-        // チェックボックスの変更イベント
-        dialog.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                const targetId = checkbox.id.replace('bulk-edit-', 'bulk-');
-                const targetElement = document.getElementById(targetId);
-                const containerElement = document.getElementById(targetId + '-container');
-                
-                if (targetElement) {
-                    targetElement.style.display = checkbox.checked ? 'inline-block' : 'none';
-                } else if (containerElement) {
-                    containerElement.style.display = checkbox.checked ? 'block' : 'none';
-                    if (checkbox.checked && targetId === 'bulk-e') {
-                        // E値選択UIを生成
-                        containerElement.innerHTML = createEInputHTML('bulk-e', '205000');
-                    } else if (checkbox.checked && targetId === 'bulk-f') {
-                        // F値選択UIを生成
-                        containerElement.appendChild(createStrengthInputHTML('steel', 'bulk-f'));
+        // 各種入力UIの生成ヘルパー
+        const setupInputContainer = (checkboxId, containerId, generator) => {
+            const checkbox = document.getElementById(checkboxId);
+            const container = document.getElementById(containerId);
+            if (checkbox && container) {
+                checkbox.addEventListener('change', () => {
+                    container.style.display = checkbox.checked ? (checkboxId.includes('section-vals') ? 'grid' : 'block') : 'none';
+                    if (checkbox.checked && generator && container.innerHTML === '') {
+                        // HTML生成が必要な場合
+                        container.innerHTML = generator();
                     }
+                });
+            }
+        };
+
+        // E, F, Densityの動的生成
+        setupInputContainer('bulk-edit-e', 'bulk-e-container', () => createEInputHTML('bulk-e', '205000'));
+        // FはEに依存するため、Eの生成後にイベント設定が必要だが、簡易的に初期値で生成
+        setupInputContainer('bulk-edit-f', 'bulk-f-container', () => {
+             const wrapper = document.createElement('div');
+             wrapper.appendChild(createStrengthInputHTML('steel', 'bulk-f'));
+             return wrapper.innerHTML;
+        });
+        setupInputContainer('bulk-edit-density', 'bulk-density-container', () => createDensityInputHTML('bulk-density', 7850));
+
+        // 単純な表示切替のセットアップ
+        ['bulk-edit-load', 'bulk-edit-section', 'bulk-edit-radius-i', 'bulk-edit-buckling-k', 
+         'bulk-edit-i-conn', 'bulk-edit-j-conn', 'bulk-edit-section-vals'].forEach(id => {
+            const cb = document.getElementById(id);
+            if (!cb) return;
+            // 対応するコンテナまたはInputのIDを推測
+            let targetId = id.replace('bulk-edit-', 'bulk-');
+            if (id === 'bulk-edit-load') targetId = 'bulk-load-container';
+            if (id === 'bulk-edit-section') targetId = 'bulk-section-container';
+            if (id === 'bulk-edit-i-conn') targetId = 'bulk-i-conn-container';
+            if (id === 'bulk-edit-j-conn') targetId = 'bulk-j-conn-container';
+            if (id === 'bulk-edit-section-vals') targetId = 'bulk-section-vals-container';
+            
+            const target = document.getElementById(targetId);
+            if (target) {
+                cb.addEventListener('change', () => {
+                    target.style.display = cb.checked ? (id === 'bulk-edit-section-vals' ? 'grid' : 'block') : 'none';
+                    if (id === 'bulk-edit-section-vals' && cb.checked) target.style.display = 'grid';
+                });
+            }
+        });
+
+        // 接合条件のバネ表示切替
+        const setupConnSpringToggle = (connId, boxId) => {
+            const select = document.getElementById(connId);
+            const box = document.getElementById(boxId);
+            if (select && box) {
+                select.addEventListener('change', () => {
+                    box.style.display = select.value === 'spring' ? 'block' : 'none';
+                });
+            }
+        };
+        setupConnSpringToggle('bulk-i-conn', 'bulk-i-spring-box');
+        setupConnSpringToggle('bulk-j-conn', 'bulk-j-spring-box');
+
+        // 剛チェックボックスの制御 (inputのdisable切り替え)
+        const setupRigidCheck = (prefix) => {
+            ['kx', 'ky', 'kr'].forEach(k => {
+                const cb = document.getElementById(`${prefix}-rigid-${k}`);
+                const inp = document.getElementById(`${prefix}-${k}`);
+                if (cb && inp) {
+                    cb.addEventListener('change', () => {
+                        inp.disabled = cb.checked;
+                    });
                 }
             });
-        });
+        };
+        setupRigidCheck('bulk-i');
+        setupRigidCheck('bulk-j');
         
-        // 断面選択ボタンのイベントリスナー
+        // 断面選択ツール連携
         const sectionBtn = document.getElementById('bulk-section-btn');
         if (sectionBtn) {
             sectionBtn.addEventListener('click', () => {
-                // 一括編集用の断面選択ツールを開く
-                openBulkSectionSelector();
+                const url = `steel_selector.html?targetMember=bulk&bulk=true`;
+                window.open(url, 'BulkSteelSelector', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+                
+                // window.bulkSectionProperties は communication.js 等で受け取る想定
+                // ここでは定期チェックで反映
+                const checkInterval = setInterval(() => {
+                     const storedData = localStorage.getItem('steelSelectionForFrameAnalyzer');
+                     if (storedData) {
+                         try {
+                             const data = JSON.parse(storedData);
+                             if (data.targetMemberIndex === 'bulk' && data.properties) {
+                                 window.bulkSectionProperties = data.properties;
+                                 const infoElement = document.getElementById('bulk-section-info');
+                                 if (infoElement) {
+                                     infoElement.textContent = `選択済み: ${data.properties.sectionName || '-'} (I=${data.properties.I}, A=${data.properties.A})`;
+                                     infoElement.style.color = '#28a745';
+                                 }
+                                 localStorage.removeItem('steelSelectionForFrameAnalyzer');
+                                 clearInterval(checkInterval);
+                             }
+                         } catch(e) {}
+                     }
+                }, 500);
             });
         }
         
-        // 断面選択ツール用のグローバル変数（一括編集用）
-        window.bulkSectionProperties = null;
-        
-        // 一括編集用断面選択ツールを開く関数
-        const openBulkSectionSelector = () => {
-            const url = `steel_selector.html?targetMember=bulk&bulk=true`;
-            const popup = window.open(url, 'BulkSteelSelector', 'width=1200,height=800,scrollbars=yes,resizable=yes');
-            
-            if (!popup) {
-                alert('ポップアップブロッカーにより断面選択ツールを開けませんでした。ポップアップを許可してください。');
-                return;
-            }
-            
-            // ポップアップから戻った時の処理
-            const checkPopup = setInterval(() => {
-                if (popup.closed) {
-                    clearInterval(checkPopup);
-                    // localStorageから断面性能データを取得
-                    const storedData = localStorage.getItem('steelSelectionForFrameAnalyzer');
-                    if (storedData) {
-                        try {
-                            const data = JSON.parse(storedData);
-                            if (data.targetMemberIndex === 'bulk' && data.properties) {
-                                window.bulkSectionProperties = data.properties;
-                                updateBulkSectionInfo(data.properties);
-                                localStorage.removeItem('steelSelectionForFrameAnalyzer');
-                            }
-                        } catch (e) {
-                            console.error('断面選択データの解析エラー:', e);
-                        }
-                    }
-                }
-            }, 500);
-        };
-        
-        // 一括編集の断面情報表示を更新
-        const updateBulkSectionInfo = (properties) => {
-            const infoElement = document.getElementById('bulk-section-info');
-            if (infoElement && properties) {
-                infoElement.textContent = `選択済み: I=${properties.I}cm⁴, A=${properties.A}cm², Z=${properties.Z}cm³`;
-                infoElement.style.color = '#28a745';
-            }
-        };
-        
-        // 適用ボタンのイベント
+        // 適用・キャンセルボタン
         document.getElementById('bulk-apply-btn').addEventListener('click', () => {
             applyBulkEdit();
             dialog.remove();
         });
-        
-        // キャンセルボタンのイベント
         document.getElementById('bulk-cancel-btn').addEventListener('click', () => {
             dialog.remove();
         });
@@ -3216,42 +3297,72 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('bulk-edit-e').checked) {
             const eSelect = document.getElementById('bulk-e-select');
             const eInput = document.getElementById('bulk-e-input');
-            updates.E = eSelect && eInput ? (eSelect.value === 'custom' ? eInput.value : eSelect.value) : null;
+            updates.E = (eSelect && eSelect.value !== 'custom') ? eSelect.value : (eInput ? eInput.value : null);
         }
         
-        if (document.getElementById('bulk-edit-i').checked) {
+        if (document.getElementById('bulk-edit-f').checked) {
+            const container = document.getElementById('bulk-f-container');
+            if (container) {
+                const fSelect = container.querySelector('select');
+                const fInput = container.querySelector('input');
+                updates.F = (fSelect && fSelect.value !== 'custom') ? fSelect.value : (fInput ? fInput.value : null);
+            }
+        }
+
+        if (document.getElementById('bulk-edit-density').checked) {
+            const dSelect = document.getElementById('bulk-density-select');
+            const dInput = document.getElementById('bulk-density-input');
+            updates.Density = (dSelect && dSelect.value !== 'custom') ? dSelect.value : (dInput ? dInput.value : null);
+        }
+
+        if (document.getElementById('bulk-edit-section-vals').checked) {
             updates.I = document.getElementById('bulk-i').value;
-        }
-        
-        if (document.getElementById('bulk-edit-a').checked) {
             updates.A = document.getElementById('bulk-a').value;
-        }
-        
-        if (document.getElementById('bulk-edit-z').checked) {
             updates.Z = document.getElementById('bulk-z').value;
         }
+
+        if (document.getElementById('bulk-edit-radius-i').checked) {
+            updates.radius_i = document.getElementById('bulk-radius-i').value;
+        }
+
+        if (document.getElementById('bulk-edit-buckling-k').checked) {
+            updates.buckling_k = document.getElementById('bulk-buckling-k').value;
+        }
         
+        // 接合条件の取得関数
+        const getConnUpdate = (prefix) => {
+            const select = document.getElementById(`${prefix}-conn`);
+            const val = select.value;
+            const update = { type: val };
+            if (val === 'spring') {
+                update.Kx = document.getElementById(`${prefix}-kx`).value;
+                update.Ky = document.getElementById(`${prefix}-ky`).value;
+                update.Kr = document.getElementById(`${prefix}-kr`).value;
+                update.rigidKx = document.getElementById(`${prefix}-rigid-kx`).checked;
+                update.rigidKy = document.getElementById(`${prefix}-rigid-ky`).checked;
+                update.rigidKr = document.getElementById(`${prefix}-rigid-kr`).checked;
+            }
+            return update;
+        };
+
         if (document.getElementById('bulk-edit-i-conn').checked) {
-            updates.i_conn = document.getElementById('bulk-i-conn').value;
+            updates.i_conn = getConnUpdate('bulk-i');
         }
         
         if (document.getElementById('bulk-edit-j-conn').checked) {
-            updates.j_conn = document.getElementById('bulk-j-conn').value;
+            updates.j_conn = getConnUpdate('bulk-j');
         }
         
-        // 断面選択の処理
+        // 断面選択による断面性能の一括更新
         if (document.getElementById('bulk-edit-section').checked && window.bulkSectionProperties) {
             updates.sectionProperties = window.bulkSectionProperties;
         }
         
-        // 等分布荷重の処理
+        // 等分布荷重
         if (document.getElementById('bulk-edit-load').checked) {
-            const w = document.getElementById('bulk-load-w').value;
-            if (w) {
-                updates.memberLoad = {
-                    w: parseFloat(w)
-                };
-            }
+            updates.memberLoad = {
+                w: parseFloat(document.getElementById('bulk-load-w').value || 0)
+            };
         }
         
         console.log('一括編集内容:', updates);
@@ -3268,130 +3379,169 @@ document.addEventListener('DOMContentLoaded', () => {
                 const eSelect = row.cells[3].querySelector('select');
                 const eInput = row.cells[3].querySelector('input[type="number"]');
                 if (eSelect && eInput) {
-                    eSelect.value = Array.from(eSelect.options).some(opt => opt.value === updates.E) ? updates.E : 'custom';
+                    const hasOption = Array.from(eSelect.options).some(opt => opt.value === updates.E);
+                    eSelect.value = hasOption ? updates.E : 'custom';
                     eInput.value = updates.E;
-                    eInput.readOnly = eSelect.value !== 'custom';
+                    eInput.readOnly = (eSelect.value !== 'custom');
                     eSelect.dispatchEvent(new Event('change'));
                 }
             }
+
+            // F値の更新
+            if (updates.F) {
+                const strengthContainer = row.cells[4].firstElementChild;
+                if (strengthContainer) {
+                    const fSelect = strengthContainer.querySelector('select');
+                    const fInput = strengthContainer.querySelector('input');
+                    if (fSelect && fInput) {
+                         if (fInput) {
+                             fInput.value = updates.F;
+                             if (fSelect) fSelect.value = 'custom';
+                         } else if (fSelect) {
+                             fSelect.value = updates.F;
+                         }
+                    }
+                }
+            }
             
-            // 断面性能の更新
+            // 密度の更新
+            if (updates.Density) {
+                const densityCell = row.querySelector('.density-cell');
+                if (densityCell) {
+                    const dSelect = densityCell.querySelector('select');
+                    const dInput = densityCell.querySelector('input');
+                    if (dSelect && dInput) {
+                         const hasOption = Array.from(dSelect.options).some(opt => opt.value === updates.Density);
+                         dSelect.value = hasOption ? updates.Density : 'custom';
+                         dInput.value = updates.Density;
+                         dInput.readOnly = (dSelect.value !== 'custom');
+                    }
+                }
+            }
+
+            // 断面性能 (I, A, Z)
             if (updates.I) row.cells[5].querySelector('input').value = updates.I;
             if (updates.A) row.cells[6].querySelector('input').value = updates.A;
             if (updates.Z) row.cells[7].querySelector('input').value = updates.Z;
+
+            // 断面2次半径 i
+            if (updates.radius_i !== undefined) {
+                const iInput = row.querySelector('.radius-i-input');
+                if (iInput) iInput.value = updates.radius_i;
+                if (updates.radius_i) {
+                    row.dataset.ix = updates.radius_i;
+                    row.dataset.iy = updates.radius_i;
+                } else {
+                    delete row.dataset.ix;
+                    delete row.dataset.iy;
+                }
+            }
+
+            // 座屈係数 K
+            if (updates.buckling_k !== undefined) {
+                const kInput = row.querySelector('.buckling-k-input');
+                if (kInput) kInput.value = updates.buckling_k;
+                if (updates.buckling_k) row.dataset.bucklingK = updates.buckling_k;
+                else delete row.dataset.bucklingK;
+            }
             
-            // 断面選択による断面性能の一括更新
+            // 断面選択ツールからの反映
             if (updates.sectionProperties) {
-                if (updates.sectionProperties.I) row.cells[5].querySelector('input').value = updates.sectionProperties.I;
-                if (updates.sectionProperties.A) row.cells[6].querySelector('input').value = updates.sectionProperties.A;
-                if (updates.sectionProperties.Z) row.cells[7].querySelector('input').value = updates.sectionProperties.Z;
+                const sp = updates.sectionProperties;
+                if (sp.I) row.cells[5].querySelector('input').value = sp.I;
+                if (sp.A) row.cells[6].querySelector('input').value = sp.A;
+                if (sp.Z) row.cells[7].querySelector('input').value = sp.Z;
                 
-                // 追加の断面性能をデータ属性として保存
-                if (updates.sectionProperties.Zx) row.dataset.zx = updates.sectionProperties.Zx;
-                if (updates.sectionProperties.Zy) row.dataset.zy = updates.sectionProperties.Zy;
-                if (updates.sectionProperties.ix) row.dataset.ix = updates.sectionProperties.ix;
-                if (updates.sectionProperties.iy) row.dataset.iy = updates.sectionProperties.iy;
+                if (sp.Zx) row.dataset.zx = sp.Zx;
+                if (sp.Zy) row.dataset.zy = sp.Zy;
+                if (sp.ix) row.dataset.ix = sp.ix;
+                if (sp.iy) row.dataset.iy = sp.iy;
+                
+                const iInput = row.querySelector('.radius-i-input');
+                if (iInput && (sp.ix || sp.iy)) {
+                    const v = Math.min(parseFloat(sp.ix)||9999, parseFloat(sp.iy)||9999);
+                    if (v < 9999) iInput.value = v.toFixed(2);
+                }
 
-                if (updates.sectionProperties.sectionInfo) {
+                if (sp.sectionInfo) {
                     if (typeof window.setRowSectionInfo === 'function') {
-                        window.setRowSectionInfo(row, updates.sectionProperties.sectionInfo);
-                    } else {
-                        console.warn('setRowSectionInfo関数が定義されていません。断面情報更新をスキップします。');
+                        window.setRowSectionInfo(row, sp.sectionInfo);
                     }
                 }
+                if (sp.sectionAxis || sp.sectionAxisLabel) {
+                     const axisInfo = sp.sectionAxis || { label: sp.sectionAxisLabel };
+                     if (typeof window.applySectionAxisDataset === 'function') {
+                         window.applySectionAxisDataset(row, axisInfo);
+                     }
+                }
+            }
+            
+            // 接合条件の更新 helper
+            const updateConn = (connSelect, updateData) => {
+                if (!connSelect || !updateData) return;
+                connSelect.value = updateData.type;
+                connSelect.dispatchEvent(new Event('change'));
 
-                if (Object.prototype.hasOwnProperty.call(updates.sectionProperties, 'sectionAxis')) {
-                    if (typeof window.applySectionAxisDataset === 'function') {
-                        window.applySectionAxisDataset(row, updates.sectionProperties.sectionAxis);
-                    } else {
-                        console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
-                    }
-                } else if (updates.sectionProperties.sectionInfo && updates.sectionProperties.sectionInfo.axis) {
-                    if (typeof window.applySectionAxisDataset === 'function') {
-                        window.applySectionAxisDataset(row, updates.sectionProperties.sectionInfo.axis);
-                    } else {
-                        console.warn('applySectionAxisDataset関数が定義されていません。軸情報更新をスキップします。');
+                if (updateData.type === 'spring') {
+                    const cell = connSelect.closest('.conn-cell');
+                    const springBox = cell ? cell.querySelector('.spring-inputs') : null;
+                    if (springBox) {
+                        const setVal = (cls, val) => { const el = springBox.querySelector(cls); if(el) el.value = val; };
+                        const setChk = (cls, chk) => { 
+                            const el = springBox.querySelector(cls); 
+                            if(el) { 
+                                el.checked = chk; 
+                                el.dispatchEvent(new Event('change'));
+                            } 
+                        };
+                        
+                        setVal('.spring-kx', updateData.Kx);
+                        setVal('.spring-ky', updateData.Ky);
+                        setVal('.spring-kr', updateData.Kr);
+                        setChk('.spring-rigid-kx', updateData.rigidKx);
+                        setChk('.spring-rigid-ky', updateData.rigidKy);
+                        setChk('.spring-rigid-kr', updateData.rigidKr);
                     }
                 }
-            }
-            
-            // 接合条件の更新 - conn-select クラスを持つ要素を使って安全に更新
+            };
+
             const connSelectsRow = Array.from(row.querySelectorAll('.conn-select'));
-            const tableIConnSel = connSelectsRow[0] || null;
-            const tableJConnSel = connSelectsRow[1] || null;
-            if (updates.i_conn && tableIConnSel) {
-                tableIConnSel.value = updates.i_conn;
-                tableIConnSel.dispatchEvent(new Event('change'));
-            }
-            if (updates.j_conn && tableJConnSel) {
-                tableJConnSel.value = updates.j_conn;
-                tableJConnSel.dispatchEvent(new Event('change'));
-            }
+            if (updates.i_conn) updateConn(connSelectsRow[0], updates.i_conn);
+            if (updates.j_conn) updateConn(connSelectsRow[1], updates.j_conn);
             
-            // 等分布荷重の処理
+            // 等分布荷重
             if (updates.memberLoad) {
-                // 既存の部材荷重を検索
                 const existingLoadRow = Array.from(elements.memberLoadsTable.rows).find(loadRow => {
                     const memberInput = loadRow.cells[0].querySelector('input');
                     return parseInt(memberInput.value) - 1 === memberIndex;
                 });
                 
                 if (existingLoadRow) {
-                    // 既存の荷重を更新（部材座標系y方向のw値）
                     existingLoadRow.cells[1].querySelector('input').value = updates.memberLoad.w;
-                } else {
-                    // 新しい部材荷重を追加
-                    if (updates.memberLoad.w !== 0) {
-                        const newLoadRow = elements.memberLoadsTable.insertRow();
-                        newLoadRow.innerHTML = `
-                            <td><input type="number" value="${memberIndex + 1}" min="1"></td>
-                            <td><input type="number" value="${updates.memberLoad.w}" step="0.01"></td>
-                            <td><button class="delete-row-btn">×</button></td>
-                        `;
-                        
-                        // 削除ボタンのイベントリスナーを追加
-                        const deleteBtn = newLoadRow.querySelector('.delete-row-btn');
-                        deleteBtn.onclick = () => {
-                            pushState();
-                            newLoadRow.remove();
-                            if (typeof drawOnCanvas === 'function') {
-                                drawOnCanvas();
-                            }
-                        };
-                        
-                        // 入力変更時の再描画
-                        newLoadRow.querySelectorAll('input').forEach(input => {
-                            input.addEventListener('change', () => {
-                                if (typeof drawOnCanvas === 'function') {
-                                    drawOnCanvas();
-                                }
-                            });
-                        });
-                    }
+                } else if (updates.memberLoad.w !== 0) {
+                    const newLoadRow = elements.memberLoadsTable.insertRow();
+                    newLoadRow.innerHTML = `
+                        <td><input type="number" value="${memberIndex + 1}" min="1"></td>
+                        <td><input type="number" value="${updates.memberLoad.w}" step="0.01"></td>
+                        <td><button class="delete-row-btn">×</button></td>
+                    `;
+                    const deleteBtn = newLoadRow.querySelector('.delete-row-btn');
+                    deleteBtn.onclick = () => { pushState(); newLoadRow.remove(); drawOnCanvas(); };
+                    newLoadRow.querySelectorAll('input').forEach(input => {
+                        input.addEventListener('change', () => drawOnCanvas());
+                    });
                 }
             }
         }
         
-        // 表示を更新
         if (typeof drawOnCanvas === 'function') {
             drawOnCanvas();
         }
         
-        console.log(`${selectedMembers.size}つの部材に一括編集を適用しました`);
-        
-        // 成功メッセージを表示
         const message = document.createElement('div');
-        message.style.position = 'fixed';
-        message.style.top = '20px';
-        message.style.right = '20px';
-        message.style.background = '#28a745';
-        message.style.color = 'white';
-        message.style.padding = '10px 15px';
-        message.style.borderRadius = '4px';
-        message.style.zIndex = '4000';
+        message.style.cssText = 'position:fixed; top:20px; right:20px; background:#28a745; color:white; padding:10px 15px; border-radius:4px; z-index:4000;';
         message.textContent = `${selectedMembers.size}つの部材を一括編集しました`;
         document.body.appendChild(message);
-        
         setTimeout(() => message.remove(), 3000);
     };
 

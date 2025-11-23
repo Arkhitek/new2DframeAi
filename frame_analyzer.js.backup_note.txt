@@ -1,0 +1,6 @@
+Backup note for frame_analyzer.js
+Created: 2025-11-23
+This file is a lightweight backup note. A full binary/text copy of the original file was not saved here to avoid duplicating a large file in the workspace. If you need a full backup, please tell me and I will create a complete copy of the current `frame_analyzer.js` content into a .bak file (may be large).
+Changes about to be made: appending a temporary test harness function `window.runAutoTestCases()` to the end of `frame_analyzer.js` that creates two simple test states (short and long beam), calls `restoreState()` and `runFullAnalysis()` and logs `window.lastResults` to the console.
+
+If you'd prefer a full exact backup preceding modification, respond and I will create it (may take a moment).

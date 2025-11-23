@@ -432,6 +432,60 @@ function clearMultiSelection() {
     console.log('複数選択クリア完了');
 }
 
+// ======================================================================
+// Test harness: 自動テスト用の短梁・長梁ケースをページ上で復元し解析を実行します
+// 使い方: ブラウザでページを開き、コンソールで `runAutoTestCases()` を呼んでください。
+// ======================================================================
+window.runAutoTestCases = function() {
+    try {
+        console.log('runAutoTestCases: starting automated tests');
+
+        // --- 短梁ケース: 長さ 1 m, 固定-ピン, 等分布荷重 w=5 kN/m ---
+        const shortState = {
+            nodes: [
+                { x: 0, y: 0, support: 'fixed', dx_forced: 0, dy_forced: 0, r_forced: 0 },
+                { x: 1, y: 0, support: 'pinned', dx_forced: 0, dy_forced: 0, r_forced: 0 }
+            ],
+            members: [
+                { i: 0, j: 1, E: '205000', I: 8.333e-6, A: 1e-3, Z: 1e-3, i_conn: 'rigid', j_conn: 'rigid' }
+            ],
+            nodeLoads: [],
+            memberLoads: [ { member: 1, w: 5 } ]
+        };
+
+        console.log('runAutoTestCases: restoring short beam state and running analysis');
+        if (typeof restoreState === 'function') restoreState(shortState);
+        if (typeof runFullAnalysis === 'function') runFullAnalysis();
+        setTimeout(() => {
+            console.log('Short beam results:', window.lastResults || 'no results');
+
+            // --- 長梁ケース: 長さ 5 m, 固定-ピン, 等分布荷重 w=2 kN/m ---
+            const longState = {
+                nodes: [
+                    { x: 0, y: 0, support: 'fixed', dx_forced: 0, dy_forced: 0, r_forced: 0 },
+                    { x: 5, y: 0, support: 'pinned', dx_forced: 0, dy_forced: 0, r_forced: 0 }
+                ],
+                members: [
+                    { i: 0, j: 1, E: '205000', I: 8.333e-6, A: 1e-3, Z: 1e-3, i_conn: 'rigid', j_conn: 'rigid' }
+                ],
+                nodeLoads: [],
+                memberLoads: [ { member: 1, w: 2 } ]
+            };
+
+            console.log('runAutoTestCases: restoring long beam state and running analysis');
+            if (typeof restoreState === 'function') restoreState(longState);
+            if (typeof runFullAnalysis === 'function') runFullAnalysis();
+            setTimeout(() => {
+                console.log('Long beam results:', window.lastResults || 'no results');
+                console.log('runAutoTestCases: finished');
+            }, 1200);
+        }, 1200);
+    } catch (e) {
+        console.error('runAutoTestCases error', e);
+    }
+};
+
+
 // 単一選択をクリアする関数
 function clearSingleSelection() {
     console.log('単一選択をクリア - 以前の状態:', {
@@ -3564,30 +3618,87 @@ document.addEventListener('DOMContentLoaded', () => {
         solve: (A, b) => {
             if (!A || !b || !A.length) return null;
             const n = A.length;
-            const aug = A.map((row, i) => [...row, b[i][0]]);
+            // 行列と右辺を結合した拡張行列を作る（非破壊）
+            const M = A.map((row, i) => [...row, b[i][0]]);
+            const EPSILON = 1e-10;
+
             for (let i = 0; i < n; i++) {
+                // ピボット選択（絶対値が最大の行を選ぶ）
                 let maxRow = i;
                 for (let k = i + 1; k < n; k++) {
-                    if (Math.abs(aug[k][i]) > Math.abs(aug[maxRow][i])) maxRow = k;
+                    if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
                 }
-                [aug[i], aug[maxRow]] = [aug[maxRow], aug[i]];
-                if (aug[i][i] === 0) continue;
+
+                // 特異行列の判定
+                if (Math.abs(M[maxRow][i]) < EPSILON) {
+                    console.error(`Matrix is singular or nearly singular at pivot ${i}`);
+                    return null;
+                }
+
+                // 行の入れ替え
+                [M[i], M[maxRow]] = [M[maxRow], M[i]];
+
+                // 前進消去
                 for (let k = i + 1; k < n; k++) {
-                    const factor = aug[k][i] / aug[i][i];
-                    for (let j = i; j < n + 1; j++) aug[k][j] -= factor * aug[i][j];
+                    const factor = M[k][i] / M[i][i];
+                    for (let j = i; j <= n; j++) {
+                        M[k][j] -= factor * M[i][j];
+                    }
                 }
             }
+
+            // 後退代入
             const x = mat.create(n, 1);
             for (let i = n - 1; i >= 0; i--) {
                 let sum = 0;
-                for (let j = i + 1; j < n; j++) sum += aug[i][j] * x[j][0];
-                if (aug[i][i] === 0 && aug[i][n] - sum !== 0) return null;
-                x[i][0] = aug[i][i] === 0 ? 0 : (aug[i][n] - sum) / aug[i][i];
+                for (let j = i + 1; j < n; j++) sum += M[i][j] * x[j][0];
+                x[i][0] = (M[i][n] - sum) / M[i][i];
             }
             return x;
         }
     };
     
+    // --- Utility: debounce & State and History Management ---
+
+    // debounce helper (入力イベントの多発を抑制)
+    function debounce(func, wait) {
+        let timeout = null;
+        return function(...args) {
+            const ctx = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(ctx, args), wait);
+        };
+    }
+
+    // debounced pushState to reduce frequent history entries during typing
+    const debouncedPushState = debounce(() => {
+        try { HistoryManager.push(getCurrentState()); } catch (e) { console.error('debouncedPushState error', e); }
+    }, 500);
+
+    // [新規] 断面パラメータ手動変更監視
+    const setupSectionPropertyWatchers = (row) => {
+        try {
+            const Iinput = row.cells[5]?.querySelector('input');
+            const Ainput = row.cells[6]?.querySelector('input');
+            const Zinput = row.cells[7]?.querySelector('input');
+            [Iinput, Ainput, Zinput].forEach(inp => {
+                if (!inp) return;
+                inp.addEventListener('change', () => {
+                    const nameCell = row.querySelector('.section-name-cell');
+                    if (nameCell && !nameCell.textContent.includes('(手動変更)')) {
+                        nameCell.textContent = (nameCell.textContent || '') + ' (手動変更)';
+                        nameCell.style.color = '#e67e22';
+                    }
+                    const axisCell = row.querySelector('.section-axis-cell');
+                    if (axisCell) axisCell.textContent = '-';
+                    delete row.dataset.sectionInfo;
+                });
+            });
+        } catch (e) {
+            console.warn('setupSectionPropertyWatchers error', e);
+        }
+    };
+
     // --- State and History Management ---
     const getCurrentState = () => {
         const state = { nodes: [], members: [], nodeLoads: [], memberLoads: [] };
@@ -4612,11 +4723,14 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const setupRowInputListeners = (row, tableBody) => {
         row.querySelectorAll('input, select').forEach(element => {
+            // 設定編集開始時に状態を保存
             element.addEventListener('focus', pushState);
+            // 入力中はデバウンスして履歴を追加
+            element.addEventListener('input', () => { if (typeof debouncedPushState === 'function') debouncedPushState(); });
+            // 値確定時は即時保存 & 描画更新
             element.addEventListener('change', () => {
-                if (typeof drawOnCanvas === 'function') {
-                    drawOnCanvas();
-                }
+                pushState();
+                if (typeof drawOnCanvas === 'function') drawOnCanvas();
             });
         });
         
@@ -4634,6 +4748,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tableBody === elements.membersTable) {
                 setupMemberRowSpecialFeatures(newRow);
                 setupMaterialTypeHandling(newRow);
+                // 断面手動変更監視を追加
+                if (typeof setupSectionPropertyWatchers === 'function') setupSectionPropertyWatchers(newRow);
             }
             
             // イベントリスナーの設定
@@ -4819,7 +4935,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
 
-                    const Q_simple = -(w * L) / 2;
+                    const Q_simple = (w * L) / 2;
 
                     fel = [
                         F_correction[0],

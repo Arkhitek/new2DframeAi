@@ -1862,6 +1862,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make elements object globally accessible
     window.elements = elements;
 
+    // --- 追加: 部材追加ポップアップの表示切替制御 ---
+    const setupAddMemberPopupToggles = () => {
+        const popup = document.getElementById('add-member-popup');
+        if (!popup) return;
+
+        const toggles = popup.querySelectorAll('.add-popup-toggle');
+        
+        const updateVisibility = () => {
+            toggles.forEach(toggle => {
+                const targetClass = toggle.getAttribute('data-target');
+                const isChecked = toggle.checked;
+                
+                // ポップアップ内の対象クラスを持つ要素を全て取得
+                const targetElements = popup.querySelectorAll(`.${targetClass}`);
+                targetElements.forEach(el => {
+                    // props-grid内のレイアウトを崩さないよう、displayプロパティを適切に制御
+                    if (el.tagName === 'LABEL' || el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'DIV') {
+                        // グリッドアイテムとしての表示制御 (CSSに委ねるかnoneにする)
+                        el.style.display = isChecked ? '' : 'none';
+                    }
+                });
+            });
+        };
+
+        toggles.forEach(toggle => {
+            toggle.addEventListener('change', updateVisibility);
+        });
+
+        // 初期状態の適用
+        updateVisibility();
+    };
+
+    // 初期化時に実行
+    try { setupAddMemberPopupToggles(); } catch (err) { console.warn('setupAddMemberPopupToggles failed', err); }
+
     // ▼▼▼ 修正: 図別の文字サイズスライダー初期化 ▼▼▼
     window.settings = window.settings || {};
     window.settings.fontScales = window.settings.fontScales || {
@@ -4510,12 +4545,10 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const setupMemberRowSpecialFeatures = (row) => {
         // 1. 断面算定関連のクラスを追加
-        // F値(index 4) と Z(index 7) は固定位置と仮定できる場合にのみ付与
         if (row.cells[4]) row.cells[4].classList.add('section-check-item');
         if (row.cells[7]) row.cells[7].classList.add('section-check-item');
 
         // 2. 断面選択ボタンの挿入
-        // .conn-cell を持つ最初のセル（接合条件の開始位置）を探す
         let firstConnIndex = -1;
         for(let i = 0; i < row.cells.length; i++) {
             try {
@@ -4526,41 +4559,41 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch(e) {}
         }
 
-        // 見つかればその前に、見つからなければ削除ボタン(最後)の前、それもなければ末尾に挿入
         let insertIndex = firstConnIndex !== -1 ? firstConnIndex : (row.cells.length > 0 ? row.cells.length - 1 : 0);
         
-        const selectCell = row.insertCell(insertIndex);
-        selectCell.innerHTML = `<button class="select-props-btn" title="鋼材データツールを開く">選択</button>`;
+        // 既にボタンがある場合は挿入しない
+        if (!row.querySelector('.select-props-btn')) {
+            const selectCell = row.insertCell(insertIndex);
+            selectCell.innerHTML = `<button class="select-props-btn" title="鋼材データツールを開く">選択</button>`;
+        }
 
         // 3. 全セルのクラス付与 (コンテンツベース判定)
-        // 削除ボタン(一番右)にはクラスを付与しないようにループ範囲を制限
-        // または削除ボタンを明確に除外する
         for (let i = 0; i < row.cells.length; i++) {
             const cell = row.cells[i];
             if(!cell) continue;
 
-            // 削除ボタンが含まれるセルはスキップ (一番右端の安全策)
+            // 削除ボタンが含まれるセルはスキップ
             if (cell.querySelector('.delete-row-btn')) continue;
 
             // クラスを一旦リセット
-            cell.classList.remove('col-material', 'col-section', 'col-buckling', 'col-conn');
+            cell.classList.remove('col-material', 'col-section', 'col-buckling', 'col-conn', 'density-column');
 
-            // E (index 3), F (index 4) -> Material
-            // E: 3番目のセル、F: 4番目のセル (固定位置の場合)
-            // ただし密度などの列が挟まるとずれる可能性があるため、inputの属性等でもチェック推奨だが
-            // 現状の実装ではE,Fは固定位置にある前提のコードが多いのでindexチェックも併用
-            
             // --- コンテンツベースでの判定 (優先) ---
             try {
                 // 密度 (Density)
-                if (cell.classList.contains('density-column') || (cell.querySelector && cell.querySelector('input[title*="密度"]'))) {
-                    cell.classList.add('col-material');
-                    if (!cell.classList.contains('density-column')) cell.classList.add('density-column');
+                if (cell.classList.contains('density-cell') || cell.querySelector('input[title*="密度"]')) {
+                    cell.classList.add('col-material', 'density-column');
                     continue; 
                 }
 
                 // 座屈係数 K
                 if (cell.querySelector('.buckling-k-input')) {
+                    cell.classList.add('col-buckling');
+                    continue;
+                }
+
+                // 断面2次半径 i (ここが重要：以前のコードで漏れていた可能性あり)
+                if (cell.querySelector('.radius-i-input')) {
                     cell.classList.add('col-buckling');
                     continue;
                 }
@@ -4584,7 +4617,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // --- 固定位置フォールバック ---
-                // 密度列などが挿入される前の基本位置
                 // E, F
                 if (i === 3 || i === 4) {
                     cell.classList.add('col-material');
@@ -4861,6 +4893,57 @@ document.addEventListener('DOMContentLoaded', () => {
         setupTableInputValidation(row, tableBody);
     };
 
+    // ▼▼▼ 追加・修正: 部材テーブルの列表示を更新・同期する関数 ▼▼▼
+    const updateMemberTableVisibility = () => {
+        const table = document.getElementById('members-table');
+        if (!table) return;
+
+        // 1. 表示制御トグルの状態を取得
+        const toggles = document.querySelectorAll('.column-toggles .col-toggle');
+        const visibilityState = {};
+        toggles.forEach(toggle => {
+            const target = toggle.getAttribute('data-target');
+            if (target) visibilityState[target] = toggle.checked;
+        });
+
+        // 2. 自重考慮チェックボックスの状態を取得
+        const isDensityEnabled = document.getElementById('consider-self-weight-checkbox')?.checked;
+
+        // 要素を表示すべきか判定する関数
+        const shouldShow = (element) => {
+            // 密度列（density-column）の特例制御
+            // 自重考慮がOFFなら、他の条件に関わらず非表示
+            if (element.classList.contains('density-column') && !isDensityEnabled) {
+                return false;
+            }
+
+            // クラスに基づく表示制御（トグル）
+            // 要素が特定のクラス（col-materialなど）を持っていて、そのトグルがOFFなら非表示
+            for (const [cls, isVisible] of Object.entries(visibilityState)) {
+                if (element.classList.contains(cls) && !isVisible) {
+                    return false; 
+                }
+            }
+
+            return true; // 隠す理由がなければ表示
+        };
+
+        // ヘッダーの表示切替
+        const headers = table.querySelectorAll('thead th');
+        headers.forEach(th => {
+            th.style.display = shouldShow(th) ? '' : 'none';
+        });
+
+        // ボディのセルの表示切替
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(row => {
+            Array.from(row.cells).forEach(cell => {
+                cell.style.display = shouldShow(cell) ? '' : 'none';
+            });
+        });
+    };
+    // ▲▲▲ 追加終了 ▲▲▲
+
     // Minimal utils shim: provides executeWithErrorHandling and showMessage used by the app.
     // This restores runtime behavior when the original utils module is missing.
     const utils = window.utils || (window.utils = {
@@ -4919,6 +5002,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setupRowDeleteHandler(newRow, tableBody);
             setupRowInputListeners(newRow, tableBody);
             
+            // ▼▼▼ 追加: 行追加直後に表示状態を同期させる ▼▼▼
+            if (tableBody === elements.membersTable) {
+                try { updateMemberTableVisibility(); } catch (e) { console.warn('updateMemberTableVisibility failed', e); }
+            }
+            // ▲▲▲ 追加終了 ▲▲▲
+
             if (saveHistory) {
                 renumberTables();
                 // プリセット読み込み中は描画をスキップ
@@ -9240,11 +9329,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const isChecked = considerSelfWeightCheckbox.checked;
         
-        // 密度列のヘッダーの表示/非表示を切り替え（HTMLに既に存在するヘッダー）
-        const densityColumns = document.querySelectorAll('.density-column');
-        densityColumns.forEach(column => {
-            column.style.display = isChecked ? '' : 'none';
-        });
+        // 注: ヘッダーの表示切替は updateMemberTableVisibility に任せるため、ここでは操作しません
         
         // 既存の部材行に密度列を追加/削除
         const memberRows = elements.membersTable.rows;
@@ -9267,7 +9352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!densityCell) {
                     // 挿入位置を動的に決定（断面係数Zセルの後）
                     let insertPosition = 8; // 保守的なデフォルト
-                    // より安全に、Z値セルを探してその後ろに挿入（K列が既にある場合はさらに後ろへ）
+                    // より安全に、Z値セルを探してその後ろに挿入
                     for (let k = 0; k < row.cells.length; k++) {
                         const cell = row.cells[k];
                         if (cell.querySelector('input[title*="断面係数"]')) {
@@ -9279,7 +9364,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     densityCell = row.insertCell(insertPosition);
-                    densityCell.className = 'density-cell col-material';
+                    // col-materialとdensity-columnの両方を付与して表示制御対象にする
+                    // これにより「材料情報」トグルと「自重考慮」チェックボックスの両方の影響を受ける
+                    densityCell.className = 'density-cell col-material density-column'; 
                     
                     // 現在のE値から密度を推定して設定
                     const eCell = row.cells[3];
@@ -9290,13 +9377,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     densityCell.innerHTML = createDensityInputHTML(`member-density-${i}`, density);
                 }
             } else {
-                // 密度列を削除
+                // 密度列を削除（DOMから削除し、表示状態の整合性は updateMemberTableVisibility で保つ）
                 const densityCell = row.querySelector('.density-cell');
                 if (densityCell) {
                     densityCell.remove();
                 }
             }
         }
+        
+        // 列の表示状態を同期（重要：密度列を追加/削除した後に必ず呼ぶ）
+        updateMemberTableVisibility();
         
         // 部材プロパティポップアップが開いている場合は位置を再調整
         if (elements.memberPropsPopup && elements.memberPropsPopup.style.display === 'block') {
@@ -9435,6 +9525,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('add-popup-i').value = newMemberDefaults.I;
         document.getElementById('add-popup-a').value = newMemberDefaults.A;
         document.getElementById('add-popup-z').value = newMemberDefaults.Z;
+        // 断面2次半径 i (cm) の初期値を設定（newMemberDefaults に i / i_radius / ix / iy のいずれかがあれば使用）
+        try {
+            const iVal = newMemberDefaults.i || newMemberDefaults.i_radius || newMemberDefaults.ix || newMemberDefaults.iy || '';
+            document.getElementById('add-popup-radius-i').value = iVal;
+        } catch(_){}
+        // 座屈係数の初期値を設定
+        try { document.getElementById('add-popup-buckling-k').value = newMemberDefaults.bucklingK || ''; } catch(_){}
         document.getElementById('add-popup-i-conn').value = newMemberDefaults.i_conn;
         document.getElementById('add-popup-j-conn').value = newMemberDefaults.j_conn;
         
@@ -9566,12 +9663,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const iInput = document.getElementById('add-popup-i');
         const aInput = document.getElementById('add-popup-a');
         const zInput = document.getElementById('add-popup-z');
+        const radiusInput = document.getElementById('add-popup-radius-i');
+        const kInput = document.getElementById('add-popup-buckling-k');
         const iConnSelect = document.getElementById('add-popup-i-conn');
         const jConnSelect = document.getElementById('add-popup-j-conn');
 
         if (iInput) newMemberDefaults.I = iInput.value;
         if (aInput) newMemberDefaults.A = aInput.value;
         if (zInput) newMemberDefaults.Z = zInput.value;
+        if (radiusInput) newMemberDefaults.i = radiusInput.value;
+        if (kInput) newMemberDefaults.bucklingK = kInput.value;
         if (iConnSelect) newMemberDefaults.i_conn = iConnSelect.value;
         if (jConnSelect) newMemberDefaults.j_conn = jConnSelect.value;
 
@@ -14369,6 +14470,15 @@ const loadPreset = (index) => {
         }
     });
     
+    // ▼▼▼ 追加: 列表示トグルのイベントリスナー設定と初期実行 ▼▼▼
+    const colToggles = document.querySelectorAll('.column-toggles .col-toggle');
+    colToggles.forEach(toggle => {
+        toggle.addEventListener('change', updateMemberTableVisibility);
+    });
+    // ページ読み込み時に現在のチェック状態を適用
+    try { updateMemberTableVisibility(); } catch (e) { console.warn('updateMemberTableVisibility failed', e); }
+    // ▲▲▲ 追加終了 ▲▲▲
+
     // Initial Load
     let initializedWithPreset = false;
     if (!isShareLinkLoaded) {
@@ -14664,11 +14774,15 @@ const loadPreset = (index) => {
                         document.getElementById('add-popup-i').value = props.I;
                         document.getElementById('add-popup-a').value = props.A;
                         document.getElementById('add-popup-z').value = props.Z;
+                        // 断面2次半径や座屈係数が送られてくればポップアップにセット
+                        try { document.getElementById('add-popup-radius-i').value = props.i || props.i_radius || props.ix || props.iy || ''; } catch(_){ }
+                        try { document.getElementById('add-popup-buckling-k').value = props.bucklingK || ''; } catch(_){ }
 
                         // デフォルト値を更新
                         newMemberDefaults.I = props.I;
                         newMemberDefaults.A = props.A;
                         newMemberDefaults.Z = props.Z;
+                        if (props.bucklingK !== undefined) newMemberDefaults.bucklingK = props.bucklingK;
 
                         // 断面情報（名称と軸）を保存・表示
                         const sectionName = props.sectionName || props.sectionLabel || '';

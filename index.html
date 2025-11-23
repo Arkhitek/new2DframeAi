@@ -664,35 +664,59 @@
 
     <div id="add-member-popup" class="popup-box add-member-popup-wide">
         <h4>部材追加設定</h4>
-        <p style="font-size: 13px; margin-top: -5px; margin-bottom: 15px;">キャンバス上で追加する部材の物性値を設定します。</p>
-        <div id="add-popup-section-info" class="section-info-display" style="display: none;">
+        <p style="font-size: 13px; margin-top: -5px; margin-bottom: 10px;">キャンバス上で追加する部材の物性値を設定します。</p>
+        
+        <div class="popup-toggles" style="margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee;">
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="add-popup-toggle" data-target="add-group-material"> 材料情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="add-popup-toggle" data-target="add-group-section" checked> 断面情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="add-popup-toggle" data-target="add-group-buckling"> 座屈関連情報</label>
+            <label style="margin-right:10px; font-size:12px;"><input type="checkbox" class="add-popup-toggle" data-target="add-group-conn"> 接合条件</label>
+        </div>
+
+        <div id="add-popup-section-info" class="section-info-display add-group-section" style="display: none;">
             <strong>選択断面:</strong> <span id="add-popup-section-name">-</span>
             (<span id="add-popup-section-axis">-</span>)
         </div>
+
         <div class="props-grid">
-            <label for="add-popup-e-container">E (N/mm²)</label>
-            <div id="add-popup-e-container"></div>
-            <label for="add-popup-f-container" class="section-check-item">F (N/mm²)</label>
-            <div id="add-popup-f-container" class="section-check-item"></div>
-            <label for="add-popup-i">I (cm⁴)</label>
-            <input type="number" id="add-popup-i">
-            <label for="add-popup-a">A (cm²)</label>
-            <input type="number" id="add-popup-a">
-            <label for="add-popup-z" class="section-check-item">Z (cm³)</label>
-<input type="number" id="add-popup-z" class="section-check-item">
-            <label for="add-popup-i-conn">始端接合</label>
-            <select id="add-popup-i-conn">
+            <label for="add-popup-e-container" class="add-group-material" style="display:none;">E (N/mm²)</label>
+            <div id="add-popup-e-container" class="add-group-material" style="display:none;"></div>
+            
+            <label for="add-popup-f-container" class="section-check-item add-group-material" style="display:none;">F (N/mm²)</label>
+            <div id="add-popup-f-container" class="section-check-item add-group-material" style="display:none;"></div>
+
+            <div id="add-popup-density-wrapper" class="add-group-material" style="display:none; grid-column: 1 / -1;"></div>
+
+            <label for="add-popup-i" class="add-group-section">I (cm⁴)</label>
+            <input type="number" id="add-popup-i" class="add-group-section">
+            
+            <label for="add-popup-a" class="add-group-section">A (cm²)</label>
+            <input type="number" id="add-popup-a" class="add-group-section">
+            
+            <label for="add-popup-z" class="section-check-item add-group-section">Z (cm³)</label>
+            <input type="number" id="add-popup-z" class="section-check-item add-group-section">
+            
+            <label for="add-popup-radius-i" class="add-group-section add-group-buckling">断面2次半径 i (cm)</label>
+            <input type="number" id="add-popup-radius-i" class="add-group-section add-group-buckling" step="0.1" placeholder="自動">
+
+            <label for="add-popup-buckling-k" class="add-group-buckling" style="display:none;">座屈係数 K</label>
+            <input type="number" id="add-popup-buckling-k" step="0.1" placeholder="自動" title="空欄または0で自動判定" class="add-group-buckling" style="display:none;">
+
+            <label for="add-popup-i-conn" class="add-group-conn" style="display:none;">始端接合</label>
+            <select id="add-popup-i-conn" class="add-group-conn" style="display:none;">
                 <option value="rigid">剛</option>
                 <option value="pinned">ピン</option>
                 <option value="spring">バネ</option>
             </select>
-            <label for="add-popup-j-conn">終端接合</label>
-            <select id="add-popup-j-conn">
+            
+            <label for="add-popup-j-conn" class="add-group-conn" style="display:none;">終端接合</label>
+            <select id="add-popup-j-conn" class="add-group-conn" style="display:none;">
                 <option value="rigid">剛</option>
                 <option value="pinned">ピン</option>
                 <option value="spring">バネ</option>
             </select>
         </div>
+
         <div class="popup-buttons">
             <button id="add-popup-select-section">断面選択...</button>
             <button id="add-popup-cancel">キャンセル</button>

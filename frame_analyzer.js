@@ -101,14 +101,17 @@ const calculateSelfWeight = {
             if (length === 0) return;
 
             if (Math.abs(dy) < 1e-6) {
-                memberSelfWeights.push({ memberIndex: index, w: weightPerMeter, loadType: 'distributed' });
+                // 水平部材：ソルバーの減算ロジックに合わせ、下向きを正しい方向に作用させるため符号を反転して渡す
+                memberSelfWeights.push({ memberIndex: index, w: -weightPerMeter, loadType: 'distributed' });
             } else if (Math.abs(dx) < 1e-6) {
+                // 垂直部材：節点荷重として加算する処理側が負の値を期待しているため、既存のまま
                 const totalWeight = weightPerMeter * length;
                 nodeSelfWeights.push({ nodeIndex: member.i, px: 0, py: totalWeight / 2, mz: 0 });
                 nodeSelfWeights.push({ nodeIndex: member.j, px: 0, py: totalWeight / 2, mz: 0 });
                 memberSelfWeights.push({ memberIndex: index, w: 0, totalWeight: Math.abs(totalWeight), loadType: 'concentrated' });
             } else {
-                const wy = weightPerMeter * (Math.abs(dx) / length);
+                // 斜め部材：垂直成分のみを等分布荷重として扱うため符号を反転して渡す
+                const wy = -weightPerMeter * (Math.abs(dx) / length);
                 memberSelfWeights.push({ memberIndex: index, w: wy, loadType: 'mixed', horizontalComponent: 0 });
             }
         });

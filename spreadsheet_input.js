@@ -17,6 +17,21 @@
     // Helper to safely get value
     const safeVal = (v) => (v === undefined || v === null || v === '') ? '' : v;
 
+    // 日本語コンテキストメニュー設定
+    const contextMenuSettings = {
+        items: {
+            'row_above': { name: '上に行を挿入' },
+            'row_below': { name: '下に行を挿入' },
+            'remove_row': { name: '行を削除' },
+            '---------': {},
+            'undo': { name: '元に戻す' },
+            'redo': { name: 'やり直し' },
+            '---------': {},
+            'copy': { name: 'コピー' },
+            'cut': { name: '切り取り' }
+        }
+    };
+
     // --- Initialization Data ---
     let initialNodes = [];
     let initialMembers = [];
@@ -57,7 +72,7 @@
             safeVal(n.x), safeVal(n.y), fixDisplay, safeVal(n.dx), safeVal(n.dy), safeVal(n.rot)
         ];
     });
-    while(nodesData.length < 50) nodesData.push(['', '', 'Free', '', '', '']);
+    // while(nodesData.length < 50) nodesData.push(['', '', 'Free', '', '', '']);
 
     const membersData = initialMembers.map(m => {
         // Normalize connection types for display
@@ -83,17 +98,17 @@
             safeVal(m.spring_j_Kx), safeVal(m.spring_j_Ky), safeVal(m.spring_j_Kr)
         ];
     });
-    while(membersData.length < 50) membersData.push(['', '', '', '', '', '', '', '', '', '', '', '', 'Rigid', 'Rigid', '', '', '', '', '', '']);
+    // while(membersData.length < 50) membersData.push(['', '', '', '', '', '', '', '', '', '', '', '', 'Rigid', 'Rigid', '', '', '', '', '', '']);
 
     const nodeLoadsData = initialNodeLoads.map(l => [
         safeVal(l.node), safeVal(l.px), safeVal(l.py), safeVal(l.mz)
     ]);
-    while(nodeLoadsData.length < 50) nodeLoadsData.push(['', '', '', '']);
+    // while(nodeLoadsData.length < 50) nodeLoadsData.push(['', '', '', '']);
 
     const memberLoadsData = initialMemberLoads.map(l => [
         safeVal(l.member), safeVal(l.w)
     ]);
-    while(memberLoadsData.length < 50) memberLoadsData.push(['', '']);
+    // while(memberLoadsData.length < 50) memberLoadsData.push(['', '']);
 
     // --- Sheet Initialization Functions ---
     
@@ -117,7 +132,8 @@
                 width: '100%',
                 height: 'calc(100vh - 250px)',
                 licenseKey: 'non-commercial-and-evaluation',
-                contextMenu: true,
+                contextMenu: contextMenuSettings,
+                outsideClickDeselects: false,
                 manualRowMove: true,
                 manualColumnMove: false,
                 minSpareRows: 1,
@@ -162,7 +178,8 @@
                 width: '100%',
                 height: 'calc(100vh - 250px)',
                 licenseKey: 'non-commercial-and-evaluation',
-                contextMenu: true,
+                contextMenu: contextMenuSettings,
+                outsideClickDeselects: false,
                 manualRowMove: true,
                 manualColumnMove: false,
                 minSpareRows: 1,
@@ -191,7 +208,8 @@
                 width: '100%',
                 height: 'calc(100vh - 250px)',
                 licenseKey: 'non-commercial-and-evaluation',
-                contextMenu: true,
+                contextMenu: contextMenuSettings,
+                outsideClickDeselects: false,
                 manualRowMove: true,
                 manualColumnMove: false,
                 minSpareRows: 1,
@@ -218,7 +236,8 @@
                 width: '100%',
                 height: 'calc(100vh - 250px)',
                 licenseKey: 'non-commercial-and-evaluation',
-                contextMenu: true,
+                contextMenu: contextMenuSettings,
+                outsideClickDeselects: false,
                 manualRowMove: true,
                 manualColumnMove: false,
                 minSpareRows: 1,
@@ -275,62 +294,82 @@
     document.getElementById('add-row-btn').addEventListener('click', () => {
         console.log('Add row clicked for:', activeSheetType);
         try {
-            if (activeSheetType === 'nodes' && nodesSheet) {
-                const rowCount = nodesSheet.countRows();
-                nodesSheet.alter('insert_row', rowCount);
+            let sheet = null;
+            
+            // タブに応じてシートを初期化（未初期化の場合）
+            if (activeSheetType === 'nodes') {
+                if (!nodesSheet) initNodesSheet();
+                sheet = nodesSheet;
             }
-            else if (activeSheetType === 'members' && membersSheet) {
-                const rowCount = membersSheet.countRows();
-                membersSheet.alter('insert_row', rowCount);
+            else if (activeSheetType === 'members') {
+                if (!membersSheet) initMembersSheet();
+                sheet = membersSheet;
             }
-            else if (activeSheetType === 'node-loads' && nodeLoadsSheet) {
-                const rowCount = nodeLoadsSheet.countRows();
-                nodeLoadsSheet.alter('insert_row', rowCount);
+            else if (activeSheetType === 'node-loads') {
+                if (!nodeLoadsSheet) initNodeLoadsSheet();
+                sheet = nodeLoadsSheet;
             }
-            else if (activeSheetType === 'member-loads' && memberLoadsSheet) {
-                const rowCount = memberLoadsSheet.countRows();
-                memberLoadsSheet.alter('insert_row', rowCount);
+            else if (activeSheetType === 'member-loads') {
+                if (!memberLoadsSheet) initMemberLoadsSheet();
+                sheet = memberLoadsSheet;
+            }
+
+            if (sheet) {
+                console.log('Current row count:', sheet.countRows());
+                
+                // 選択行があればその下、なければ末尾に追加
+                const selected = sheet.getSelected();
+                let index = sheet.countRows();
+                
+                if (selected && selected.length > 0) {
+                    // selected は [[startRow, startCol, endRow, endCol]]
+                    // 範囲選択の場合は一番下の行の下に追加
+                    index = Math.max(selected[0][0], selected[0][2]) + 1;
+                    console.log('Inserting row at index:', index, '(after selected row)');
+                } else {
+                    console.log('Inserting row at index:', index, '(at end)');
+                }
+                
+                // 行を挿入
+                sheet.alter('insert_row_below', index - 1);
+                console.log('Row inserted, new count:', sheet.countRows());
+                
+                // 追加した行を選択
+                setTimeout(() => {
+                    try {
+                        sheet.selectCell(index, 0);
+                    } catch (e) {
+                        console.log('Could not select cell:', e);
+                    }
+                }, 50);
+            } else {
+                console.error('Sheet not initialized for:', activeSheetType);
             }
         } catch (e) {
             console.error('Error adding row:', e);
+            alert('行の追加に失敗しました: ' + e.message);
         }
     });
 
     document.getElementById('delete-row-btn').addEventListener('click', () => {
         console.log('Delete row clicked for:', activeSheetType);
         try {
-            if (activeSheetType === 'nodes' && nodesSheet) {
-                const selected = nodesSheet.getSelected();
+            let sheet = null;
+            if (activeSheetType === 'nodes') sheet = nodesSheet;
+            else if (activeSheetType === 'members') sheet = membersSheet;
+            else if (activeSheetType === 'node-loads') sheet = nodeLoadsSheet;
+            else if (activeSheetType === 'member-loads') sheet = memberLoadsSheet;
+
+            if (sheet) {
+                const selected = sheet.getSelected();
                 if (selected && selected.length > 0) {
-                    const row = selected[0][0];
-                    nodesSheet.alter('remove_row', row);
-                } else {
-                    alert('削除する行を選択してください');
-                }
-            }
-            else if (activeSheetType === 'members' && membersSheet) {
-                const selected = membersSheet.getSelected();
-                if (selected && selected.length > 0) {
-                    const row = selected[0][0];
-                    membersSheet.alter('remove_row', row);
-                } else {
-                    alert('削除する行を選択してください');
-                }
-            }
-            else if (activeSheetType === 'node-loads' && nodeLoadsSheet) {
-                const selected = nodeLoadsSheet.getSelected();
-                if (selected && selected.length > 0) {
-                    const row = selected[0][0];
-                    nodeLoadsSheet.alter('remove_row', row);
-                } else {
-                    alert('削除する行を選択してください');
-                }
-            }
-            else if (activeSheetType === 'member-loads' && memberLoadsSheet) {
-                const selected = memberLoadsSheet.getSelected();
-                if (selected && selected.length > 0) {
-                    const row = selected[0][0];
-                    memberLoadsSheet.alter('remove_row', row);
+                    // 選択範囲の行を削除
+                    // 複数行選択に対応するため、範囲を取得
+                    const startRow = Math.min(selected[0][0], selected[0][2]);
+                    const endRow = Math.max(selected[0][0], selected[0][2]);
+                    const amount = endRow - startRow + 1;
+                    
+                    sheet.alter('remove_row', startRow, amount);
                 } else {
                     alert('削除する行を選択してください');
                 }

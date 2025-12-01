@@ -3716,7 +3716,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <option value="free">自由</option>
                         <option value="pinned">ピン</option>
                         <option value="fixed">固定</option>
-                        <option value="roller">ローラー</option>
+                        <option value="roller_x_fixed">ローラー(垂直自由)</option>
+                        <option value="roller_y_fixed">ローラー(水平自由)</option>
                     </select>
                 </div>
             </div>
@@ -4337,14 +4338,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`🔍 節点 ${index + 1} 境界条件値: "${support}"`);
                 
                 // select要素のHTMLをログ出力
-                const selectHTML = `<select><option value="free"${support==='free'?' selected':''}>自由</option><option value="pinned"${support==='pinned'?' selected':''}>ピン</option><option value="fixed"${support==='fixed'?' selected':''}>固定</option><option value="roller"${support==='roller'?' selected':''}>ローラー</option></select>`;
+                // roller互換性対応: 古い 'roller' は 'roller_y_fixed' (水平自由) として扱う
+                const supportVal = (support === 'roller') ? 'roller_y_fixed' : support;
+                const selectHTML = `<select>
+                    <option value="free"${supportVal==='free'?' selected':''}>自由</option>
+                    <option value="pinned"${supportVal==='pinned'?' selected':''}>ピン</option>
+                    <option value="fixed"${supportVal==='fixed'?' selected':''}>固定</option>
+                    <option value="roller_x_fixed"${supportVal==='roller_x_fixed'?' selected':''}>ローラー(垂直自由)</option>
+                    <option value="roller_y_fixed"${supportVal==='roller_y_fixed'?' selected':''}>ローラー(水平自由)</option>
+                </select>`;
                 console.log(`🔍 節点 ${index + 1} のselect要素HTML:`, selectHTML);
                 
                 addRow(elements.nodesTable, [
                     `#`, 
                     `<input type="number" value="${n.x}">`, 
                     `<input type="number" value="${n.y}">`, 
-                    `<select><option value="free"${support==='free'?' selected':''}>自由</option><option value="pinned"${support==='pinned'?' selected':''}>ピン</option><option value="fixed"${support==='fixed'?' selected':''}>固定</option><option value="roller"${support==='roller'?' selected':''}>ローラー</option></select>`, 
+                    selectHTML, 
                     `<input type="number" value="${n.dx_forced || 0}" step="0.1">`, 
                     `<input type="number" value="${n.dy_forced || 0}" step="0.1">`, 
                     `<input type="number" value="${n.r_forced || 0}" step="0.001">`
@@ -4680,9 +4689,15 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const createTableRow = (tableBody, cells) => {
         const newRow = tableBody.insertRow();
-        cells.forEach(cellHTML => { 
+        cells.forEach(cellContent => { 
             const cell = newRow.insertCell(); 
-            cell.innerHTML = cellHTML; 
+            if (typeof cellContent === 'string') {
+                cell.innerHTML = cellContent;
+            } else if (cellContent instanceof Node) {
+                cell.appendChild(cellContent);
+            } else {
+                cell.innerHTML = String(cellContent);
+            }
         });
         
         // 削除ボタンセルを追加
@@ -4815,8 +4830,51 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (optionText.includes('ステンレス')) materialType = 'stainless';
             else if (optionText.includes('アルミニウム')) materialType = 'aluminum';
             
+            // 既存の値を保持するための処理
+            let currentValue = undefined;
+            let forceCustom = false;
+            
+            const typeMap = {
+                'steel': 'F-value',
+                'wood': 'wood-type',
+                'stainless': 'F-stainless',
+                'aluminum': 'F-aluminum'
+            };
+            const expectedType = typeMap[materialType];
+            const existingDiv = strengthCell.firstElementChild;
+            
+            // 既存の要素が同じ材料タイプなら値を引き継ぐ
+            if (existingDiv && existingDiv.dataset.strengthType === expectedType) {
+                const existingSelect = existingDiv.querySelector('select');
+                
+                if (materialType === 'wood') {
+                     if (existingSelect) {
+                         if (existingSelect.value === 'custom') {
+                             const inputs = existingDiv.querySelectorAll('input');
+                             if (inputs.length >= 4) {
+                                 currentValue = {
+                                     baseStrengths: {
+                                         ft: parseFloat(inputs[0].value),
+                                         fc: parseFloat(inputs[1].value),
+                                         fb: parseFloat(inputs[2].value),
+                                         fs: parseFloat(inputs[3].value)
+                                     }
+                                 };
+                             }
+                         } else {
+                             currentValue = existingSelect.value;
+                         }
+                     }
+                } else {
+                    // Steel, Stainless, Aluminum
+                    const existingInput = existingDiv.querySelector('input');
+                    if (existingInput) currentValue = existingInput.value;
+                    if (existingSelect && existingSelect.value === 'custom') forceCustom = true;
+                }
+            }
+
             strengthCell.innerHTML = '';
-            strengthCell.appendChild(createStrengthInputHTML(materialType, `member-strength-${row.rowIndex}`));
+            strengthCell.appendChild(createStrengthInputHTML(materialType, `member-strength-${row.rowIndex}`, currentValue, forceCustom));
             
             // 自重考慮がオンの場合、密度も更新
             if (elements.considerSelfWeightCheckbox && elements.considerSelfWeightCheckbox.checked) {
@@ -5177,6 +5235,8 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.nodesTable.querySelectorAll('tr').forEach((row, i) => row.cells[0].textContent = i + 1);
         elements.membersTable.querySelectorAll('tr').forEach((row, i) => row.cells[0].textContent = i + 1);
     };
+    window.addRow = addRow;
+    window.renumberTables = renumberTables;
     
     const calculate = () => {
         try {
@@ -5382,15 +5442,19 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1. 物理的な支点による拘束自由度を定義
             const support_constraints = new Set();
             nodes.forEach((node, i) => {
-                if (node.support === 'fixed') {
+                if (node.support === 'fixed' || node.support === 'fixed-x' || node.support === 'fixed-top') {
                     support_constraints.add(i * 3);
                     support_constraints.add(i * 3 + 1);
                     support_constraints.add(i * 3 + 2);
                 } else if (node.support === 'pinned') {
                     support_constraints.add(i * 3);
                     support_constraints.add(i * 3 + 1);
-                } else if (node.support === 'roller') {
+                } else if (node.support === 'roller' || node.support === 'roller_y_fixed') {
+                    // 水平自由 (X自由, Y固定)
                     support_constraints.add(i * 3 + 1);
+                } else if (node.support === 'roller_x_fixed') {
+                    // 垂直自由 (X固定, Y自由)
+                    support_constraints.add(i * 3);
                 }
             });
 
@@ -6515,26 +6579,37 @@ document.addEventListener('DOMContentLoaded', () => {
             drawCoordinateAxes(ctx, transform, drawingContext.scale, drawingContext.offsetX, drawingContext.offsetY, canvas.width, canvas.height);
         }
         
-        // 部材番号の表示位置を計算（重複回避）
-        const memberLabelPositions = showMemberNumbers ? 
-            calculateMemberLabelPositions(members, nodes, transform, ctx) : [];
-        
-        members.forEach((m, memberIndex) => { 
+        // 1. まず部材の線を描画
+        members.forEach((m) => { 
             const start = transform(nodes[m.i].x, nodes[m.i].y); 
             const end = transform(nodes[m.j].x, nodes[m.j].y); 
             ctx.beginPath(); 
             ctx.moveTo(start.x, start.y); 
             ctx.lineTo(end.x, end.y); 
             ctx.stroke(); 
+        });
+
+        // 2. 次に節点の円を描画
+        nodes.forEach((n) => { 
+            const pos = transform(n.x, n.y); 
+            ctx.fillStyle = "#000"; 
+            ctx.beginPath(); 
+            ctx.arc(pos.x, pos.y, 4, 0, 2 * Math.PI); 
+            ctx.fill(); 
+        });
+
+        // 3. 部材番号を描画（最前面）
+        if (showMemberNumbers) {
+            // 部材番号の表示位置を計算（重複回避）
+            const memberLabelPositions = calculateMemberLabelPositions(members, nodes, transform, ctx);
             
-            // 部材番号を表示（改良版：重複回避）
-            if (showMemberNumbers) {
+            members.forEach((m, memberIndex) => {
                 const labelInfo = memberLabelPositions.find(info => info.memberIndex === memberIndex);
                 if (labelInfo) {
                     const memberText = (memberIndex + 1).toString();
                     
-                        const fs = fontScale || (window.settings?.fontScales?.model || 1.0);
-                        ctx.font = `${10 * fs}px Arial`;
+                    const fs = fontScale || (window.settings?.fontScales?.model || 1.0);
+                    ctx.font = `${10 * fs}px Arial`;
                     ctx.textAlign = "center";
                     
                     // 白背景の四角を描画
@@ -6550,28 +6625,50 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.fillStyle = "#0056b3";
                     ctx.fillText(memberText, labelInfo.textX, labelInfo.textY + 2);
                     
-                    // 部材線描画用の設定を復元
+                    // コンテキスト設定を復元
                     ctx.strokeStyle = color;
                     ctx.lineWidth = 2;
                 }
-            }
-        });
+            });
+        }
         
-        nodes.forEach((n, i) => { 
-            const pos = transform(n.x, n.y); 
-            ctx.fillStyle = "#000"; 
-            ctx.beginPath(); 
-            ctx.arc(pos.x, pos.y, 4, 0, 2 * Math.PI); 
-            ctx.fill(); 
-            if (showNodeNumbers) { 
-                // 節点番号は黒で表示
-                ctx.fillStyle = "#000000"; 
+        // 4. 節点番号を描画（最前面）
+        if (showNodeNumbers) { 
+            nodes.forEach((n, i) => { 
+                const pos = transform(n.x, n.y); 
+                // 節点番号は黒で表示（丸囲い）
                 const fs2 = fontScale || (window.settings?.fontScales?.model || 1.0);
-                ctx.font = `${12 * fs2}px Arial`;
-                ctx.textAlign = "left";
-                ctx.fillText(i + 1, pos.x + 8, pos.y - 8); 
-            } 
-        }); 
+                const fontSize = 10 * fs2; // 12 -> 10 に変更
+                ctx.font = `${fontSize}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                
+                const text = (i + 1).toString();
+                // テキストサイズに基づいて半径を計算（最小サイズを確保）
+                const metrics = ctx.measureText(text);
+                const radius = Math.max(metrics.width / 2 + 3 * fs2, fontSize / 2 + 2 * fs2);
+                
+                // 節点からのオフセット位置（右上）
+                const offsetDist = 10 * fs2;
+                const circleX = pos.x + offsetDist;
+                const circleY = pos.y - offsetDist;
+                
+                // 白背景の円を描画
+                ctx.fillStyle = "#ffffff";
+                ctx.beginPath();
+                ctx.arc(circleX, circleY, radius, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // 黒い枠線を描画
+                ctx.strokeStyle = "#000000";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // 番号を描画
+                ctx.fillStyle = "#000000";
+                ctx.fillText(text, circleX, circleY);
+            }); 
+        } 
     };
     const drawConnections = (ctx, transform, nodes, members, labelManager, obstacles, fontScale = 1.0) => {
         ctx.lineCap = 'round';
@@ -6746,9 +6843,9 @@ document.addEventListener('DOMContentLoaded', () => {
             drawEndSprings('j', p_j, false);
         });
     };
-    const drawBoundaryConditions = (ctx, transform, nodes) => { 
+    const drawBoundaryConditions = (ctx, transform, nodes, members = []) => { 
         const size = 10; 
-        nodes.forEach(node => { 
+        nodes.forEach((node, index) => { 
             // sプロパティまたはsupportプロパティをチェック
             const support = node.s || node.support;
             if (support === 'free' || support === 'f') return; 
@@ -6759,13 +6856,73 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.lineWidth = 1.5; 
             ctx.beginPath(); 
             
-            if (support === 'fixed' || support === 'x') { 
-                ctx.moveTo(pos.x - size, pos.y + size); 
-                ctx.lineTo(pos.x + size, pos.y + size); 
-                for(let i=0; i < 5; i++){ 
-                    ctx.moveTo(pos.x - size + i*size/2, pos.y + size); 
-                    ctx.lineTo(pos.x - size + i*size/2 - size/2, pos.y + size + size/2); 
-                } 
+            if (support === 'fixed' || support === 'x' || support === 'fixed-x' || support === 'fixed-top') { 
+                // 固定支点の向きを自動判定
+                let direction = 'floor'; // デフォルト: 床固定(下向き)
+                
+                // 節点に接続する部材を探す
+                const connectedMembers = members.filter(m => m.i === index || m.j === index);
+                
+                if (connectedMembers.length > 0) {
+                    let allDown = true;
+                    let allRight = true;
+                    let allLeft = true;
+                    let isHorizontal = true;
+
+                    for (const m of connectedMembers) {
+                        const otherNodeIndex = (m.i === index) ? m.j : m.i;
+                        const otherNode = nodes[otherNodeIndex];
+                        
+                        const dx = otherNode.x - node.x;
+                        const dy = otherNode.y - node.y;
+                        
+                        // 数学座標系(上向き正)での判定
+                        if (dy > 1e-5) allDown = false; // 上にある部材がある
+                        if (dx < -1e-5) allRight = false; // 左にある部材がある
+                        if (dx > 1e-5) allLeft = false; // 右にある部材がある
+                        
+                        // 水平判定: 垂直成分が水平成分の半分以下なら水平とみなす
+                        if (Math.abs(dy) > Math.abs(dx) * 0.5) isHorizontal = false;
+                    }
+
+                    if (allDown && !isHorizontal) direction = 'ceiling';
+                    else if (allRight && isHorizontal) direction = 'left-wall';
+                    else if (allLeft && isHorizontal) direction = 'right-wall';
+                }
+
+                if (direction === 'floor') {
+                    // 床固定 (下向き)
+                    ctx.moveTo(pos.x - size, pos.y + size); 
+                    ctx.lineTo(pos.x + size, pos.y + size); 
+                    for(let i=0; i <= 5; i++){ 
+                        ctx.moveTo(pos.x - size + i*size/2.5, pos.y + size); 
+                        ctx.lineTo(pos.x - size + i*size/2.5 - size/2, pos.y + size + size/2); 
+                    } 
+                } else if (direction === 'left-wall') {
+                    // 左壁固定 (右向き) - 壁が左にある
+                    ctx.moveTo(pos.x - size, pos.y - size);
+                    ctx.lineTo(pos.x - size, pos.y + size);
+                    for(let i=0; i <= 5; i++){
+                        ctx.moveTo(pos.x - size, pos.y - size + i*size/2.5);
+                        ctx.lineTo(pos.x - size - size/2, pos.y - size + i*size/2.5 + size/2);
+                    }
+                } else if (direction === 'right-wall') {
+                    // 右壁固定 (左向き) - 壁が右にある
+                    ctx.moveTo(pos.x + size, pos.y - size);
+                    ctx.lineTo(pos.x + size, pos.y + size);
+                    for(let i=0; i <= 5; i++){
+                        ctx.moveTo(pos.x + size, pos.y - size + i*size/2.5);
+                        ctx.lineTo(pos.x + size + size/2, pos.y - size + i*size/2.5 + size/2);
+                    }
+                } else if (direction === 'ceiling') {
+                    // 天井固定 (上向き)
+                    ctx.moveTo(pos.x - size, pos.y - size);
+                    ctx.lineTo(pos.x + size, pos.y - size);
+                    for(let i=0; i <= 5; i++){
+                        ctx.moveTo(pos.x - size + i*size/2.5, pos.y - size);
+                        ctx.lineTo(pos.x - size + i*size/2.5 - size/2, pos.y - size - size/2);
+                    }
+                }
             } else if (support === 'pinned' || support === 'p') { 
                 ctx.moveTo(pos.x, pos.y); 
                 ctx.lineTo(pos.x - size, pos.y + size); 
@@ -6774,7 +6931,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.stroke(); 
                 ctx.moveTo(pos.x - size*1.2, pos.y + size); 
                 ctx.lineTo(pos.x + size*1.2, pos.y + size); 
-            } else if (support === 'roller' || support === 'r') { 
+            } else if (support === 'roller' || support === 'r' || support === 'roller_y_fixed') { 
+                // 水平自由 (床ローラー)
                 ctx.moveTo(pos.x, pos.y); 
                 ctx.lineTo(pos.x - size, pos.y + size); 
                 ctx.lineTo(pos.x + size, pos.y + size); 
@@ -6782,7 +6940,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.stroke(); 
                 ctx.moveTo(pos.x - size, pos.y + size + 3); 
                 ctx.lineTo(pos.x + size, pos.y + size + 3); 
-            } 
+            } else if (support === 'roller_x_fixed') {
+                // 垂直自由 (壁ローラー) - 90度回転して描画
+                // 右側に壁があるイメージで描画
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(pos.x + size, pos.y - size);
+                ctx.lineTo(pos.x + size, pos.y + size);
+                ctx.closePath();
+                ctx.stroke();
+                // ローラーの線
+                ctx.moveTo(pos.x + size + 3, pos.y - size);
+                ctx.lineTo(pos.x + size + 3, pos.y + size);
+            }
             ctx.stroke(); 
         }); 
     };
@@ -7563,7 +7732,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawStructure(ctx, transform, nodes, members, '#333', true, true, true, drawingCtx, modelFontScale);
                 // pass labelManager and nodeObstacles so drawConnections can register labels
                 drawConnections(ctx, transform, nodes, members, labelManager, nodeObstacles, modelFontScale);
-                drawBoundaryConditions(ctx, transform, nodes);
+                drawBoundaryConditions(ctx, transform, nodes, members);
                 drawDimensions(ctx, transform, nodes, members, labelManager, nodeObstacles, modelFontScale);
                 drawExternalLoads(ctx, transform, nodes, members, nodeLoads, memberLoads, memberSelfWeights, nodeSelfWeights, labelManager, nodeObstacles, modelFontScale);
                 if (canvasMode === 'addMember' && firstMemberNode !== null) {
@@ -7679,7 +7848,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // スケーリング: displacement 図専用のフォントスケールを取得
         const fontScale = window.settings?.fontScales?.displacement || 1.0;
         const labelManager = LabelManager(fontScale);
-        drawStructure(ctx, transform, nodes, members, '#ccc', true, true, false, null, fontScale);
+        // 構造描画（ラベルなし）
+        drawStructure(ctx, transform, nodes, members, '#ccc', false, false, false, null, fontScale);
         ctx.fillStyle = '#333'; ctx.textAlign = 'left'; ctx.font = `${12 * fontScale}px Arial`; ctx.fillText(`表示倍率: ${dispScale.toFixed(2)} 倍`, 10, 20);
         ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
         const maxIntermediateLabels = [];
@@ -7721,6 +7891,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // 最大変位ラベルも 24px ベース
         ctx.fillStyle='#8b0000'; ctx.font=`bold ${24 * fontScale}px Arial`;
         maxIntermediateLabels.forEach(lbl => { const p_def=transform(lbl.x,lbl.y); allObstacles.push({x1:p_def.x-12,y1:p_def.y-12,x2:p_def.x+12,y2:p_def.y+12}); labelManager.draw(ctx,lbl.label,p_def.x,p_def.y,allObstacles,canvasBounds); });
+
+        // 最後に節点番号・部材番号を描画（最前面）
+        drawStructure(ctx, transform, nodes, members, 'rgba(0,0,0,0)', true, true, false, null, fontScale);
     };
 
     // 曲げモーメント図専用のラベル描画関数
@@ -7892,8 +8065,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const momentFontScale = window.settings?.fontScales?.moment || 1.0;
         const labelManager = LabelManager(momentFontScale);
         
-        // 部材番号も表示する
-        drawStructure(ctx, transform, nodes, members, '#ccc', false, true, false, null, momentFontScale); 
+        // 構造描画（ラベルなし）
+        drawStructure(ctx, transform, nodes, members, '#ccc', false, false, false, null, momentFontScale); 
         
         // 曲げモーメント図専用のラベル管理システム
         const nodeLabels = new Map(); // 節点ごとのラベル情報を管理
@@ -7986,6 +8159,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 } 
             } 
         }); 
+
+        // 最後に節点番号・部材番号を描画（最前面）
+        drawStructure(ctx, transform, nodes, members, 'rgba(0,0,0,0)', true, true, false, null, momentFontScale);
     };
     const drawAxialForceDiagram = (nodes, members, forces) => { 
         const drawingCtx = getDrawingContext(elements.axialCanvas); 
@@ -7995,8 +8171,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const fontScale = window.settings?.fontScales?.axial || 1.0;
         const labelManager = LabelManager(fontScale);
         
-        // 部材番号も表示する
-        drawStructure(ctx, transform, nodes, members, '#ccc', false, true, false, null, fontScale); 
+        // 構造描画（ラベルなし）
+        drawStructure(ctx, transform, nodes, members, '#ccc', false, false, false, null, fontScale); 
         
         // より詳細な障害物管理
         const nodeObstacles = nodes.map(n => { 
@@ -8046,6 +8222,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } 
         }); 
+
+        // 最後に節点番号・部材番号を描画（最前面）
+        drawStructure(ctx, transform, nodes, members, 'rgba(0,0,0,0)', true, true, false, null, fontScale);
     };
     const drawShearForceDiagram = (nodes, members, forces, memberLoads) => { 
         const drawingCtx = getDrawingContext(elements.shearCanvas); 
@@ -8055,8 +8234,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const fontScale = window.settings?.fontScales?.shear || 1.0;
         const labelManager = LabelManager(fontScale);
         
-        // 部材番号も表示する
-        drawStructure(ctx, transform, nodes, members, '#ccc', false, true, false, null, fontScale); 
+        // 構造描画（ラベルなし）
+        drawStructure(ctx, transform, nodes, members, '#ccc', false, false, false, null, fontScale); 
         
         // より詳細な障害物管理
         const nodeObstacles = nodes.map(n => { 
@@ -8107,7 +8286,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillStyle = '#333';
             ctx.font = `bold ${24 * fontScale}px Arial`;
             if(Math.abs(Q_i)>1e-3) {
-                labelManager.draw(ctx,`${Q_i.toFixed(2)}`,p1.x,p1.y,allObstacles);
+                labelManager.draw(ctx,`${Q_i.toFixed(2)}`,p1.x,p1.y,allObstacles, { drawLeaderLine: true });
                 // 描画したラベルの位置を障害物として追加
                 const labelMetrics = ctx.measureText(`${Q_i.toFixed(2)}`);
                 const labelWidth = labelMetrics.width;
@@ -8120,7 +8299,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
             if(Math.abs(Q_j)>1e-3) {
-                labelManager.draw(ctx,`${Q_j.toFixed(2)}`,p2.x,p2.y,allObstacles);
+                labelManager.draw(ctx,`${Q_j.toFixed(2)}`,p2.x,p2.y,allObstacles, { drawLeaderLine: true });
                 // 描画したラベルの位置を障害物として追加
                 const labelMetrics = ctx.measureText(`${Q_j.toFixed(2)}`);
                 const labelWidth = labelMetrics.width;
@@ -8133,6 +8312,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } 
         }); 
+
+        // 最後に節点番号・部材番号を描画（最前面）
+        drawStructure(ctx, transform, nodes, members, 'rgba(0,0,0,0)', true, true, false, null, fontScale);
     };
 
 // --- 応力度の計算とカラーマッピング ---
@@ -8295,6 +8477,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // 凡例を描画
         drawStressLegend(ctx, maxStress);
         console.log('Legend drawn');
+        
+        // 節点番号・部材番号を描画（最前面）
+        const fontScale = window.settings?.fontScales?.stress || 1.0;
+        drawStructure(ctx, transform, nodes, members, 'rgba(0,0,0,0)', true, true, false, null, fontScale);
+
         console.log('=== DRAWING STRESS CONTOUR COMPLETED ===');
     };
 
@@ -8383,10 +8570,94 @@ document.addEventListener('DOMContentLoaded', () => {
             const i_min = hasIRadius ? i_radius : Math.min(ix, iy); // 最小回転半径 (m)
             const slendernessRatio = bucklingLength / i_min; // 細長比
             
-            // オイラー座屈荷重の計算
-            const E_Pa = E * 1000; // N/mm² → Pa (実際はE*1000なのでE*1000*1000000)
-            const I_min = i_min * i_min * A; // 最小断面二次モーメント (m⁴)
-            const eulerLoad = (Math.PI * Math.PI * E_Pa * I_min) / (bucklingLength * bucklingLength); // N
+            // --- AIJ 座屈計算 (非弾性・降伏考慮) ---
+            // EはkPa単位で格納されている (parseInputsで *1000 されているため)
+            const E_Nmm2 = E / 1000; // kPa -> MPa (N/mm²)
+            
+            // 材料タイプの判定
+            let materialType = 'steel';
+            if (strengthProps && strengthProps.type === 'wood-type') {
+                materialType = 'wood';
+            } else {
+                // ヤング係数による簡易判定
+                if (E_Nmm2 < 25000) materialType = 'wood';
+                else if (E_Nmm2 < 100000) materialType = 'aluminum';
+                else if (E_Nmm2 < 200000) materialType = 'stainless';
+                else materialType = 'steel';
+            }
+
+            // 基準強度 F (N/mm²)
+            let F = 235; // デフォルト (SS400など)
+            if (materialType === 'wood') {
+                if (strengthProps && strengthProps.baseStrengths && strengthProps.baseStrengths.fc) {
+                    F = strengthProps.baseStrengths.fc;
+                } else {
+                    F = 22.2; // Default wood Fc
+                }
+            } else {
+                if (strengthProps && strengthProps.value) {
+                    F = strengthProps.value;
+                }
+            }
+            
+            // 限界細長比 Lambda と 座屈応力 sigma_cr の計算
+            let Lambda;
+            let sigma_cr;
+            let bucklingType = '弾性座屈(オイラー)';
+            let formulaName = '';
+
+            if (materialType === 'wood') {
+                // 木材 (AIJ)
+                // 限界細長比 Λ = π * sqrt(E / (2/3 * Fc))
+                Lambda = Math.PI * Math.sqrt(E_Nmm2 / ((2/3) * F));
+                
+                if (slendernessRatio <= Lambda) {
+                    // 非弾性座屈 (4次式)
+                    // σcr = Fc * [1 - 1/3 * (λ/Λ)^4]
+                    sigma_cr = F * (1 - (1/3) * Math.pow(slendernessRatio / Lambda, 4));
+                    bucklingType = '非弾性座屈(塑性域)';
+                    formulaName = '4次式 (AIJ木質)';
+                } else {
+                    // 弾性座屈 (オイラー)
+                    sigma_cr = (Math.PI * Math.PI * E_Nmm2) / (slendernessRatio * slendernessRatio);
+                    bucklingType = '弾性座屈(オイラー)';
+                    formulaName = 'オイラー式';
+                }
+            } else if (materialType === 'aluminum') {
+                // アルミニウム (AIJ)
+                // 比例限度を0.5Fと仮定 (AIJアルミニウム構造設計規準等を参照)
+                Lambda = Math.PI * Math.sqrt(E_Nmm2 / (0.5 * F));
+                
+                if (slendernessRatio <= Lambda) {
+                    // ジョンソン式 (係数0.5)
+                    sigma_cr = F * (1 - 0.5 * Math.pow(slendernessRatio / Lambda, 2));
+                    bucklingType = '非弾性座屈(塑性域)';
+                    formulaName = 'ジョンソン式 (AIJアルミニウム)';
+                } else {
+                    sigma_cr = (Math.PI * Math.PI * E_Nmm2) / (slendernessRatio * slendernessRatio);
+                    bucklingType = '弾性座屈(オイラー)';
+                    formulaName = 'オイラー式';
+                }
+            } else {
+                // 鋼材・ステンレス (AIJ鋼構造)
+                // ステンレスも鋼構造に準じて計算 (比例限度0.6F)
+                Lambda = Math.PI * Math.sqrt(E_Nmm2 / (0.6 * F));
+                
+                if (slendernessRatio <= Lambda) {
+                    // ジョンソン式 (係数0.4)
+                    sigma_cr = F * (1 - 0.4 * Math.pow(slendernessRatio / Lambda, 2));
+                    bucklingType = '非弾性座屈(塑性域)';
+                    formulaName = 'ジョンソン式 (AIJ鋼構造)';
+                } else {
+                    sigma_cr = (Math.PI * Math.PI * E_Nmm2) / (slendernessRatio * slendernessRatio);
+                    bucklingType = '弾性座屈(オイラー)';
+                    formulaName = 'オイラー式';
+                }
+            }
+            
+            // 座屈荷重 P_cr (N)
+            // Aはm² -> mm²に変換 (x 10^6)
+            const criticalLoadN = sigma_cr * (A * 1000000);
             
             // 現在の軸力（負の値を圧縮として扱う）
             const N_i = force.N_i; // 解析結果そのまま
@@ -8413,7 +8684,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let status = '安全';
             
             if (compressionForce > 0) { // 圧縮力がある場合（負の軸力を圧縮として判定）
-                safetyFactor = eulerLoad / compressionForce;
+                safetyFactor = criticalLoadN / compressionForce;
                 if (safetyFactor < 1.0) {
                     status = '座屈危険';
                 } else if (safetyFactor < 2.0) {
@@ -8434,19 +8705,23 @@ document.addEventListener('DOMContentLoaded', () => {
             bucklingResults.push({
                 memberIndex: idx,
                 status: status,
-                criticalLoad: eulerLoad / 1000, // kNに変換
-                bucklingLoad: eulerLoad / 1000, // kNに変換（エクセル出力用）
+                criticalLoad: criticalLoadN / 1000, // kNに変換
+                bucklingLoad: criticalLoadN / 1000, // kNに変換（エクセル出力用）
                 bucklingMode: bucklingMode,
+                bucklingType: bucklingType, // 追加
+                formulaName: formulaName, // 追加
+                materialType: materialType, // 追加
                 bucklingLength: bucklingLength,
                 slendernessRatio: slendernessRatio,
+                criticalSlendernessRatio: Lambda, // 追加
                 safetyFactor: safetyFactor,
                 axialForce: axialForceKN, // kN単位（負の値が圧縮、正の値が引張）
                 bucklingLengthFactor: bucklingLengthFactor,
                 connectionType: `i:${i_conn}, j:${j_conn}`,
                 memberLength: length,
-                momentOfInertia: I_min,
+                momentOfInertia: i_min * i_min * A,
                 radiusOfGyration: i_min,
-                elasticModulus: E_Pa / 1000000 // GPa単位
+                elasticModulus: E_Nmm2 // MPa単位
             });
         });
 
@@ -8954,7 +9229,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p>座屈長: ${typeof result.bucklingLength === 'number' ? result.bucklingLength.toFixed(2) : result.bucklingLength} m</p>
                     <p>座屈長係数: ${result.bucklingLengthFactor}</p>
                     <p>細長比 λ: ${typeof result.slendernessRatio === 'number' ? result.slendernessRatio.toFixed(1) : result.slendernessRatio}</p>
-                    <p>オイラー座屈荷重: ${typeof result.criticalLoad === 'number' ? result.criticalLoad.toFixed(0) : result.criticalLoad} kN</p>
+                    <p>限界細長比 Λ: ${typeof result.criticalSlendernessRatio === 'number' ? result.criticalSlendernessRatio.toFixed(1) : '-'}</p>
+                    <p>座屈荷重: ${typeof result.criticalLoad === 'number' ? result.criticalLoad.toFixed(0) : result.criticalLoad} kN</p>
+                    <p>座屈形式: ${result.bucklingType || '弾性座屈'}</p>
                     <p>現在の軸力: ${typeof result.axialForce === 'number' ? result.axialForce.toFixed(2) : result.axialForce} kN ${typeof result.axialForce === 'number' && result.axialForce < 0 ? '(圧縮)' : result.axialForce > 0 ? '(引張)' : ''}</p>
                     <p>座屈モード: ${result.bucklingMode}</p>
                 </div>
@@ -8967,15 +9244,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div style="margin-bottom: 20px; padding: 10px; background-color: #f0f8ff; border-radius: 5px;">
                     <h4>座屈理論（参考）</h4>
-                    <p>オイラー座屈荷重: P<sub>cr</sub> = π²EI/(lk)²</p>
-                    <p>ここで、E: 弾性係数、I: 最小断面二次モーメント、lk: 座屈長</p>
-                    <p><strong>軸力の符号規則:</strong> マイナス値が圧縮力、プラス値が引張力</p>
-                    <p>座屈長は接合条件により決まります：</p>
-                    <ul>
-                        <li>両端ピン: lk = L (係数 1.0)</li>
-                        <li>一端固定・一端ピン: lk = 0.7L (係数 0.7)</li>
-                        <li>両端固定: lk = 0.5L (係数 0.5)</li>
+                    <p><strong>計算基準:</strong> ${
+                        result.materialType === 'wood' ? '日本建築学会（AIJ）木質構造設計規準' :
+                        result.materialType === 'aluminum' ? '日本建築学会（AIJ）アルミニウム合金構造設計規準' :
+                        '日本建築学会（AIJ）鋼構造設計規準'
+                    }</p>
+                    <p><strong>限界細長比 (Λ):</strong> ${result.criticalSlendernessRatio ? result.criticalSlendernessRatio.toFixed(2) : '-'}</p>
+                    <p><strong>部材の細長比 (λ):</strong> ${result.slendernessRatio ? result.slendernessRatio.toFixed(2) : '-'}</p>
+                    <hr style="margin: 10px 0; border-top: 1px dashed #ccc;">
+                    
+                    <p><strong>判定ロジック:</strong></p>
+                    <ul style="padding-left: 20px; margin-top: 5px;">
+                        <li><strong>λ ≤ Λ (非弾性座屈/塑性域):</strong><br>
+                        ${result.formulaName || 'ジョンソン式'}<br>
+                        ${
+                            result.materialType === 'wood' ? 'σ<sub>cr</sub> = F × [1 - 1/3 × (λ/Λ)⁴]' :
+                            result.materialType === 'aluminum' ? 'σ<sub>cr</sub> = F × [1 - 0.5 × (λ/Λ)²]' :
+                            'σ<sub>cr</sub> = F × [1 - 0.4 × (λ/Λ)²]'
+                        }</li>
+                        
+                        <li style="margin-top: 8px;"><strong>λ > Λ (弾性座屈/オイラー域):</strong><br>
+                        オイラー式を使用。<br>
+                        σ<sub>cr</sub> = π²E / λ²</li>
                     </ul>
+                    
+                    <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                        ※ F: 基準強度, E: ヤング係数<br>
+                        ※ 細長比 λ = lk / i (座屈長さ/断面二次半径)<br>
+                        ※ 軸力の符号: マイナスが圧縮、プラスが引張
+                    </p>
                 </div>
             </div>
         `;
@@ -10089,7 +10386,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         utils.showMessage(`既存の節点${dupIndex + 1}と同じ位置です。新規節点は追加されません。`, 'warning', 2000);
                     } else {
                         memberRow.querySelector('.delete-row-btn').onclick.apply(memberRow.querySelector('.delete-row-btn'));
-                        addRow(elements.nodesTable, [`#`,`<input type="number" value="${finalCoords.x.toFixed(2)}">`,`<input type="number" value="${finalCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false);
+                        addRow(elements.nodesTable, [`#`,`<input type="number" value="${finalCoords.x.toFixed(2)}">`,`<input type="number" value="${finalCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller_x_fixed">ローラー(垂直自由)</option><option value="roller_y_fixed">ローラー(水平自由)</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false);
                     }
                 } catch (err) {
                     console.error('❌ 部材分割前の重複チェック中にエラーが発生しました:', err);
@@ -10179,7 +10476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     utils.showMessage(`既存の節点${duplicateNodeIndex}と同じ位置です。新規節点は追加されません。`, 'warning', 2000);
                 } else {
                     console.log('✅ 新規節点を追加します:', { x: modelCoords.x, y: modelCoords.y });
-                    addRow(elements.nodesTable, [`#`,`<input type="number" value="${modelCoords.x.toFixed(2)}">`,`<input type="number" value="${modelCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]); 
+                    addRow(elements.nodesTable, [`#`,`<input type="number" value="${modelCoords.x.toFixed(2)}">`,`<input type="number" value="${modelCoords.y.toFixed(2)}">`,`<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller_x_fixed">ローラー(垂直自由)</option><option value="roller_y_fixed">ローラー(水平自由)</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]); 
                 }
             }
         } else if (canvasMode === 'addMember') {
@@ -10243,7 +10540,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('✅ 既存節点を使用します:', { index: targetNodeIndex, x: snappedX, y: snappedY });
                 } else {
                     // 新規節点をテーブルに追加
-                    addRow(elements.nodesTable, [`#`, `<input type="number" value="${snappedX.toFixed(2)}">`, `<input type="number" value="${snappedY.toFixed(2)}">`, `<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
+                    addRow(elements.nodesTable, [`#`, `<input type="number" value="${snappedX.toFixed(2)}">`, `<input type="number" value="${snappedY.toFixed(2)}">`, `<select><option value="free" selected>自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller_x_fixed">ローラー(垂直自由)</option><option value="roller_y_fixed">ローラー(水平自由)</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
                     
                     // 新規作成された節点のインデックスを取得（テーブルの最後の行）
                     const nodeRows = elements.nodesTable.getElementsByTagName('tr');
@@ -10586,7 +10883,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
 
-                    popupSectionLabelEl.textContent = labelText || '-';
+                    // 軸方向の取得と表示 (縦並び)
+                    let axialText = '';
+                    try {
+                        // クラス名から軸方向セルを取得（列インデックスのズレに対応）
+                        const axisCell = memberRow.querySelector('.section-axis-cell');
+                        if (axisCell) {
+                            axialText = axisCell.textContent.trim();
+                        } else {
+                            // フォールバック: 密度列の有無を確認してインデックスを調整
+                            // 密度列がある場合: 12, ない場合: 11
+                            const hasDensity = memberRow.querySelector('.density-cell') || (memberRow.cells[10] && memberRow.cells[10].classList.contains('density-column'));
+                            const axisIndex = hasDensity ? 12 : 11;
+                            if (memberRow.cells[axisIndex]) {
+                                axialText = memberRow.cells[axisIndex].textContent.trim();
+                            }
+                        }
+                        
+                        // "選択" という文字列（ボタンのテキスト）を拾ってしまった場合の除外処理
+                        if (axialText === '選択') axialText = '';
+                    } catch (e) {}
+
+                    popupSectionLabelEl.innerHTML = `断面: ${labelText || '-'}${axialText ? `<br><span style="font-weight:normal; font-size:0.9em;">軸方向: ${axialText}</span>` : ''}`;
                 }
             } catch (err) {
                 console.warn('popup section label set failed', err);
@@ -11943,7 +12261,11 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         return html;
     };
    
-    const createStrengthInputHTML = (materialType, idPrefix, currentValue) => {
+    const createStrengthInputHTML = (materialType, idPrefix, currentValue, forceCustom = false) => {
+        // Debug log
+        if (materialType === 'steel') {
+            console.log(`createStrengthInputHTML: val=${currentValue}, forceCustom=${forceCustom}`);
+        }
         const wrapper = document.createElement('div');
         let htmlContent = '';
         const selectId = `${idPrefix}-select`;
@@ -11953,10 +12275,11 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             case 'steel': {
                 const materials = { "235": "SS400, SN400B", "295": "SM490", "325": "SN490B", "355": "SM520" };
                 const f_val_str = currentValue || '235';
-                let isPreset = materials.hasOwnProperty(f_val_str);
+                // forceCustomがtrueの場合は常に任意入力モードにする
+                let isPreset = !forceCustom && materials.hasOwnProperty(f_val_str);
                 let options_html = '';
                 for (const [value, name] of Object.entries(materials)) { 
-                    options_html += `<option value="${value}" ${f_val_str === value ? 'selected' : ''}>${name} (F=${value})</option>`; 
+                    options_html += `<option value="${value}" ${isPreset && f_val_str === value ? 'selected' : ''}>${name} (F=${value})</option>`; 
                 }
                 options_html += `<option value="custom" ${!isPreset ? 'selected' : ''}>任意入力</option>`;
                 
@@ -11968,6 +12291,7 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
                 input.id = inputId;
                 input.type = 'number';
                 input.value = f_val_str;
+                // forceCustomの場合は編集可能にする
                 input.readOnly = isPreset;
                 
                 const div = document.createElement('div');
@@ -12125,20 +12449,22 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
         return html;
     };
 
-    const memberRowHTML = (i, j, E = '205000', F='235', I = 1.84e-5, A = 2.34e-3, Z = 1.23e-3, i_rad = '', i_conn = 'rigid', j_conn = 'rigid', sectionName = '', sectionAxis = '', bucklingK = '') => {
+    const memberRowHTML = (i, j, E = '205000', F='235', I = 1.84e-5, A = 2.34e-3, Z = 1.23e-3, i_rad = '', i_conn = 'rigid', j_conn = 'rigid', sectionName = '', sectionAxis = '', bucklingK = '', forceCustomF = false) => {
+        console.log(`memberRowHTML: F=${F}, forceCustomF=${forceCustomF}`);
         // 引数に bucklingK を追加（デフォルトは空）
         const baseColumns = [
             `<input type="number" value="${i}">`,
             `<input type="number" value="${j}">`,
             createEInputHTML(`member-e-${i}-${j}`, E),
-            createStrengthInputHTML('steel', `member-strength-${i}-${j}`, F),
+            createStrengthInputHTML('steel', `member-strength-${i}-${j}`, F, forceCustomF),
             `<input type="number" value="${(I * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">`,
             `<input type="number" value="${(A * 1e4).toFixed(2)}" title="断面積 A (cm²)">`,
             `<input type=\"number\" value=\"${(Z * 1e6).toFixed(2)}\" title=\"断面係数 Z (cm³)\">`,
             // 追加: 断面2次半径 i (cm) 入力（編集可能）
-            `<input type=\"number\" class=\"radius-i-input col-buckling\" value=\"${i_rad !== '' ? Number(i_rad).toFixed(2) : ''}\" title=\"断面2次半径 i (cm)\">`,
-            // 座屈係数入力セル
-            `<input type=\"number\" class=\"buckling-k-input col-buckling\" value=\"${bucklingK}\" step=\"0.1\" min=\"0.1\" max=\"10.0\" placeholder=\"自動\" style=\"width:50px;\" title=\"空欄の場合は接合条件から自動判定\">`
+            `<div class="cell-input-wrapper">
+                <input type=\"number\" class=\"radius-i-input col-buckling\" value=\"${i_rad !== '' ? Number(i_rad).toFixed(2) : ''}\" title=\"断面2次半径 i (cm)\">
+                <span class="auto-label" style="display:none;">(自動)</span>
+            </div>`
         ];
 
         // バネ入力部分のHTMLテンプレート生成関数（単位表示・レイアウト調整版）
@@ -12201,6 +12527,14 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             baseColumns.push(createDensityInputHTML(`member-density-${i}-${j}`, density));
         }
 
+        // 座屈係数入力セル (密度の後に追加)
+        baseColumns.push(`
+            <div class="cell-input-wrapper">
+                <input type=\"number\" class=\"buckling-k-input col-buckling\" value=\"${bucklingK}\" step=\"0.1\" min=\"0.1\" max=\"10.0\" placeholder=\"自動\" style=\"width:50px;\" title=\"空欄の場合は接合条件から自動判定\">
+                <span class="auto-label" style="display:none;">(自動)</span>
+            </div>
+        `);
+
         // 断面名称と軸方向の列を追加
         baseColumns.push(`<span class="section-name-cell">${sectionName || '-'}</span>`);
         baseColumns.push(`<span class="section-axis-cell">${sectionAxis || '-'}</span>`);
@@ -12222,6 +12556,7 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
 
         return baseColumns;
     };
+    window.memberRowHTML = memberRowHTML;
     
 const p_truss = {
     ic: 'p',
@@ -13590,7 +13925,7 @@ const loadPreset = (index) => {
         elements.membersTable.innerHTML = '';
         elements.nodeLoadsTable.innerHTML = '';
         elements.memberLoadsTable.innerHTML = '';
-        p.nodes.forEach(n => addRow(elements.nodesTable, [`#`, `<input type="number" value="${n.x}">`, `<input type="number" value="${n.y}">`, `<select><option value="free"${n.s==='f'?' selected':''}>自由</option><option value="pinned"${n.s==='p'?' selected':''}>ピン</option><option value="fixed"${n.s==='x'?' selected':''}>固定</option><option value="roller"${n.s==='r'?' selected':''}>ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false));
+        p.nodes.forEach(n => addRow(elements.nodesTable, [`#`, `<input type="number" value="${n.x}">`, `<input type="number" value="${n.y}">`, `<select><option value="free"${n.s==='f'?' selected':''}>自由</option><option value="pinned"${n.s==='p'?' selected':''}>ピン</option><option value="fixed"${n.s==='x'?' selected':''}>固定</option><option value="roller_x_fixed">ローラー(垂直自由)</option><option value="roller_y_fixed"${n.s==='r'?' selected':''}>ローラー(水平自由)</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`], false));
         p.members.forEach(m => {
             const E_N_mm2 = m.E || '205000';
             const F_N_mm2 = m.F || '235';
@@ -13802,7 +14137,7 @@ const loadPreset = (index) => {
             newX = maxX + parseFloat(elements.gridSpacing.value);
             newY = nodeAtMaxX.y;
         }
-        addRow(elements.nodesTable, [`#`, `<input type="number" value="${newX.toFixed(2)}">`, `<input type="number" value="${newY.toFixed(2)}">`, `<select><option value="free">自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller">ローラー</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
+        addRow(elements.nodesTable, [`#`, `<input type="number" value="${newX.toFixed(2)}">`, `<input type="number" value="${newY.toFixed(2)}">`, `<select><option value="free">自由</option><option value="pinned">ピン</option><option value="fixed">固定</option><option value="roller_x_fixed">ローラー(垂直自由)</option><option value="roller_y_fixed">ローラー(水平自由)</option></select>`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.1">`, `<input type="number" value="0" step="0.001">`]);
     };
     elements.addMemberBtn.onclick = () => {
         const nodeCount = elements.nodesTable.rows.length;
@@ -14095,7 +14430,7 @@ const loadPreset = (index) => {
             // 座屈解析結果のレポート用HTML生成
             let bucklingReportHTML = '';
             if (lastBucklingResults && lastBucklingResults.length > 0) {
-                bucklingReportHTML = `<div class="no-break"><h2>弾性座屈解析結果</h2>${generateReportTableHTML('buckling-analysis-results')}</div>`;
+                bucklingReportHTML = `<div class="no-break"><h2>座屈解析結果</h2>${generateReportTableHTML('buckling-analysis-results')}</div>`;
             }
 
             reportWindow.document.write(`<html><head><title>構造解析レポート</title><style>body{font-family:sans-serif;margin:2em;}h1,h2,h3{color:#005A9C;border-bottom:2px solid #f0f8ff;padding-bottom:5px;}table{width:100%;border-collapse:collapse;margin-bottom:2em;}th,td{border:1px solid #ccc;padding:8px;text-align:center;}th{background-color:#f0f8ff;}img{max-width:100%;height:auto;border:1px solid #ccc;margin:1em 0;}.grid{display:grid;grid-template-columns:1fr;gap:20px;}.no-break{page-break-inside:avoid;}@media print{body{margin:1em;}button{display:none;}}</style></head><body><button onclick="window.print()">レポートを印刷</button><h1>構造解析レポート</h1><p>生成日時: ${new Date().toLocaleString()}</p><div class="no-break"><h2>モデル図</h2><img src="${modelCanvasImg}"></div><h2>入力データ</h2><div class="no-break"><h3>節点座標と境界条件</h3>${generateReportTableHTML('nodes-table')}</div><div class="no-break"><h3>部材 (物性値・接合条件)</h3>${generateReportTableHTML('members-table')}</div><div class="no-break"><h3>節点荷重</h3>${generateReportTableHTML('node-loads-table')}</div><div class="no-break"><h3>部材等分布荷重</h3>${generateReportTableHTML('member-loads-table')}</div><h2>計算結果</h2><div class="no-break grid"><div><h3>変位図</h3><img src="${displacementCanvasImg}"></div><div><h3>曲げモーメント図</h3><img src="${momentCanvasImg}"></div><div><h3>軸力図</h3><img src="${axialCanvasImg}"></div><div><h3>せん断力図</h3><img src="${shearCanvasImg}"></div></div><div class="no-break">${generateReportTableHTML('displacement-results')}</div><div class="no-break">${generateReportTableHTML('reaction-results')}</div><div class="no-break">${generateReportTableHTML('force-results')}</div><div class="no-break"><h2>断面算定結果</h2><h3>検定比図</h3><img src="${ratioCanvasImg}"><h3>検定比 詳細</h3>${generateReportTableHTML('section-check-results')}</div>${bucklingReportHTML}</body></html>`);
@@ -14814,12 +15149,9 @@ const loadPreset = (index) => {
 
                     const popupSectionLabelEl = document.getElementById('popup-section-label');
                     if (popupSectionLabelEl) {
-                        const labelFromProps = props.sectionInfo && (props.sectionInfo.label || props.sectionInfo.sectionLabel || props.sectionName) ? (props.sectionInfo.label || props.sectionInfo.sectionLabel || props.sectionName) : (props.sectionName || '');
-                        if (labelFromProps) popupSectionLabelEl.textContent = labelFromProps;
-                        else {
-                            const span = row.querySelector('.section-name-cell');
-                            popupSectionLabelEl.textContent = span ? span.textContent.trim() : '-';
-                        }
+                        // 軸方向の表示更新 (displaySectionName, displayAxisLabel は関数冒頭で算出済み)
+                        const axisText = (displayAxisLabel && displayAxisLabel !== '選択') ? displayAxisLabel : '';
+                        popupSectionLabelEl.innerHTML = `断面: ${displaySectionName}${axisText ? `<br><span style="font-weight:normal; font-size:0.9em;">軸方向: ${axisText}</span>` : ''}`;
                     }
 
                     // 断面2次半径入力も更新（ix/iy のうち小さい方を優先して表示）
@@ -15880,7 +16212,7 @@ const loadPreset = (index) => {
         console.log('座屈解析結果データ:', lastBucklingResults);
         
         const data = [];
-        data.push(['■ 弾性座屈解析結果']);
+        data.push(['■ 座屈解析結果']);
         data.push([]);
         
         if (lastBucklingResults && lastBucklingResults.length > 0) {
@@ -16517,8 +16849,8 @@ const initializeFrameGenerator = () => {
                 <option value="free" ${support === 'free' ? 'selected' : ''}>自由</option>
                 <option value="pinned" ${support === 'pinned' ? 'selected' : ''}>ピン</option>
                 <option value="fixed" ${support === 'fixed' ? 'selected' : ''}>固定</option>
-                <option value="roller-x" ${support === 'roller-x' ? 'selected' : ''}>ローラー(X)</option>
-                <option value="roller-y" ${support === 'roller-y' ? 'selected' : ''}>ローラー(Y)</option>
+                <option value="roller_x_fixed" ${support === 'roller_x_fixed' ? 'selected' : ''}>ローラー(垂直自由)</option>
+                <option value="roller_y_fixed" ${support === 'roller_y_fixed' || support === 'roller' ? 'selected' : ''}>ローラー(水平自由)</option>
             </select>`,
             `<input type="number" value="0" step="0.1">`, // 強制変位 δx (mm)
             `<input type="number" value="0" step="0.1">`, // 強制変位 δy (mm)
@@ -21094,3 +21426,401 @@ function applyGeneratedModel(modelData, naturalLanguageInput = '', mode = 'new',
         throw error; // エラーを再スローして上位で処理
     }
 }
+
+// --- Excel Input Feature ---
+const spreadsheetBtn = document.getElementById('spreadsheet-input-btn');
+if (spreadsheetBtn) {
+    spreadsheetBtn.addEventListener('click', () => {
+        window.open('spreadsheet_input.html', 'SpreadsheetInput', 'width=1200,height=800');
+    });
+}
+
+window.getSpreadsheetData = () => {
+    const nodes = Array.from(window.elements.nodesTable.rows).map(row => {
+        const inputs = row.querySelectorAll('input, select');
+        return {
+            x: inputs[0].value,
+            y: inputs[1].value,
+            fix: inputs[2].value,
+            dx: inputs[3].value,
+            dy: inputs[4].value,
+            rot: inputs[5].value
+        };
+    });
+
+    const members = Array.from(window.elements.membersTable.rows).map(row => {
+        const cells = row.cells;
+        
+        const node1 = cells[1].querySelector('input').value;
+        const node2 = cells[2].querySelector('input').value;
+        
+        // E (Cell 3) - Check if it's a custom input
+        const eCell = cells[3];
+        const eInput = eCell.querySelector('input');
+        const E = eInput ? eInput.value : '';
+        
+        // F (Cell 4) - Check if it's steel/wood dropdown or custom input
+        const fCell = cells[4];
+        let F = '';
+        const fSelect = fCell.querySelector('select');
+        const fInput = fCell.querySelector('input');
+        
+        if (fSelect && fSelect.value !== 'custom') {
+            F = fSelect.value;
+        } else if (fInput) {
+            F = fInput.value;
+        }
+        
+        // I, A, Z, i (Cells 5-8)
+        const I = cells[5].querySelector('input').value;
+        const A = cells[6].querySelector('input').value;
+        const Z = cells[7].querySelector('input').value;
+        const i_rad = cells[8].querySelector('input').value;
+        
+        // K (Buckling Coefficient) - Find by class to handle variable column positions (density)
+        const kInput = row.querySelector('.buckling-k-input');
+        const K = kInput ? kInput.value : '';
+        
+        // Density - Find the density input cell
+        let density = '';
+        const densityInput = row.querySelector('.density-cell input') || 
+                            row.querySelector('input[id^="member-density-"]');
+        if (densityInput) {
+            density = densityInput.value;
+        }
+        
+        const nameCell = row.querySelector('.section-name-cell');
+        const axisCell = row.querySelector('.section-axis-cell');
+        const name = nameCell ? nameCell.textContent.trim() : '';
+        const axis = axisCell ? axisCell.textContent.trim() : '';
+        
+        const connSelects = row.querySelectorAll('.conn-select');
+        const conn1 = connSelects[0] ? connSelects[0].value : 'rigid';
+        const conn2 = connSelects[1] ? connSelects[1].value : 'rigid';
+        
+        // Read spring constants if connection type is 'spring'
+        const readSpring = (cell) => {
+            if (!cell) return { Kx: '', Ky: '', Kr: '' };
+            const container = cell.querySelector('.spring-inputs');
+            if (!container) return { Kx: '', Ky: '', Kr: '' };
+            const kx = container.querySelector('.spring-kx')?.value || '';
+            const ky = container.querySelector('.spring-ky')?.value || '';
+            const kr = container.querySelector('.spring-kr')?.value || '';
+            return { Kx: kx, Ky: ky, Kr: kr };
+        };
+        
+        const connCells = row.querySelectorAll('.conn-cell');
+        const spring_i = readSpring(connCells[0]);
+        const spring_j = readSpring(connCells[1]);
+        
+        return {
+            node1, node2, E, F, I, A, Z, i: i_rad, K, density, name, axis,
+            conn1: conn1,
+            conn2: conn2,
+            spring_i_Kx: spring_i.Kx,
+            spring_i_Ky: spring_i.Ky,
+            spring_i_Kr: spring_i.Kr,
+            spring_j_Kx: spring_j.Kx,
+            spring_j_Ky: spring_j.Ky,
+            spring_j_Kr: spring_j.Kr
+        };
+    });
+
+    const nodeLoads = Array.from(window.elements.nodeLoadsTable.rows).map(row => {
+        const inputs = row.querySelectorAll('input');
+        return {
+            node: inputs[0].value,
+            px: inputs[1].value,
+            py: inputs[2].value,
+            mz: inputs[3].value
+        };
+    });
+
+    const memberLoads = Array.from(window.elements.memberLoadsTable.rows).map(row => {
+        const inputs = row.querySelectorAll('input');
+        return {
+            member: inputs[0].value,
+            w: inputs[1].value
+        };
+    });
+
+    return { nodes, members, nodeLoads, memberLoads };
+};
+
+window.updateFromSpreadsheet = (data) => {
+    if (!data || (!data.nodes && !data.members)) {
+        console.warn('updateFromSpreadsheet: No data received');
+        return;
+    }
+
+    // Clear tables
+    while(window.elements.nodesTable.rows.length > 0) window.elements.nodesTable.deleteRow(0);
+    while(window.elements.membersTable.rows.length > 0) window.elements.membersTable.deleteRow(0);
+    while(window.elements.nodeLoadsTable.rows.length > 0) window.elements.nodeLoadsTable.deleteRow(0);
+    while(window.elements.memberLoadsTable.rows.length > 0) window.elements.memberLoadsTable.deleteRow(0);
+
+    // Add Nodes
+    if (data.nodes) {
+        data.nodes.forEach((n, idx) => {
+            // Normalize boundary condition names
+            let fixValue = (n.fix || 'Free').toLowerCase();
+            if (fixValue === 'pin') fixValue = 'pinned';
+            if (fixValue === 'rollerx') fixValue = 'roller_x_fixed';
+            if (fixValue === 'rollery') fixValue = 'roller_y_fixed';
+            
+            const cells = [
+                '#',
+                `<input type="number" step="0.001" value="${n.x || ''}">`,
+                `<input type="number" step="0.001" value="${n.y || ''}">`,
+                `<select>
+                    <option value="free" ${fixValue === 'free' ? 'selected' : ''}>自由</option>
+                    <option value="pinned" ${fixValue === 'pinned' ? 'selected' : ''}>ピン</option>
+                    <option value="fixed" ${fixValue === 'fixed' ? 'selected' : ''}>固定</option>
+                    <option value="roller_x_fixed" ${fixValue === 'roller_x_fixed' ? 'selected' : ''}>ローラー(垂直自由)</option>
+                    <option value="roller_y_fixed" ${fixValue === 'roller_y_fixed' ? 'selected' : ''}>ローラー(水平自由)</option>
+                </select>`,
+                `<input type="number" value="${n.dx || ''}" step="0.1">`,
+                `<input type="number" value="${n.dy || ''}" step="0.1">`,
+                `<input type="number" value="${n.rot || ''}" step="0.001">`
+            ];
+            window.addRow(window.elements.nodesTable, cells, false);
+        });
+    }
+
+    // Check if any member has density to enable the checkbox
+    if (data.members) {
+        const hasDensity = data.members.some(m => m.density && m.density.trim() !== '');
+        if (hasDensity && window.elements.considerSelfWeightCheckbox && !window.elements.considerSelfWeightCheckbox.checked) {
+            window.elements.considerSelfWeightCheckbox.checked = true;
+        }
+
+        // Add Members
+        data.members.forEach((m, idx) => {
+            // Convert UI units to SI for memberRowHTML
+            const I_si = (parseFloat(m.I) || 0) * 1e-8;
+            const A_si = (parseFloat(m.A) || 0) * 1e-4;
+            const Z_si = (parseFloat(m.Z) || 0) * 1e-6;
+            
+            // Normalize connection type names
+            let conn1 = (m.conn1 || 'Rigid').toLowerCase();
+            let conn2 = (m.conn2 || 'Rigid').toLowerCase();
+            
+            // Normalize 'Pin' to 'pinned'
+            if (conn1 === 'pin') conn1 = 'pinned';
+            if (conn2 === 'pin') conn2 = 'pinned';
+            
+            // F値を文字列として保持（空や未定義の場合はデフォルト値を使わない）
+            const rawF = (m.F !== undefined && m.F !== null) ? String(m.F).trim() : '';
+            const standardFValues = ['235', '295', '325', '355'];
+            
+            let F_value = '235';
+            let forceCustomF = false;
+            
+            if (rawF !== '') {
+                F_value = rawF;
+                // 標準値に含まれていない場合はカスタム扱いにする
+                if (!standardFValues.includes(F_value)) {
+                    forceCustomF = true;
+                }
+            }
+            
+            console.log(`Member ${idx}: F value from spreadsheet:`, m.F, '-> Using:', F_value, 'forceCustomF:', forceCustomF);
+            
+            const cells = window.memberRowHTML(
+                m.node1, m.node2, 
+                m.E, F_value, 
+                I_si, A_si, Z_si, 
+                m.i, 
+                conn1, conn2, 
+                m.name, m.axis, 
+                m.K,
+                forceCustomF
+            );
+            
+            // Prepend '#' column
+            cells.unshift('#');
+            
+            const newRow = window.addRow(window.elements.membersTable, cells, false);
+            
+            // Update density if present
+            if (m.density && newRow) {
+                const densityInput = newRow.querySelector('.density-cell input') || 
+                                     newRow.querySelector('input[id^="member-density-"]');
+                if (densityInput) densityInput.value = m.density;
+            }
+            
+            // Update K value if present
+            if (m.K && newRow) {
+                const kInput = newRow.querySelector('input[id^="member-k-"]');
+                if (kInput) kInput.value = m.K;
+            }
+            
+            // Update spring constants if connection type is 'spring'
+            if (newRow) {
+                const connCells = newRow.querySelectorAll('.conn-cell');
+                
+                // Update start connection spring values
+                if (conn1 === 'spring' && connCells[0]) {
+                    const springContainer = connCells[0].querySelector('.spring-inputs');
+                    if (springContainer) {
+                        springContainer.style.display = 'block';
+                        const kxInput = springContainer.querySelector('.spring-kx');
+                        const kyInput = springContainer.querySelector('.spring-ky');
+                        const krInput = springContainer.querySelector('.spring-kr');
+                        if (kxInput && m.spring_i_Kx !== undefined && m.spring_i_Kx !== '') kxInput.value = m.spring_i_Kx;
+                        if (kyInput && m.spring_i_Ky !== undefined && m.spring_i_Ky !== '') kyInput.value = m.spring_i_Ky;
+                        if (krInput && m.spring_i_Kr !== undefined && m.spring_i_Kr !== '') krInput.value = m.spring_i_Kr;
+                    }
+                }
+                
+                // Update end connection spring values
+                if (conn2 === 'spring' && connCells[1]) {
+                    const springContainer = connCells[1].querySelector('.spring-inputs');
+                    if (springContainer) {
+                        springContainer.style.display = 'block';
+                        const kxInput = springContainer.querySelector('.spring-kx');
+                        const kyInput = springContainer.querySelector('.spring-ky');
+                        const krInput = springContainer.querySelector('.spring-kr');
+                        if (kxInput && m.spring_j_Kx !== undefined && m.spring_j_Kx !== '') kxInput.value = m.spring_j_Kx;
+                        if (kyInput && m.spring_j_Ky !== undefined && m.spring_j_Ky !== '') kyInput.value = m.spring_j_Ky;
+                        if (krInput && m.spring_j_Kr !== undefined && m.spring_j_Kr !== '') krInput.value = m.spring_j_Kr;
+                    }
+                }
+            }
+        });
+    }
+
+    // Add Node Loads
+    if (data.nodeLoads) {
+        data.nodeLoads.forEach(l => {
+             window.addRow(window.elements.nodeLoadsTable, [
+                `<input type="number" value="${l.node}">`,
+                `<input type="number" value="${l.px}">`,
+                `<input type="number" value="${l.py}">`,
+                `<input type="number" value="${l.mz}">`
+            ], false);
+        });
+    }
+
+    // Add Member Loads
+    if (data.memberLoads) {
+        data.memberLoads.forEach(l => {
+            window.addRow(window.elements.memberLoadsTable, [
+                `<input type="number" value="${l.member}">`,
+                `<input type="number" value="${l.w}">`
+            ], false);
+        });
+    }
+    
+    window.renumberTables();
+    if (typeof window.drawOnCanvas === 'function') window.drawOnCanvas();
+    
+    // Trigger calculation
+    setTimeout(() => {
+            const calcBtn = document.getElementById('calculate-and-animate-btn');
+            if (calcBtn) calcBtn.click();
+    }, 500);
+};
+
+// �����v�Z�l�̕\���X�V�֐�
+window.updateMemberAutoValues = () => {
+    const rows = Array.from(elements.membersTable.rows);
+    rows.forEach((row, index) => {
+        // �f��2�����a i �̎����v�Z
+        const iInput = row.querySelector('.radius-i-input');
+        const iWrapper = iInput ? iInput.closest('.cell-input-wrapper') : null;
+        const iAutoLabel = iWrapper ? iWrapper.querySelector('.auto-label') : null;
+        
+        if (iInput && iWrapper && iAutoLabel) {
+            const I = parseFloat(row.cells[5].querySelector('input').value) * 1e-8; // m4
+            const A = parseFloat(row.cells[6].querySelector('input').value) * 1e-4; // m2
+            
+            if (iInput.value === '') {
+                if (A > 0 && I >= 0) {
+                    const i_val_m = Math.sqrt(I / A);
+                    const i_val_cm = i_val_m * 100;
+                    iInput.placeholder = i_val_cm.toFixed(2);
+                    iInput.classList.add('auto-calculated-input');
+                    iAutoLabel.style.display = 'block';
+                } else {
+                    iInput.placeholder = '����';
+                    iInput.classList.remove('auto-calculated-input');
+                    iAutoLabel.style.display = 'none';
+                }
+            } else {
+                iInput.classList.remove('auto-calculated-input');
+                iAutoLabel.style.display = 'none';
+            }
+        }
+
+        // �����W�� K �̎����v�Z
+        const kInput = row.querySelector('.buckling-k-input');
+        const kWrapper = kInput ? kInput.closest('.cell-input-wrapper') : null;
+        const kAutoLabel = kWrapper ? kWrapper.querySelector('.auto-label') : null;
+        
+        if (kInput && kWrapper && kAutoLabel) {
+            if (kInput.value === '' || parseFloat(kInput.value) === 0) {
+                // �ڑ������̎擾
+                let i_conn = 'rigid', j_conn = 'rigid';
+                
+                // �ڑ������̎擾���W�b�N�i������parseInputs�Ȃǂ��Q�l�Ɂj
+                // �ȈՓI��select�v�f����擾�����݂�
+                const selects = row.querySelectorAll('select.conn-select');
+                if (selects.length >= 2) {
+                    i_conn = selects[0].value;
+                    j_conn = selects[1].value;
+                } else {
+                    // ��C���f�b�N�X���琄��i���x��̗L���ŕς��j
+                    const cellCount = row.cells.length;
+                    const hasDensity = cellCount >= 13; // ���x�񂪂���ꍇ
+                    const iConnIdx = hasDensity ? 10 : 9;
+                    const jConnIdx = hasDensity ? 11 : 10;
+                    
+                    const iSel = row.cells[iConnIdx]?.querySelector('select');
+                    const jSel = row.cells[jConnIdx]?.querySelector('select');
+                    if (iSel) i_conn = iSel.value;
+                    if (jSel) j_conn = jSel.value;
+                }
+
+                // K�̐���
+                let k_val = 1.0;
+                const isPin = (c) => c === 'pinned' || c === 'pin' || c === 'p';
+                const isRigid = (c) => c === 'rigid' || c === 'fixed';
+                
+                if (isPin(i_conn) && isPin(j_conn)) k_val = 1.0;
+                else if (isRigid(i_conn) && isRigid(j_conn)) k_val = 0.5;
+                else if ((isPin(i_conn) && isRigid(j_conn)) || (isRigid(i_conn) && isPin(j_conn))) k_val = 0.7;
+                // ���̃P�[�X�i���R�[�Ȃǁj�͍l�����K�v�����A��U�ȈՃ��W�b�N
+                
+                kInput.placeholder = k_val.toFixed(1);
+                kInput.classList.add('auto-calculated-input');
+                kAutoLabel.style.display = 'block';
+            } else {
+                kInput.classList.remove('auto-calculated-input');
+                kAutoLabel.style.display = 'none';
+            }
+        }
+    });
+};
+
+// �C�x���g���X�i�[�̐ݒ�
+document.addEventListener('DOMContentLoaded', () => {
+    if (elements.membersTable) {
+        elements.membersTable.addEventListener('change', (e) => {
+            // �f�ʐ��\��ڑ��������ς�����玩���v�Z�l���X�V
+            if (e.target.matches('input') || e.target.matches('select')) {
+                window.updateMemberAutoValues();
+            }
+        });
+        
+        elements.membersTable.addEventListener('input', (e) => {
+             // ���͒l���ς������i����i��K�̓��͗��j�\�����X�V
+            if (e.target.matches('.radius-i-input') || e.target.matches('.buckling-k-input')) {
+                window.updateMemberAutoValues();
+            }
+        });
+    }
+    // �������s
+    setTimeout(window.updateMemberAutoValues, 500);
+});
+

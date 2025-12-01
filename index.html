@@ -54,6 +54,7 @@
                             <div class="guide-section">
                                 <h5>⚙️ 編集機能</h5>
                                 <ul>
+                                    <li><strong>スプレッドシート入力:</strong> 表形式で一括編集（F値・バネ定数対応）</li>
                                     <li><strong>右クリック編集:</strong> 節点・部材・荷重の詳細設定</li>
                                     <li><strong>バネ接合:</strong> 軸(Kx)・せん断(Ky)・回転(Kr)剛性と剛判定</li>
                                     <li><strong>Excel貼り付け:</strong> 表へのデータ直接ペースト対応</li>
@@ -102,9 +103,9 @@
                                 <ul>
                                     <li><strong>構造解析:</strong> 変位・断面力・支点反力</li>
                                     <li><strong>断面算定:</strong> 検定比・短期/長期・応力・許容応力</li>
-                                    <li><strong>弾性座屈解析:</strong> 座屈荷重・安全率</li>
+                                    <li><strong>座屈解析:</strong> 座屈荷重・安全率</li>
                                     <li><strong>アニメーション:</strong> 変位の動的表示</li>
-                                    <li><strong>応力図:</strong> BMD・AFD・SFD・検定比図</li>
+                                    <li><strong>表示スタイル:</strong> 節点番号は丸囲い数字で表示</li>
                                 </ul>
                             </div>
                             
@@ -122,10 +123,10 @@
                                 <h5>📁 データ管理</h5>
                                 <ul>
                                     <li><strong>プリセット:</strong> 計算例の読込</li>
-                                    <li><strong>CSV保存/読込:</strong> 入力データ管理</li>
+                                    <li><strong>JSON保存/読込:</strong> 入力データ管理</li>
                                     <li><strong>レポート/Excel出力:</strong> 結果の保存</li>
-                                    <li><strong>共有リンク:</strong> 短縮URLによるモデル共有（短縮・元URLの両方コピー可能）</li>
-                                    <li><strong>Excel貼り付け:</strong> 節点・部材・荷重テーブルへ直接貼り付け可能</li>
+                                    <li><strong>共有リンク:</strong> 短縮URLによるモデル共有</li>
+                                    <li><strong>Excel貼り付け:</strong> 各テーブルへ直接貼り付け可能</li>
                                 </ul>
                             </div>
                             
@@ -142,6 +143,7 @@
                             <div class="guide-section">
                                 <h5>🎬 3Dビューア</h5>
                                 <ul>
+                                    <li><strong>別ウィンドウ表示:</strong> 3Dモデルを独立して確認</li>
                                     <li><strong>リアルタイム更新:</strong> 編集を即座に反映</li>
                                     <li><strong>マウス操作:</strong> 回転・移動・ズーム</li>
                                     <li><strong>断面形状:</strong> H形鋼等の3D表示</li>
@@ -184,6 +186,7 @@
                         <button id="mode-add-member" class="mode-btn" title="2つの節点をクリックして部材を追加 (ショートカット: M)">部材追加 (M)</button>
                         <span class="help-icon" id="help-add-member">?</span>
                         <button id="frame-generator-btn" class="frame-generator-btn" title="多層多スパンラーメン構造を自動生成">フレームジェネレーター</button>
+                        <button id="spreadsheet-input-btn" class="spreadsheet-btn" title="高機能スプレッドシートでデータを編集" style="background-color: #28a745;">スプレッドシート入力</button>
                         <button id="undo-btn" title="元に戻す (ショートカット: Ctrl+Z)">↩️ 元に戻す</button>
                     </div>
                     <div class="canvas-settings">
@@ -362,8 +365,8 @@
                                     <th class="col-section">断面積 A (cm²)</th>
                                     <th class="col-section section-check-item">断面係数 Z (cm³)</th>
                                     <th class="col-buckling section-check-item" title="断面2次半径 (弱軸)">断面2次半径 i (cm)</th>
-                                    <th class="col-buckling section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
                                     <th class="col-material density-column" style="display: none;">密度 ρ (kg/m³)</th>
+                                    <th class="col-buckling section-check-item" title="座屈長さ係数 (空欄=自動)">座屈係数 K</th>
                                     <th class="col-section">断面名称</th>
                                     <th class="col-section">軸方向</th>
                                     <th class="col-section">断面選択</th>
@@ -477,7 +480,7 @@
 
                 <div class="output-section">
                     <div class="output-header">
-                        <h2>弾性座屈解析結果</h2>
+                        <h2>座屈解析結果</h2>
                     </div>
                     <h3>座屈解析 詳細</h3>
                     <div class="table-container-result">
@@ -638,7 +641,8 @@
                 <option value="free">自由</option>
                 <option value="pinned">ピン</option>
                 <option value="fixed">固定</option>
-                <option value="roller">ローラー</option>
+                <option value="roller_x_fixed">ローラー(垂直自由)</option>
+                <option value="roller_y_fixed">ローラー(水平自由)</option>
             </select>
             
             <label for="popup-px">荷重 Px (kN)</label>

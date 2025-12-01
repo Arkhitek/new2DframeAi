@@ -210,6 +210,45 @@ function build3DModel(scene, nodes, members) {
         nodeMesh.position.set(node.x, node.y, 0);
         memberGroup.add(nodeMesh);
 
+        // 支点描画を追加
+        let direction = 'floor';
+        const support = node.support || node.s;
+        if (support === 'fixed') {
+             // 節点に接続する部材を探す
+             const connectedMembers = members.filter(m => m.i === i || m.j === i);
+             if (connectedMembers.length > 0) {
+                let allDown = true;
+                let allRight = true;
+                let allLeft = true;
+                let isHorizontal = true;
+
+                for (const m of connectedMembers) {
+                    const otherNodeIndex = (m.i === i) ? m.j : m.i;
+                    const otherNode = nodes[otherNodeIndex];
+                    
+                    const dx = otherNode.x - node.x;
+                    const dy = otherNode.y - node.y;
+                    
+                    // Three.js (数学座標系) なので y上向き正
+                    if (dy > 1e-5) allDown = false;
+                    if (dx < -1e-5) allRight = false;
+                    if (dx > 1e-5) allLeft = false;
+                    
+                    if (Math.abs(dy) > Math.abs(dx) * 0.5) isHorizontal = false;
+                }
+
+                if (allDown && !isHorizontal) direction = 'ceiling';
+                else if (allRight && isHorizontal) direction = 'left-wall';
+                else if (allLeft && isHorizontal) direction = 'right-wall';
+             }
+        }
+
+        const supportMesh = createSupportMesh(support, direction);
+        if (supportMesh) {
+            supportMesh.position.set(node.x, node.y, 0);
+            memberGroup.add(supportMesh);
+        }
+
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'label';
         nodeDiv.textContent = `N${i + 1}`;
@@ -387,6 +426,106 @@ function createMemberMesh(member, nodes) {
     }
 
     return mesh;
+}
+
+/**
+ * 支点メッシュを作成する関数
+ */
+function createSupportMesh(supportType, direction = 'floor') {
+    if (!supportType || supportType === 'free') return null;
+
+    const group = new THREE.Group();
+    const material = new THREE.MeshLambertMaterial({ color: 0x008000 }); // 緑色
+
+    if (supportType === 'fixed') {
+        const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const mesh = new THREE.Mesh(geometry, material);
+        
+        if (direction === 'left-wall') {
+             // 左壁固定 (右向き)
+             const plateGeo = new THREE.BoxGeometry(0.1, 1.0, 1.0);
+             const plate = new THREE.Mesh(plateGeo, material);
+             plate.position.x = -0.4;
+             group.add(mesh);
+             group.add(plate);
+        } else if (direction === 'right-wall') {
+             // 右壁固定 (左向き)
+             const plateGeo = new THREE.BoxGeometry(0.1, 1.0, 1.0);
+             const plate = new THREE.Mesh(plateGeo, material);
+             plate.position.x = 0.4;
+             group.add(mesh);
+             group.add(plate);
+        } else if (direction === 'ceiling') {
+             // 天井固定 (上向き)
+             const plateGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
+             const plate = new THREE.Mesh(plateGeo, material);
+             plate.position.y = 0.4;
+             group.add(mesh);
+             group.add(plate);
+        } else {
+             // 床固定 (下向き) - デフォルト
+             const plateGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
+             const plate = new THREE.Mesh(plateGeo, material);
+             plate.position.y = -0.4;
+             group.add(mesh);
+             group.add(plate);
+        }
+    } else if (supportType === 'fixed-x') {
+        // 後方互換性のため残すが、基本は fixed + direction で処理される
+        const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const mesh = new THREE.Mesh(geometry, material);
+        const plateGeo = new THREE.BoxGeometry(0.1, 1.0, 1.0);
+        const plate = new THREE.Mesh(plateGeo, material);
+        plate.position.x = -0.4;
+        group.add(mesh);
+        group.add(plate);
+    } else if (supportType === 'fixed-top') {
+        // 後方互換性
+        const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const mesh = new THREE.Mesh(geometry, material);
+        const plateGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
+        const plate = new THREE.Mesh(plateGeo, material);
+        plate.position.y = 0.4;
+        group.add(mesh);
+        group.add(plate);
+    } else if (supportType === 'pinned') {
+        const geometry = new THREE.ConeGeometry(0.4, 0.6, 4);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = Math.PI; // 逆さまにする（頂点が下）
+        mesh.rotation.y = Math.PI / 4; // 45度回転させて角を合わせる
+        mesh.position.y = -0.5; // 節点の下に配置
+        group.add(mesh);
+    } else if (supportType === 'roller' || supportType === 'roller_y_fixed') {
+        // 床ローラー (水平自由)
+        const coneGeo = new THREE.ConeGeometry(0.4, 0.6, 4);
+        const cone = new THREE.Mesh(coneGeo, material);
+        cone.rotation.x = Math.PI;
+        cone.rotation.y = Math.PI / 4;
+        cone.position.y = -0.5;
+        
+        const plateGeo = new THREE.BoxGeometry(0.8, 0.1, 0.8);
+        const plate = new THREE.Mesh(plateGeo, material);
+        plate.position.y = -0.9;
+        
+        group.add(cone);
+        group.add(plate);
+    } else if (supportType === 'roller_x_fixed') {
+        // 壁ローラー (垂直自由) - 右側に壁がある想定
+        const coneGeo = new THREE.ConeGeometry(0.4, 0.6, 4);
+        const cone = new THREE.Mesh(coneGeo, material);
+        cone.rotation.z = Math.PI / 2; // 横向き
+        cone.rotation.y = Math.PI / 4;
+        cone.position.x = 0.5;
+        
+        const plateGeo = new THREE.BoxGeometry(0.1, 0.8, 0.8);
+        const plate = new THREE.Mesh(plateGeo, material);
+        plate.position.x = 0.9;
+        
+        group.add(cone);
+        group.add(plate);
+    }
+    
+    return group;
 }
 
 function createSectionShape(sectionInfo, member) {

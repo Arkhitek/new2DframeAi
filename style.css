@@ -2689,3 +2689,26 @@ header {
     /* ブラウザがダークモードでも、アプリケーションは常にライトモードで表示 */
     /* このメディアクエリは意図的に空にしています */
 }
+/* --- 自動計算値の表示スタイル --- */
+.auto-calculated-input {
+    color: #888 !important;
+    background-color: #f9f9f9;
+}
+
+.auto-label {
+    font-size: 10px;
+    color: #999;
+    display: block;
+    text-align: right;
+    margin-top: 2px;
+    line-height: 1;
+}
+
+.cell-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    width: 100%;
+    min-width: 0;
+}
+

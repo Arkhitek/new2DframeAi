@@ -2704,6 +2704,15 @@ header {
     line-height: 1;
 }
 
+.reduced-label {
+    font-size: 10px;
+    color: #555;
+    display: block;
+    text-align: right;
+    margin-top: 2px;
+    line-height: 1;
+}
+
 .cell-input-wrapper {
     display: flex;
     flex-direction: column;

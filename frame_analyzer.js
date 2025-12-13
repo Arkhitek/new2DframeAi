@@ -205,14 +205,22 @@ const parseInputs = () => {
             if(sInput) strengthProps.value = parseFloat(sInput.value);
         }
 
-        // 断面性能 (I, A, Z)
-        const iMomentInput = row.cells[5]?.querySelector('input');
-        const aAreaInput = row.cells[6]?.querySelector('input');
-        const zSectionInput = row.cells[7]?.querySelector('input');
+        // 断面性能 (I, A, Z) + 低減係数
+        const iMomentInput = row.cells[5]?.querySelector('.section-I-input');
+        const iMomentFactorInput = row.cells[5]?.querySelector('.section-I-factor');
+        const aAreaInput = row.cells[6]?.querySelector('.section-A-input');
+        const aAreaFactorInput = row.cells[6]?.querySelector('.section-A-factor');
+        const zSectionInput = row.cells[7]?.querySelector('.section-Z-input');
+        const zSectionFactorInput = row.cells[7]?.querySelector('.section-Z-factor');
 
-        const I = parseFloat(iMomentInput.value) * 1e-8;
-        const A = parseFloat(aAreaInput.value) * 1e-4;
-        const Z = parseFloat(zSectionInput.value) * 1e-6;
+        const safeFactor = (el) => {
+            const v = parseFloat(el?.value);
+            return Number.isFinite(v) ? v : 1.0;
+        };
+
+        const I = (parseFloat(iMomentInput?.value) * safeFactor(iMomentFactorInput)) * 1e-8;
+        const A = (parseFloat(aAreaInput?.value) * safeFactor(aAreaFactorInput)) * 1e-4;
+        const Z = (parseFloat(zSectionInput?.value) * safeFactor(zSectionFactorInput)) * 1e-6;
 
         // 座屈係数K (クラス名で取得)
         let bucklingK = null;
@@ -3446,9 +3454,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 断面性能 (I, A, Z)
-            if (updates.I) row.cells[5].querySelector('input').value = updates.I;
-            if (updates.A) row.cells[6].querySelector('input').value = updates.A;
-            if (updates.Z) row.cells[7].querySelector('input').value = updates.Z;
+            if (updates.I) row.cells[5].querySelector('.section-I-input').value = updates.I;
+            if (updates.A) row.cells[6].querySelector('.section-A-input').value = updates.A;
+            if (updates.Z) row.cells[7].querySelector('.section-Z-input').value = updates.Z;
+            if (typeof window.updateReductionDisplays === 'function') {
+                window.updateReductionDisplays(row);
+            }
 
             // 断面2次半径 i
             if (updates.radius_i !== undefined) {
@@ -3474,9 +3485,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // 断面選択ツールからの反映
             if (updates.sectionProperties) {
                 const sp = updates.sectionProperties;
-                if (sp.I) row.cells[5].querySelector('input').value = sp.I;
-                if (sp.A) row.cells[6].querySelector('input').value = sp.A;
-                if (sp.Z) row.cells[7].querySelector('input').value = sp.Z;
+                if (sp.I) row.cells[5].querySelector('.section-I-input').value = sp.I;
+                if (sp.A) row.cells[6].querySelector('.section-A-input').value = sp.A;
+                if (sp.Z) row.cells[7].querySelector('.section-Z-input').value = sp.Z;
+                if (typeof window.updateReductionDisplays === 'function') {
+                    window.updateReductionDisplays(row);
+                }
                 
                 if (sp.Zx) row.dataset.zx = sp.Zx;
                 if (sp.Zy) row.dataset.zy = sp.Zy;
@@ -3991,10 +4005,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 E: e_select.value === 'custom' ? e_input.value : e_select.value,
                 strengthType: strengthType,
                 strengthValue: strengthValue,
-                I: row.cells[5].querySelector('input').value,
-                A: row.cells[6].querySelector('input').value,
-                    Z: row.cells[7].querySelector('input').value,
-                    bucklingK: (row.querySelector('.buckling-k-input') ? row.querySelector('.buckling-k-input').value : ''),
+                I: row.cells[5].querySelector('.section-I-input')?.value,
+                I_factor: row.cells[5].querySelector('.section-I-factor')?.value || '1.0',
+                A: row.cells[6].querySelector('.section-A-input')?.value,
+                A_factor: row.cells[6].querySelector('.section-A-factor')?.value || '1.0',
+                Z: row.cells[7].querySelector('.section-Z-input')?.value,
+                Z_factor: row.cells[7].querySelector('.section-Z-factor')?.value || '1.0',
+                i_radius: row.querySelector('.radius-i-input')?.value || '',
+                i_factor: row.querySelector('.section-i-factor')?.value || '1.0',
+                bucklingK: (row.querySelector('.buckling-k-input') ? row.querySelector('.buckling-k-input').value : ''),
             });
             
             // 接合条件の取得 - 動的にselect要素を検索
@@ -4433,6 +4452,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     const newRow = addRow(elements.membersTable, [`#`, ...memberHTML], false);
+
+                    // 低減係数・断面2次半径の復元（互換性のため、無い場合はデフォルト1.0/空欄）
+                    if (newRow) {
+                        const setVal = (selector, value, fallback) => {
+                            const el = newRow.querySelector(selector);
+                            if (!el) return;
+                            if (value === undefined || value === null || value === '') {
+                                if (fallback !== undefined) el.value = fallback;
+                                return;
+                            }
+                            el.value = value;
+                        };
+
+                        setVal('.section-I-factor', m.I_factor, '1.0');
+                        setVal('.section-A-factor', m.A_factor, '1.0');
+                        setVal('.section-Z-factor', m.Z_factor, '1.0');
+                        setVal('.section-i-factor', m.i_factor, '1.0');
+                        // i(断面2次半径)は既存のi_radに加えて、保存値があれば優先
+                        setVal('.radius-i-input', m.i_radius, '');
+                        if (typeof window.updateReductionDisplays === 'function') {
+                            window.updateReductionDisplays(newRow);
+                        }
+                    }
                     
                     if (newRow && newRow.cells && newRow.cells.length > 4) {
                         // 弾性係数の復元
@@ -5705,7 +5747,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const strengthInputContainer = row.cells[4].firstElementChild;
             if (!strengthInputContainer) {
                 console.warn(`行 ${index} の強度入力コンテナが見つかりません`);
-                return { i, j, E, A: parseFloat(row.cells[5].querySelector('input').value), material, strengthProps: { type: 'unknown' } };
+                const fallbackAInput = row.cells[6]?.querySelector('.section-A-input');
+                const fallbackAFactorInput = row.cells[6]?.querySelector('.section-A-factor');
+                const v = parseFloat(fallbackAInput?.value);
+                const f = parseFloat(fallbackAFactorInput?.value);
+                const factor = Number.isFinite(f) ? f : 1.0;
+                const A_reduced_cm2 = (Number.isFinite(v) ? v : 0) * factor;
+                return { i, j, E, A: A_reduced_cm2, material, strengthProps: { type: 'unknown' } };
             }
             const strengthType = strengthInputContainer.dataset.strengthType;
             let strengthProps = { type: strengthType };
@@ -5740,17 +5788,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 安全な値取得（断面諸量）
-            const iMomentInput = row.cells[5]?.querySelector('input');
-            const aAreaInput = row.cells[6]?.querySelector('input');
-            const zSectionInput = row.cells[7]?.querySelector('input');
+            const iMomentInput = row.cells[5]?.querySelector('.section-I-input');
+            const iMomentFactorInput = row.cells[5]?.querySelector('.section-I-factor');
+            const aAreaInput = row.cells[6]?.querySelector('.section-A-input');
+            const aAreaFactorInput = row.cells[6]?.querySelector('.section-A-factor');
+            const zSectionInput = row.cells[7]?.querySelector('.section-Z-input');
+            const zSectionFactorInput = row.cells[7]?.querySelector('.section-Z-factor');
             
             if (!iMomentInput || !aAreaInput || !zSectionInput) {
                 throw new Error(`部材 ${index + 1}: 断面諸量の入力フィールドが見つかりません`);
             }
             
-            const I = parseFloat(iMomentInput.value) * 1e-8;
-            const A = parseFloat(aAreaInput.value) * 1e-4;
-            const Z = parseFloat(zSectionInput.value) * 1e-6;
+            const safeFactor = (el) => {
+                const v = parseFloat(el?.value);
+                return Number.isFinite(v) ? v : 1.0;
+            };
+
+            const I = (parseFloat(iMomentInput.value) * safeFactor(iMomentFactorInput)) * 1e-8;
+            const A = (parseFloat(aAreaInput.value) * safeFactor(aAreaFactorInput)) * 1e-4;
+            const Z = (parseFloat(zSectionInput.value) * safeFactor(zSectionFactorInput)) * 1e-6;
 
             // 座屈係数 K の取得（クラスセレクタを使って安全に取得）
             let bucklingK = null;
@@ -5888,12 +5944,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // 優先: 編集可能な入力欄から取得（cm -> m に変換）
             try {
                 const iRadInput = row.querySelector('.radius-i-input');
+                const iRadFactorInput = row.querySelector('.section-i-factor');
                 if (iRadInput && iRadInput.value !== '') {
                     const parsed = parseFloat(iRadInput.value);
+                    const fRaw = parseFloat(iRadFactorInput?.value);
+                    const factor = Number.isFinite(fRaw) ? fRaw : 1.0;
                     if (!isNaN(parsed)) {
-                        i_radius = parsed * 1e-2; // cm -> m
-                        ix = parsed; // cm
-                        iy = parsed; // cm
+                        const reducedCm = parsed * factor;
+                        i_radius = reducedCm * 1e-2; // cm -> m
+                        ix = reducedCm; // cm
+                        iy = reducedCm; // cm
                     }
                 }
             } catch (e) { /* ignore */ }
@@ -10883,7 +10943,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!finalCoords) { const dx = p2.x-p1.x, dy = p2.y-p1.y, lenSq = dx*dx+dy*dy, t = lenSq===0 ? 0 : ((modelCoords.x-p1.x)*dx + (modelCoords.y-p1.y)*dy)/lenSq; const clampedT=Math.max(0,Math.min(1,t)); finalCoords={x:p1.x+clampedT*dx,y:p1.y+clampedT*dy}; }
                 const e_select=memberRow.cells[3].querySelector('select'), e_input=memberRow.cells[3].querySelector('input[type="number"]'); const E_val = e_select.value==='custom'?e_input.value:e_select.value;
                 const f_select=memberRow.cells[4].querySelector('select'), f_input=memberRow.cells[4].querySelector('input[type="number"]'); const F_val = f_select ? (f_select.value==='custom'?f_input.value:f_select.value) : '235';
-                const I_m4 = parseFloat(memberRow.cells[5].querySelector('input').value)*1e-8, A_m2 = parseFloat(memberRow.cells[6].querySelector('input').value)*1e-4, Z_m3 = parseFloat(memberRow.cells[7].querySelector('input').value)*1e-6;
+                const Ibase = parseFloat(memberRow.cells[5].querySelector('.section-I-input')?.value);
+                const IfRaw = parseFloat(memberRow.cells[5].querySelector('.section-I-factor')?.value);
+                const Abase = parseFloat(memberRow.cells[6].querySelector('.section-A-input')?.value);
+                const AfRaw = parseFloat(memberRow.cells[6].querySelector('.section-A-factor')?.value);
+                const Zbase = parseFloat(memberRow.cells[7].querySelector('.section-Z-input')?.value);
+                const ZfRaw = parseFloat(memberRow.cells[7].querySelector('.section-Z-factor')?.value);
+
+                const If = Number.isFinite(IfRaw) ? IfRaw : 1.0;
+                const Af = Number.isFinite(AfRaw) ? AfRaw : 1.0;
+                const Zf = Number.isFinite(ZfRaw) ? ZfRaw : 1.0;
+
+                const I_m4 = (Number.isFinite(Ibase) ? Ibase : 0) * If * 1e-8;
+                const A_m2 = (Number.isFinite(Abase) ? Abase : 0) * Af * 1e-4;
+                const Z_m3 = (Number.isFinite(Zbase) ? Zbase : 0) * Zf * 1e-6;
                 
                 // 接合条件: テーブル行内の .conn-select を使って安全に取得
                 const hasDensityColumn = document.querySelector('.density-column') && document.querySelector('.density-column').style.display !== 'none';
@@ -12056,9 +12129,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // 4. その他のプロパティを更新
         // テーブル列: 0:'#',1:i(始点),2:j(終点),3:E,4:strength,5:I,6:A,7:Z
         // 【修正】I は始点セル(cells[1])ではなく cells[5] に保存する
-        if (memberRow.cells[5]) memberRow.cells[5].querySelector('input').value = document.getElementById('popup-i').value;
-        if (memberRow.cells[6]) memberRow.cells[6].querySelector('input').value = document.getElementById('popup-a').value;
-        if (memberRow.cells[7]) memberRow.cells[7].querySelector('input').value = document.getElementById('popup-z').value;
+        if (memberRow.cells[5]) memberRow.cells[5].querySelector('.section-I-input').value = document.getElementById('popup-i').value;
+        if (memberRow.cells[6]) memberRow.cells[6].querySelector('.section-A-input').value = document.getElementById('popup-a').value;
+        if (memberRow.cells[7]) memberRow.cells[7].querySelector('.section-Z-input').value = document.getElementById('popup-z').value;
 
         // ▼▼▼ 変更: popup の単一 i 入力を dataset の ix/iy に格納（空欄なら削除）
         try {
@@ -12979,12 +13052,26 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             `<input type="number" value="${j}">`,
             createEInputHTML(`member-e-${i}-${j}`, E),
             createStrengthInputHTML('steel', `member-strength-${i}-${j}`, F, forceCustomF),
-            `<input type="number" value="${(I * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">`,
-            `<input type="number" value="${(A * 1e4).toFixed(2)}" title="断面積 A (cm²)">`,
-            `<input type=\"number\" value=\"${(Z * 1e6).toFixed(2)}\" title=\"断面係数 Z (cm³)\">`,
+            `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                <input type="number" class="reduction-base-input section-I-input" value="${(I * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">
+                <div><span>低減係数：</span><input type="number" class="reduction-factor-input section-I-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数"></div>
+                <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+            </div>`,
+            `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                <input type="number" class="reduction-base-input section-A-input" value="${(A * 1e4).toFixed(2)}" title="断面積 A (cm²)">
+                <div><span>低減係数：</span><input type="number" class="reduction-factor-input section-A-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数"></div>
+                <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+            </div>`,
+            `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                <input type="number" class="reduction-base-input section-Z-input" value="${(Z * 1e6).toFixed(2)}" title="断面係数 Z (cm³)">
+                <div><span>低減係数：</span><input type="number" class="reduction-factor-input section-Z-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数"></div>
+                <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+            </div>`,
             // 追加: 断面2次半径 i (cm) 入力（編集可能）
-            `<div class="cell-input-wrapper">
-                <input type=\"number\" class=\"radius-i-input col-buckling\" value=\"${i_rad !== '' ? Number(i_rad).toFixed(2) : ''}\" title=\"断面2次半径 i (cm)\">
+            `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                <input type="number" class="radius-i-input col-buckling reduction-base-input section-i-input" value="${i_rad !== '' ? Number(i_rad).toFixed(2) : ''}" title="断面2次半径 i (cm)">
+                <div><span>低減係数：</span><input type="number" class="reduction-factor-input section-i-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数"></div>
+                <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
                 <span class="auto-label" style="display:none;">(自動)</span>
             </div>`
         ];
@@ -14852,7 +14939,7 @@ const loadPreset = (index) => {
                 csvSections.push('#NODES\n' + header + '\n' + rows.join('\n'));
             }
             if (state.members.length > 0) {
-                    const header = 'i,j,E,strengthType,strengthValue,I,A,Z,bucklingK,i_conn,j_conn,Kx_i,Ky_i,Kr_i,Kx_j,Ky_j,Kr_j,Zx,Zy,ix,iy,sectionLabel,sectionSummary,sectionSource,sectionInfo,sectionAxisKey,sectionAxisMode,sectionAxisLabel';
+                    const header = 'i,j,E,strengthType,strengthValue,I,I_factor,A,A_factor,Z,Z_factor,i_radius,i_factor,bucklingK,i_conn,j_conn,Kx_i,Ky_i,Kr_i,Kx_j,Ky_j,Kr_j,Zx,Zy,ix,iy,sectionLabel,sectionSummary,sectionSource,sectionInfo,sectionAxisKey,sectionAxisMode,sectionAxisLabel';
                         const rows = state.members.map(m => {
                     const sectionLabel = m.sectionLabel ? encodeURIComponent(m.sectionLabel) : '';
                     const sectionSummary = m.sectionSummary ? encodeURIComponent(m.sectionSummary) : '';
@@ -14869,7 +14956,12 @@ const loadPreset = (index) => {
                         const kyj = m.spring_j && m.spring_j.Ky ? m.spring_j.Ky : '';
                         const krj = m.spring_j && m.spring_j.Kr ? m.spring_j.Kr : '';
                             const bk = (m.bucklingK !== undefined && m.bucklingK !== null) ? m.bucklingK : '';
-                            return `${m.i},${m.j},${m.E},${m.strengthType},${m.strengthValue},${m.I},${m.A},${m.Z},${bk},${m.i_conn},${m.j_conn},${kxi},${kyi},${kri},${kxj},${kyj},${krj},${m.Zx || ''},${m.Zy || ''},${m.ix || ''},${m.iy || ''},${sectionLabel},${sectionSummary},${sectionSource},${sectionInfoEncoded},${sectionAxisKey},${sectionAxisMode},${sectionAxisLabel}`;
+                            const I_factor = (m.I_factor !== undefined && m.I_factor !== null && m.I_factor !== '') ? m.I_factor : '1.0';
+                            const A_factor = (m.A_factor !== undefined && m.A_factor !== null && m.A_factor !== '') ? m.A_factor : '1.0';
+                            const Z_factor = (m.Z_factor !== undefined && m.Z_factor !== null && m.Z_factor !== '') ? m.Z_factor : '1.0';
+                            const i_factor = (m.i_factor !== undefined && m.i_factor !== null && m.i_factor !== '') ? m.i_factor : '1.0';
+                            const i_radius = (m.i_radius !== undefined && m.i_radius !== null) ? m.i_radius : '';
+                            return `${m.i},${m.j},${m.E},${m.strengthType},${m.strengthValue},${m.I},${I_factor},${m.A},${A_factor},${m.Z},${Z_factor},${i_radius},${i_factor},${bk},${m.i_conn},${m.j_conn},${kxi},${kyi},${kri},${kxj},${kyj},${krj},${m.Zx || ''},${m.Zy || ''},${m.ix || ''},${m.iy || ''},${sectionLabel},${sectionSummary},${sectionSource},${sectionInfoEncoded},${sectionAxisKey},${sectionAxisMode},${sectionAxisLabel}`;
                 });
                 csvSections.push('#MEMBERS\n' + header + '\n' + rows.join('\n'));
             }
@@ -15011,6 +15103,22 @@ const loadPreset = (index) => {
                         } else {
                             cellContent = cell.textContent || '-';
                         }
+                    } else if (tableId === 'members-table' && (cellIndex === 5 || cellIndex === 6 || cellIndex === 7 || cellIndex === 8)) {
+                        // I/A/Z/i（断面諸量）の低減係数表示
+                        const kind = (cellIndex === 5) ? 'I' : (cellIndex === 6) ? 'A' : (cellIndex === 7) ? 'Z' : 'i';
+                        const baseSelector = (kind === 'i') ? '.radius-i-input' : `.section-${kind}-input`;
+                        const factorSelector = (kind === 'i') ? '.section-i-factor' : `.section-${kind}-factor`;
+                        const baseEl = cell.querySelector(baseSelector);
+                        const factorEl = cell.querySelector(factorSelector);
+                        const baseRaw = baseEl ? baseEl.value : '';
+                        const factorRaw = (factorEl && factorEl.value !== '') ? factorEl.value : '1.0';
+                        const baseNum = parseFloat(baseRaw);
+                        const factorNum = parseFloat(factorRaw);
+                        const reducedNum = (Number.isFinite(baseNum) && Number.isFinite(factorNum)) ? (baseNum * factorNum) : NaN;
+                        const baseDisp = baseRaw !== '' ? baseRaw : '-';
+                        const factorDisp = factorRaw !== '' ? factorRaw : '1.0';
+                        const reducedDisp = Number.isFinite(reducedNum) ? String(reducedNum) : '-';
+                        cellContent = `元=${baseDisp}<br>係数=${factorDisp}<br>低減後=${reducedDisp}`;
                     } else {
                         // 通常のセル処理
                         const input = cell.querySelector('input');
@@ -15787,16 +15895,19 @@ const loadPreset = (index) => {
             try {
                 // テーブル列: 0:'#',1:i(始点),2:j(終点),3:E,4:strength,5:I,6:A,7:Z
                 if (props.I !== undefined && row.cells[5]) {
-                    const iEl = row.cells[5].querySelector('input');
+                    const iEl = row.cells[5].querySelector('.section-I-input');
                     if (iEl) iEl.value = props.I;
                 }
                 if (props.A !== undefined && row.cells[6]) {
-                    const aEl = row.cells[6].querySelector('input');
+                    const aEl = row.cells[6].querySelector('.section-A-input');
                     if (aEl) aEl.value = props.A;
                 }
                 if (props.Z !== undefined && row.cells[7]) {
-                    const zEl = row.cells[7].querySelector('input');
+                    const zEl = row.cells[7].querySelector('.section-Z-input');
                     if (zEl) zEl.value = props.Z;
+                }
+                if (typeof window.updateReductionDisplays === 'function') {
+                    window.updateReductionDisplays(row);
                 }
             } catch (e) {
                 console.warn('updateMemberProperties: failed to update I/A/Z inputs', e);
@@ -17732,9 +17843,21 @@ const initializeFrameGenerator = () => {
                 `<input type="number" value="${nodeJ}">`,
                 eSelectHTML,
                 strengthSelectHTML,
-                `<input type="number" value="${(I_m4 * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">`,
-                `<input type="number" value="${(A_m2 * 1e4).toFixed(2)}" title="断面積 A (cm²)">`,
-                `<input type="number" value="${(Z_m3 * 1e6).toFixed(2)}" title="断面係数 Z (cm³)">`,
+                `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                    <input type="number" class="reduction-base-input section-I-input" value="${(I_m4 * 1e8).toFixed(2)}" title="断面二次モーメント I (cm⁴)">
+                    <input type="number" class="reduction-factor-input section-I-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数">
+                    <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+                </div>`,
+                `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                    <input type="number" class="reduction-base-input section-A-input" value="${(A_m2 * 1e4).toFixed(2)}" title="断面積 A (cm²)">
+                    <input type="number" class="reduction-factor-input section-A-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数">
+                    <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+                </div>`,
+                `<div class="cell-input-wrapper reduction-wrapper" data-reduction-decimals="2">
+                    <input type="number" class="reduction-base-input section-Z-input" value="${(Z_m3 * 1e6).toFixed(2)}" title="断面係数 Z (cm³)">
+                    <input type="number" class="reduction-factor-input section-Z-factor" value="1.0" step="0.01" title="低減係数" placeholder="低減係数">
+                    <div class="reduced-label" style="display:none;">低減後：<span class="reduced-value"></span></div>
+                </div>`,
                 `<input type="number" value="7850" title="密度 ρ (kg/m³)" style="display: none;">`, // 密度列（デフォルト非表示）
                 `<button class="section-select-btn">断面選択</button>`, // 部材断面選択ボタン
                 `<select><option value="rigid" ${startPin === 'rigid' ? 'selected' : ''}>剛</option><option value="pinned" ${startPin === 'pinned' ? 'selected' : ''}>ピン</option></select>`,
@@ -22533,6 +22656,37 @@ window.updateFromSpreadsheet = (data) => {
 };
 
 // �����v�Z�l�̕\���X�V�֐�
+// 低減係数表示の更新
+const updateReductionDisplayForWrapper = (wrapper) => {
+    if (!wrapper) return;
+    const baseInput = wrapper.querySelector('.reduction-base-input');
+    const factorInput = wrapper.querySelector('.reduction-factor-input');
+    const label = wrapper.querySelector('.reduced-label');
+    const valueSpan = wrapper.querySelector('.reduced-value');
+    if (!baseInput || !factorInput || !label || !valueSpan) return;
+
+    const base = parseFloat(baseInput.value);
+    const rawFactor = parseFloat(factorInput.value);
+    const factor = Number.isFinite(rawFactor) ? rawFactor : 1.0;
+    const decimals = (() => {
+        const v = parseInt(wrapper.dataset.reductionDecimals || '2', 10);
+        return Number.isFinite(v) ? v : 2;
+    })();
+
+    if (Number.isFinite(base) && Math.abs(factor - 1.0) > 1e-12) {
+        valueSpan.textContent = (base * factor).toFixed(decimals);
+        label.style.display = 'block';
+    } else {
+        label.style.display = 'none';
+    }
+};
+
+// rootは行要素(tr)なども可
+window.updateReductionDisplays = (root = document) => {
+    const base = (root instanceof Element || root instanceof Document) ? root : document;
+    base.querySelectorAll('.reduction-wrapper').forEach(updateReductionDisplayForWrapper);
+};
+
 window.updateMemberAutoValues = () => {
     const rows = Array.from(elements.membersTable.rows);
     rows.forEach((row, index) => {
@@ -22542,8 +22696,14 @@ window.updateMemberAutoValues = () => {
         const iAutoLabel = iWrapper ? iWrapper.querySelector('.auto-label') : null;
         
         if (iInput && iWrapper && iAutoLabel) {
-            const I = parseFloat(row.cells[5].querySelector('input').value) * 1e-8; // m4
-            const A = parseFloat(row.cells[6].querySelector('input').value) * 1e-4; // m2
+            const Ibase = parseFloat(row.cells[5].querySelector('.section-I-input')?.value);
+            const IfactorRaw = parseFloat(row.cells[5].querySelector('.section-I-factor')?.value);
+            const Abase = parseFloat(row.cells[6].querySelector('.section-A-input')?.value);
+            const AfactorRaw = parseFloat(row.cells[6].querySelector('.section-A-factor')?.value);
+            const Ifactor = Number.isFinite(IfactorRaw) ? IfactorRaw : 1.0;
+            const Afactor = Number.isFinite(AfactorRaw) ? AfactorRaw : 1.0;
+            const I = (Number.isFinite(Ibase) ? Ibase : 0) * Ifactor * 1e-8; // m4
+            const A = (Number.isFinite(Abase) ? Abase : 0) * Afactor * 1e-4; // m2
             
             if (iInput.value === '') {
                 if (A > 0 && I >= 0) {
@@ -22625,12 +22785,26 @@ document.addEventListener('DOMContentLoaded', () => {
         
         elements.membersTable.addEventListener('input', (e) => {
              // ���͒l���ς������i����i��K�̓��͗��j�\�����X�V
+            if (e.target.matches('.reduction-base-input') || e.target.matches('.reduction-factor-input')) {
+                const wrapper = e.target.closest('.reduction-wrapper');
+                if (wrapper) {
+                    updateReductionDisplayForWrapper(wrapper);
+                } else if (typeof window.updateReductionDisplays === 'function') {
+                    window.updateReductionDisplays();
+                }
+                window.updateMemberAutoValues();
+                return;
+            }
+
             if (e.target.matches('.radius-i-input') || e.target.matches('.buckling-k-input')) {
                 window.updateMemberAutoValues();
             }
         });
     }
     // �������s
-    setTimeout(window.updateMemberAutoValues, 500);
+    setTimeout(() => {
+        if (typeof window.updateReductionDisplays === 'function') window.updateReductionDisplays();
+        window.updateMemberAutoValues();
+    }, 500);
 });
 

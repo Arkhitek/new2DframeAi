@@ -7820,7 +7820,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const drawDisplacementDiagram = (nodes, members, D_global, memberLoads, manualScale = null) => {
         const drawingCtx = getDrawingContext(elements.displacementCanvas);
         if (!drawingCtx) return;
-        const { ctx, transform, scale } = drawingCtx;
+        const { ctx, transform, scale, offsetX, offsetY } = drawingCtx;
         
         // D_globalが未定義または空の場合は描画をスキップ
         if (!D_global || !Array.isArray(D_global) || D_global.length === 0) {
@@ -7841,16 +7841,59 @@ document.addEventListener('DOMContentLoaded', () => {
                 dispScale = manualScale;
             } else {
                 let max_dx = 0, max_dy = 0;
+
+                // 変形後形状がキャンバス範囲に収まるための「上限倍率」を同時に計算
+                // （モデルが端に近い場合、従来の TARGET_MAX_DISP_PIXELS 基準だけだと飛び出すことがある）
+                let fitUpperScale = Infinity;
+                const canvasRect = elements.displacementCanvas.getBoundingClientRect();
+                const fitPadding = { left: 20, right: 20, top: 40, bottom: 20 };
+                const canFit = (canvasRect.width > (fitPadding.left + fitPadding.right)) && (canvasRect.height > (fitPadding.top + fitPadding.bottom)) && (scale > 1e-12);
+                const xMinAllowed = canFit ? (fitPadding.left - offsetX) / scale : 0;
+                const xMaxAllowed = canFit ? (canvasRect.width - fitPadding.right - offsetX) / scale : 0;
+                const yMaxAllowed = canFit ? (offsetY - fitPadding.top) / scale : 0;
+                const yMinAllowed = canFit ? (offsetY - (canvasRect.height - fitPadding.bottom)) / scale : 0;
+
+                const updateFitUpperForAxis = (base, disp, minAllowed, maxAllowed) => {
+                    if (!canFit) return;
+                    if (!isFinite(disp) || Math.abs(disp) < 1e-15) return;
+
+                    // base + disp * s ∈ [minAllowed, maxAllowed] を満たす s>=0 の上限を求める
+                    const aMin = (minAllowed - base) / disp;
+                    const aMax = (maxAllowed - base) / disp;
+                    let lower = -Infinity;
+                    let upper = Infinity;
+                    if (disp > 0) {
+                        lower = Math.max(lower, aMin);
+                        upper = Math.min(upper, aMax);
+                    } else {
+                        // disp < 0 の場合は不等号が反転
+                        lower = Math.max(lower, aMax);
+                        upper = Math.min(upper, aMin);
+                    }
+                    // s>=0 に制限
+                    lower = Math.max(lower, 0);
+                    if (!isFinite(upper)) return;
+                    if (upper < lower) {
+                        fitUpperScale = 0;
+                        return;
+                    }
+                    fitUpperScale = Math.min(fitUpperScale, Math.max(0, upper));
+                };
+
+                // 最大変位量は常に集計。フィット上限は可能な場合のみ同時集計。
                 members.forEach((m, idx) => {
                     const L = m.length, c = m.c, s = m.s;
+                    const ni = nodes[m.i];
                     const d_global_member_vec = [ ...D_global.slice(m.i * 3, m.i * 3 + 3), ...D_global.slice(m.j * 3, m.j * 3 + 3) ];
                     const d_local_vec = mat.multiply(m.T, d_global_member_vec);
                     const [ui, vi, thi, uj, vj, thj] = d_local_vec.map(v => v[0]);
                     const load = memberLoads.find(l => l.memberIndex === idx), w = load ? load.w : 0, E = m.E, I = m.I;
+
                     for (let k = 0; k <= 20; k++) {
                         const x = (k / 20) * L, xi = x / L;
                         const N1 = 1 - 3*xi**2 + 2*xi**3, N2 = x * (1 - xi)**2, N3 = 3*xi**2 - 2*xi**3, N4 = (x**2 / L) * (xi - 1);
-                        const u_local = (1 - xi) * ui + xi * uj, v_homogeneous = N1*vi + N2*thi + N3*vj + N4*thj;
+                        const u_local = (1 - xi) * ui + xi * uj;
+                        const v_homogeneous = N1*vi + N2*thi + N3*vj + N4*thj;
                         let v_particular = 0;
                         if (w !== 0 && E > 0 && I > 0) {
                             if (m.i_conn === 'rigid' && m.j_conn === 'rigid') v_particular = (w * x**2 * (L - x)**2) / (24 * E * I);
@@ -7859,10 +7902,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             else if (m.i_conn === 'pinned' && m.j_conn === 'rigid') v_particular = (w * x * (L**3 - 3 * L * x**2 + 2 * x**3)) / (48 * E * I);
                         }
                         const v_local = v_homogeneous - v_particular;
-                        max_dx = Math.max(max_dx, Math.abs(u_local * c - v_local * s));
-                        max_dy = Math.max(max_dy, Math.abs(u_local * s + v_local * c));
+                        const disp_x_global = u_local * c - v_local * s;
+                        const disp_y_global = u_local * s + v_local * c;
+
+                        max_dx = Math.max(max_dx, Math.abs(disp_x_global));
+                        max_dy = Math.max(max_dy, Math.abs(disp_y_global));
+
+                        const baseX = ni.x + x * c;
+                        const baseY = ni.y + x * s;
+                        updateFitUpperForAxis(baseX, disp_x_global, xMinAllowed, xMaxAllowed);
+                        updateFitUpperForAxis(baseY, disp_y_global, yMinAllowed, yMaxAllowed);
                     }
                 });
+
                 // モデルの最大変位量 (モデル単位)
                 const max_model_disp = Math.max(max_dx, max_dy);
 
@@ -7872,8 +7924,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (max_model_disp > 1e-12 && scale > 1e-12) {
                     // 表示倍率 = (目標ピクセル数) / (モデル単位の最大変位量 * 描画スケール)
                     const autoScale = TARGET_MAX_DISP_PIXELS / (max_model_disp * scale);
-                    // 極端に大きい値や小さい値にならないように調整
+                    // まずは従来の見た目基準で決定
                     dispScale = isFinite(autoScale) ? Math.max(0.1, Math.min(autoScale, 5000)) : 0;
+
+                    // 変形後形状が描画範囲に収まる上限で抑える
+                    if (isFinite(fitUpperScale) && fitUpperScale >= 0) {
+                        // ほんの少し余裕を持たせる
+                        dispScale = Math.min(dispScale, fitUpperScale * 0.95);
+                    }
                 } else {
                     dispScale = 0;
                 }
@@ -11911,7 +11969,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('popup-select-section').onclick = () => {
-    if (selectedMemberIndex !== null) {
+    if (selectedMemberIndex !== null && selectedMemberIndex >= 0) {
         // ポップアップ内の情報から材料情報を取得
         const popup_e_select = document.getElementById('popup-e-select');
         const selectedOption = popup_e_select.options[popup_e_select.selectedIndex];
@@ -15718,6 +15776,25 @@ const loadPreset = (index) => {
 
             const sectionAxisCell = row.querySelector('.section-axis-cell');
             if (sectionAxisCell) sectionAxisCell.textContent = displayAxisLabel;
+
+            // 断面性能 (I, A, Z) を部材テーブルの入力欄にも反映（解析に直結するため必須）
+            try {
+                // テーブル列: 0:'#',1:i(始点),2:j(終点),3:E,4:strength,5:I,6:A,7:Z
+                if (props.I !== undefined && row.cells[5]) {
+                    const iEl = row.cells[5].querySelector('input');
+                    if (iEl) iEl.value = props.I;
+                }
+                if (props.A !== undefined && row.cells[6]) {
+                    const aEl = row.cells[6].querySelector('input');
+                    if (aEl) aEl.value = props.A;
+                }
+                if (props.Z !== undefined && row.cells[7]) {
+                    const zEl = row.cells[7].querySelector('input');
+                    if (zEl) zEl.value = props.Z;
+                }
+            } catch (e) {
+                console.warn('updateMemberProperties: failed to update I/A/Z inputs', e);
+            }
 
             // dataset にいくつかの性能値を保存
             if (props.Zx) row.dataset.zx = props.Zx;

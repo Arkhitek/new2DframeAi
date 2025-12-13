@@ -1118,6 +1118,14 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
     };
 
     const buildSectionInfoFromDims = ({ typeKey, typeLabel, designation = '', dims = {}, imageUrl = '', source = 'library', axisInfo = null }) => {
+        const fmtDim = (value) => {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return '';
+            const rounded = Math.round(n);
+            if (Math.abs(n - rounded) < 1e-6) return String(rounded);
+            return String(Number(n.toFixed(2)));
+        };
+
         const validDims = Object.entries(dims)
             .filter(([_, value]) => typeof value === 'number' && isFinite(value) && value > 0)
             .map(([key, value]) => ({
@@ -1158,6 +1166,24 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
                     fullLabel = `${typeLabel} φ${dims.D}×${dims.t}`;
                 } else if (dims.D) {
                     fullLabel = `${typeLabel} φ${dims.D}`;
+                }
+            } else if (typeKey === '矩形') {
+                // 矩形断面（任意寸法算定ツール由来）: ■-H×B
+                if (dims.H && dims.B) {
+                    if (source === 'custom') {
+                        fullLabel = `■-${fmtDim(dims.H)}×${fmtDim(dims.B)}`;
+                    } else {
+                        fullLabel = `${typeLabel} ${fmtDim(dims.H)}×${fmtDim(dims.B)}`;
+                    }
+                }
+            } else if (typeKey === '円形') {
+                // 円形断面（任意寸法算定ツール由来）: ●-D
+                if (dims.D) {
+                    if (source === 'custom') {
+                        fullLabel = `●-${fmtDim(dims.D)}`;
+                    } else {
+                        fullLabel = `${typeLabel} φ${fmtDim(dims.D)}`;
+                    }
                 }
             }
         }

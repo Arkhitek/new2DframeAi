@@ -730,6 +730,14 @@ function getSectionName(member) {
     const dims = member.sectionInfo.rawDims;
     console.log('🔍 typeKey:', typeKey, 'dims:', dims);
 
+    const fmtDim = (value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '';
+        const rounded = Math.round(n);
+        if (Math.abs(n - rounded) < 1e-6) return String(rounded);
+        return String(Number(n.toFixed(2)));
+    };
+
     // typeKeyから推定の場合
     if (typeKey === 'estimated') {
         // 直径情報がある場合は表示（実際の直径をそのまま使用）
@@ -850,11 +858,19 @@ function getSectionName(member) {
             break;
         case '矩形':
         case 'rectangular':
-            sectionName = `矩形断面 ${dims.H}×${dims.B}`;
+            if (member.sectionInfo && member.sectionInfo.source === 'custom') {
+                sectionName = `■-${fmtDim(dims.H)}×${fmtDim(dims.B)}`;
+            } else {
+                sectionName = `矩形断面 ${fmtDim(dims.H)}×${fmtDim(dims.B)}`;
+            }
             break;
         case '円形':
         case 'circular':
-            sectionName = `円形断面 φ${dims.D}`;
+            if (member.sectionInfo && member.sectionInfo.source === 'custom') {
+                sectionName = `●-${fmtDim(dims.D)}`;
+            } else {
+                sectionName = `円形断面 φ${fmtDim(dims.D)}`;
+            }
             break;
         default:
             // typeKeyがあるがswitchに該当しない場合、labelを使用

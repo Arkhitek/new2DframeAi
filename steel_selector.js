@@ -1395,6 +1395,8 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         const iyValue = getProp('Iy', '弱軸断面2次モーメント', 'I');
         const zxValue = getProp('Zx', '強軸断面係数', 'Z');
         const zyValue = getProp('Zy', '弱軸断面係数', 'Z');
+        const jValue = getProp('J', 'ねじり定数', 'torsion');
+        const iwValue = getProp('Iw', '曲げねじり定数', 'warping');
 
         const numericIx = parseNumericValue(ixValue ?? iyValue ?? getProp('I'));
         const numericIy = parseNumericValue(iyValue ?? ixValue ?? getProp('I'));
@@ -1495,6 +1497,13 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
             I: resolvedAxisKey === 'y' ? (iyValue ?? ixValue ?? getProp('I')) : (ixValue ?? iyValue ?? getProp('I')),
             A: areaValue,
             Z: resolvedAxisKey === 'y' ? (zyValue ?? zxValue ?? getProp('Z')) : (zxValue ?? zyValue ?? getProp('Z')),
+            // 追加: 軸ごとの性能値（親側でdatasetへ保存し、横座屈等に利用）
+            Zx: zxValue,
+            Zy: zyValue,
+            Ix: ixValue,
+            Iy: iyValue,
+            J: jValue,
+            Iw: iwValue,
             sectionInfo: sectionInfo,
             typeKey: selectedTypeKey,
             dims: numericRawDims,
@@ -1551,6 +1560,10 @@ const calculateLabelOptions = (maxDim, scale = 1) => {
         const radiusYValue = findExactHeaderValue(['iy', '断面2次半径 iy', '断面2次半径iy']);
         const numericRadiusX = parseNumericValue(radiusXValue);
         const numericRadiusY = parseNumericValue(radiusYValue);
+
+        // 追加: 親側dataset(ix/iy)用に明示送信（cm）
+        if (numericRadiusX !== null) props.ix = numericRadiusX;
+        if (numericRadiusY !== null) props.iy = numericRadiusY;
         
         if (numericRadiusX !== null || numericRadiusY !== null) {
             // 両方ある場合は小さい方（弱軸側）を採用、片方ならある方を採用

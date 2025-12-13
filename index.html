@@ -476,6 +476,38 @@
                     <div class="table-container-result">
                         <table id="section-check-results"></table>
                     </div>
+
+                    <h3>たわみ制限</h3>
+                    <div class="canvas-settings" style="justify-content: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <label for="defl-amp-factor">変形増大係数:</label>
+                        <input type="number" id="defl-amp-factor" min="0" step="0.1" value="1.0" style="width: 80px;">
+
+                        <label for="defl-allow-mm">許容たわみ(mm):</label>
+                        <input type="number" id="defl-allow-mm" min="0" step="0.1" value="10" style="width: 90px;">
+                        <span style="font-size: 12px; color: #666;">0=スパン比を使用</span>
+
+                        <label for="defl-span-ratio">スパン比(L/):</label>
+                        <input type="number" id="defl-span-ratio" min="1" step="1" value="300" style="width: 80px;">
+                    </div>
+                    <div class="table-container-result">
+                        <table id="deflection-check-results"></table>
+                    </div>
+
+                    <h3>横座屈（曲げ材）</h3>
+                    <div class="canvas-settings" style="justify-content: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <label for="ltb-unbraced-factor">横補剛間隔係数（Lb/L）:</label>
+                        <input type="number" id="ltb-unbraced-factor" min="0" step="0.05" value="1.0" style="width: 80px;">
+                        <span style="font-size: 12px; color: #666;">Lb=係数×部材長</span>
+
+                        <label for="ltb-cb">モーメント修正係数 Cb:</label>
+                        <input type="number" id="ltb-cb" min="0" step="0.05" value="1.0" style="width: 80px;">
+
+                        <label for="ltb-nu">ポアソン比 ν:</label>
+                        <input type="number" id="ltb-nu" min="0" max="0.49" step="0.01" value="0.30" style="width: 80px;">
+                    </div>
+                    <div class="table-container-result">
+                        <table id="ltb-check-results"></table>
+                    </div>
                 </div>
 
                 <div class="output-section">

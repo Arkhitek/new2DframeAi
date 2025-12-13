@@ -271,6 +271,13 @@ const parseInputs = () => {
         // その他のdataset属性
         const Zx = parseFloat(row.dataset.zx) * 1e-6;
         const Zy = parseFloat(row.dataset.zy) * 1e-6;
+
+        // 横座屈等に使う断面特性（鋼材DB由来想定）
+        // datasetは基本的に「cm系」(Ix/Iy/J: cm^4, Iw: cm^6) を保持する前提
+        const Ix = (row.dataset.ixMom !== undefined && row.dataset.ixMom !== '') ? (parseFloat(row.dataset.ixMom) * 1e-8) : undefined; // m^4
+        const Iy = (row.dataset.iyMom !== undefined && row.dataset.iyMom !== '') ? (parseFloat(row.dataset.iyMom) * 1e-8) : undefined; // m^4
+        const J = (row.dataset.j !== undefined && row.dataset.j !== '') ? (parseFloat(row.dataset.j) * 1e-8) : undefined; // m^4
+        const Iw = (row.dataset.iw !== undefined && row.dataset.iw !== '') ? (parseFloat(row.dataset.iw) * 1e-12) : undefined; // m^6
         let ix = parseFloat(row.dataset.ix);
         let iy = parseFloat(row.dataset.iy);
 
@@ -338,7 +345,8 @@ const parseInputs = () => {
             i, j, E, strengthProps, I, A, Z, Zx, Zy, i_radius, ix, iy, length: L, c, s, T, 
             i_conn, j_conn, spring_i, spring_j, bucklingK,
             material, sectionName, sectionAxis: sectionAxisText, // テキスト情報も保存
-            sectionInfo, sectionAxis // オブジェクト情報も保存
+            sectionInfo, sectionAxis, // オブジェクト情報も保存
+            Ix, Iy, J, Iw
         };
     }).filter(m => m !== null);
 
@@ -1854,6 +1862,8 @@ document.addEventListener('DOMContentLoaded', () => {
         reportBtn: document.getElementById('report-btn'),
         ratioCanvas: document.getElementById('ratio-canvas'),
         sectionCheckResults: document.getElementById('section-check-results'),
+        deflectionCheckResults: document.getElementById('deflection-check-results'),
+        ltbCheckResults: document.getElementById('ltb-check-results'),
         loadTermRadios: document.querySelectorAll('input[name="load-term"]'),
         resetModelBtn: document.getElementById('reset-model-btn'),
         autoScaleBtn: document.getElementById('auto-scale-btn'),
@@ -1910,6 +1920,17 @@ document.addEventListener('DOMContentLoaded', () => {
         shear: 1.0,
         stress: 1.0,
         ratio: 1.0
+    };
+    window.settings.deflectionCheck = window.settings.deflectionCheck || {
+        amplificationFactor: 1.0,
+        allowableDeflectionMm: 10,
+        spanRatio: 300
+    };
+
+    window.settings.ltbCheck = window.settings.ltbCheck || {
+        unbracedLengthFactor: 1.0,
+        cb: 1.0,
+        nu: 0.30
     };
     // 互換性のため、従来の単一設定も model スケールで初期化
     window.settings.fontScale = window.settings.fontScales.model;
@@ -2109,6 +2130,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastResults = null;
     let lastAnalysisResult = null;
     let lastSectionCheckResults = null;
+    let lastDeflectionCheckResults = null;
+    let lastLtbCheckResults = null;
     let lastDisplacementScale = 0;
     
     // マウス位置を追跡（視覚的フィードバック用）
@@ -5849,6 +5872,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 j_conn = jConnSelect.value;
             }
             const Zx = parseFloat(row.dataset.zx) * 1e-6, Zy = parseFloat(row.dataset.zy) * 1e-6;
+
+            // 横座屈等に使う断面特性（鋼材DB由来想定）
+            // dataset は基本的に「cm系」(Ix/Iy/J: cm^4, Iw: cm^6) を保持する前提
+            const Ix_m4 = (row.dataset.ixMom !== undefined && row.dataset.ixMom !== '') ? (parseFloat(row.dataset.ixMom) * 1e-8) : undefined; // m^4
+            const Iy_m4 = (row.dataset.iyMom !== undefined && row.dataset.iyMom !== '') ? (parseFloat(row.dataset.iyMom) * 1e-8) : undefined; // m^4
+            const J_m4 = (row.dataset.j !== undefined && row.dataset.j !== '') ? (parseFloat(row.dataset.j) * 1e-8) : undefined; // m^4
+            const Iw_m6 = (row.dataset.iw !== undefined && row.dataset.iw !== '') ? (parseFloat(row.dataset.iw) * 1e-12) : undefined; // m^6
             // 断面2次半径 i の取り扱い: UI の .radius-i-input を優先し、なければ dataset の ix/iy、
             // それでもなければ I/A から推定する。内部では ix/iy は cm 単位で一時保持し、後で m に変換する。
             let ix = parseFloat(row.dataset.ix); // cm単位
@@ -6131,7 +6161,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`🔍 部材${index + 1}の軸情報を取得:`, sectionAxis);
             }
 
-            return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis, spring_i, spring_j, bucklingK };
+            return { i,j,E,strengthProps,I,A,Z,Zx,Zy,ix,iy,length:L,c,s,T,i_conn,j_conn,k_local,material,sectionInfo,sectionAxis, spring_i, spring_j, bucklingK, Ix: Ix_m4, Iy: Iy_m4, J: J_m4, Iw: Iw_m6 };
         }).filter(member => member !== null); // 長さ0の部材(null)を除外
 
         // フォールバック: sectionInfo が欠落している行に対して最小限の sectionInfo を自動生成して設定する
@@ -6225,13 +6255,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearResults = () => {
         const canvases = [elements.displacementCanvas, elements.momentCanvas, elements.axialCanvas, elements.shearCanvas, elements.ratioCanvas];
         canvases.forEach(c => { if (c) { const ctx = c.getContext('2d'); ctx.clearRect(0, 0, c.width, c.height); } });
-        const tables = [elements.displacementResults, elements.reactionResults, elements.forceResults, elements.sectionCheckResults];
+        const tables = [elements.displacementResults, elements.reactionResults, elements.forceResults, elements.sectionCheckResults, elements.deflectionCheckResults, elements.ltbCheckResults];
         tables.forEach(t => { if(t) t.innerHTML = ''; });
         lastResults = null;
         lastAnalysisResult = null;
         lastSectionCheckResults = null;
+        lastDeflectionCheckResults = null;
+        lastLtbCheckResults = null;
         window.lastResults = null; // グローバル変数もクリア
         window.lastSectionCheckResults = null;
+        window.lastDeflectionCheckResults = null;
+        window.lastLtbCheckResults = null;
         window.lastBucklingResults = null;
     };
     
@@ -6257,7 +6291,9 @@ document.addEventListener('DOMContentLoaded', () => {
             })) : [],
             nodes: nodes || [],
             members: members || [],
-            sectionCheckResults: null  // 後で断面検定実行時に設定される
+            sectionCheckResults: null,  // 後で断面検定実行時に設定される
+            deflectionCheckResults: null,
+            deflectionCheckSettings: null
         };
 
         // 構造解析完了後に自動で座屈解析を実行
@@ -8807,6 +8843,428 @@ document.addEventListener('DOMContentLoaded', () => {
             results.push({ maxRatio, N, M: M_at_max, checkType: '組合せ応力', status: maxRatio > 1.0 ? 'NG' : 'OK', ratios });
         });
         return results;
+    };
+
+    const getDeflectionCheckSettings = () => {
+        const fallback = window.settings?.deflectionCheck || { amplificationFactor: 1.0, allowableDeflectionMm: 10, spanRatio: 300 };
+
+        const ampInput = document.getElementById('defl-amp-factor');
+        const allowMmInput = document.getElementById('defl-allow-mm');
+        const spanRatioInput = document.getElementById('defl-span-ratio');
+
+        const amplificationFactorRaw = ampInput ? parseFloat(ampInput.value) : fallback.amplificationFactor;
+        const allowableDeflectionMmRaw = allowMmInput ? parseFloat(allowMmInput.value) : fallback.allowableDeflectionMm;
+        const spanRatioRaw = spanRatioInput ? parseFloat(spanRatioInput.value) : fallback.spanRatio;
+
+        const amplificationFactor = (isFinite(amplificationFactorRaw) && amplificationFactorRaw >= 0) ? amplificationFactorRaw : 1.0;
+        const allowableDeflectionMm = (isFinite(allowableDeflectionMmRaw) && allowableDeflectionMmRaw >= 0) ? allowableDeflectionMmRaw : 10;
+        const spanRatio = (isFinite(spanRatioRaw) && spanRatioRaw >= 1) ? spanRatioRaw : 300;
+
+        return { amplificationFactor, allowableDeflectionMm, spanRatio };
+    };
+
+    const getLtbCheckSettings = () => {
+        const fallback = window.settings?.ltbCheck || { unbracedLengthFactor: 1.0, cb: 1.0, nu: 0.30 };
+
+        const factorInput = document.getElementById('ltb-unbraced-factor');
+        const cbInput = document.getElementById('ltb-cb');
+        const nuInput = document.getElementById('ltb-nu');
+
+        const unbracedLengthFactorRaw = factorInput ? parseFloat(factorInput.value) : fallback.unbracedLengthFactor;
+        const cbRaw = cbInput ? parseFloat(cbInput.value) : fallback.cb;
+        const nuRaw = nuInput ? parseFloat(nuInput.value) : fallback.nu;
+
+        const unbracedLengthFactor = (isFinite(unbracedLengthFactorRaw) && unbracedLengthFactorRaw >= 0) ? unbracedLengthFactorRaw : 1.0;
+        const cb = (isFinite(cbRaw) && cbRaw > 0) ? cbRaw : 1.0;
+        const nu = (isFinite(nuRaw) && nuRaw >= 0 && nuRaw < 0.5) ? nuRaw : 0.30;
+
+        return { unbracedLengthFactor, cb, nu };
+    };
+
+    const calculateLtbCheck = (loadTerm) => {
+        if (!lastResults) return [];
+        const { members, forces, memberLoads } = lastResults;
+        const settings = getLtbCheckSettings();
+
+        const results = [];
+        const factor = (loadTerm === 'long') ? 1.5 : 1.0;
+
+        members.forEach((member, idx) => {
+            const { strengthProps, Z, E, length } = member;
+
+            // 横座屈は原則として鋼材（F-value系）を対象
+            const isSteelLike = strengthProps && (strengthProps.type === 'F-value' || strengthProps.type === 'F-stainless' || strengthProps.type === 'F-aluminum');
+            if (!isSteelLike) {
+                results.push({ memberIndex: idx, status: 'N/A', message: '対象外材料', ratio: NaN });
+                return;
+            }
+
+            // 強軸曲げ以外は簡易的に N/A 扱い（弱軸曲げは横座屈支配になりにくい）
+            // sectionAxis.mode が strong/both の場合のみ評価
+            try {
+                const axisMode = member.sectionAxis?.mode;
+                if (axisMode && axisMode !== 'strong' && axisMode !== 'both') {
+                    results.push({ memberIndex: idx, status: 'N/A', message: '弱軸曲げ（横座屈省略）', ratio: NaN });
+                    return;
+                }
+            } catch (_) { /* ignore */ }
+
+            const F = strengthProps.value;
+            if (!F || !isFinite(F)) {
+                results.push({ memberIndex: idx, status: 'error', message: 'F値無効', ratio: NaN });
+                return;
+            }
+            if (!Z || !isFinite(Z) || Z <= 0) {
+                results.push({ memberIndex: idx, status: 'error', message: 'Zが無効', ratio: NaN });
+                return;
+            }
+            if (!E || !isFinite(E) || E <= 0 || !length || !isFinite(length) || length <= 0) {
+                results.push({ memberIndex: idx, status: 'error', message: 'E/長さが無効', ratio: NaN });
+                return;
+            }
+
+            // 必要断面定数（Iy/J/Iw）
+            let Iy_m4 = member.Iy;
+            let J_m4 = member.J;
+            let Iw_m6 = member.Iw;
+
+            // 取りこぼし対策: sectionInfo がある場合、steel_data.js から自動補完
+            const needBackfill = (!Iy_m4 || !isFinite(Iy_m4) || Iy_m4 <= 0 || !J_m4 || !isFinite(J_m4) || J_m4 <= 0 || !Iw_m6 || !isFinite(Iw_m6) || Iw_m6 <= 0);
+            if (needBackfill) {
+                try {
+                    if (typeof lookupSteelDataPropertiesForSectionInfo === 'function' && member.sectionInfo) {
+                        const props = lookupSteelDataPropertiesForSectionInfo(member.sectionInfo);
+                        if (props && typeof props === 'object') {
+                            const iyCm4 = (props.Iy !== undefined && props.Iy !== null && props.Iy !== '') ? parseFloat(props.Iy) : NaN;
+                            const jCm4 = (props.J !== undefined && props.J !== null && props.J !== '') ? parseFloat(props.J) : NaN;
+                            const iwCm6 = (props.Iw !== undefined && props.Iw !== null && props.Iw !== '') ? parseFloat(props.Iw) : NaN;
+
+                            const Iy2 = Number.isFinite(iyCm4) ? (iyCm4 * 1e-8) : undefined; // m^4
+                            const J2 = Number.isFinite(jCm4) ? (jCm4 * 1e-8) : undefined; // m^4
+                            const Iw2 = Number.isFinite(iwCm6) ? (iwCm6 * 1e-12) : undefined; // m^6
+
+                            if ((!Iy_m4 || !isFinite(Iy_m4) || Iy_m4 <= 0) && Iy2 && isFinite(Iy2) && Iy2 > 0) Iy_m4 = Iy2;
+                            if ((!J_m4 || !isFinite(J_m4) || J_m4 <= 0) && J2 && isFinite(J2) && J2 > 0) J_m4 = J2;
+                            if ((!Iw_m6 || !isFinite(Iw_m6) || Iw_m6 <= 0) && Iw2 && isFinite(Iw2) && Iw2 > 0) Iw_m6 = Iw2;
+
+                            // member にも保存して以降の処理で利用しやすくする
+                            if (Iy_m4 && isFinite(Iy_m4) && Iy_m4 > 0) member.Iy = Iy_m4;
+                            if (J_m4 && isFinite(J_m4) && J_m4 > 0) member.J = J_m4;
+                            if (Iw_m6 && isFinite(Iw_m6) && Iw_m6 > 0) member.Iw = Iw_m6;
+                        }
+                    }
+                } catch (_) { /* ignore */ }
+            }
+
+            if (!Iy_m4 || !isFinite(Iy_m4) || Iy_m4 <= 0 || !J_m4 || !isFinite(J_m4) || J_m4 <= 0 || !Iw_m6 || !isFinite(Iw_m6) || Iw_m6 <= 0) {
+                results.push({ memberIndex: idx, status: 'error', message: 'Iy/J/Iw データ不足', ratio: NaN });
+                return;
+            }
+
+            // 作用曲げ：部材内の最大 |M| を 21点で探索（断面算定と同等）
+            const force = forces[idx];
+            const load = memberLoads.find(l => l.memberIndex === idx);
+            const w = load ? load.w : 0;
+            const L = length;
+
+            let maxAbsM = 0;
+            for (let k = 0; k <= 20; k++) {
+                const x = (k / 20) * L;
+                const M_linear = -force.M_i * (1 - x / L) + force.M_j * (x / L);
+                const M_parabolic = w * L * x / 2 - w * x ** 2 / 2;
+                const M_x = M_linear + M_parabolic;
+                maxAbsM = Math.max(maxAbsM, Math.abs(M_x));
+            }
+
+            // 単位変換
+            const E_Nmm2 = E * 1e-3; // kPa -> N/mm^2
+            const nu = settings.nu;
+            const G_Nmm2 = E_Nmm2 / (2 * (1 + nu));
+
+            const Z_mm3 = Z * 1e9; // m^3 -> mm^3
+            const Iy_mm4 = Iy_m4 * 1e12; // m^4 -> mm^4
+            const J_mm4 = J_m4 * 1e12; // m^4 -> mm^4
+            const Iw_mm6 = Iw_m6 * 1e18; // m^6 -> mm^6
+
+            const lb_m = Math.max(0, settings.unbracedLengthFactor) * L;
+            const lb_mm = lb_m * 1000;
+            if (!isFinite(lb_mm) || lb_mm <= 1e-9) {
+                results.push({ memberIndex: idx, status: 'error', message: 'Lbが無効', ratio: NaN });
+                return;
+            }
+
+            // 弾性横座屈臨界モーメント Mcr（簡易：等断面・両対称I形を想定した形）
+            // Mcr = Cb * (π^2 E Iy / Lb^2) * sqrt( Iw/Iy + (Lb^2 G J)/(π^2 E Iy) )
+            const cb = settings.cb;
+            const pi2 = Math.PI * Math.PI;
+            const term1 = (pi2 * E_Nmm2 * Iy_mm4) / (lb_mm * lb_mm);
+            const termInside = (Iw_mm6 / Iy_mm4) + ((lb_mm * lb_mm) * G_Nmm2 * J_mm4) / (pi2 * E_Nmm2 * Iy_mm4);
+            const Mcr_Nmm = cb * term1 * Math.sqrt(Math.max(termInside, 0));
+            const Mcr_kNm = Mcr_Nmm / 1e6; // (N*mm) -> (kN*m)
+
+            const fcr_Nmm2 = (Z_mm3 > 0) ? (Mcr_Nmm / Z_mm3) : NaN;
+
+            // 許容応力度設計（長期/短期で係数を変える運用）を明確化
+            // 既存断面検定と整合：短期=F/1.0、長期=F/1.5
+            const fb_base = F / factor;
+            const fb_ltb = (isFinite(fcr_Nmm2) && fcr_Nmm2 > 0) ? Math.min(fb_base, fcr_Nmm2 / factor) : fb_base;
+
+            const sigma_b = (Z_mm3 > 0) ? ((maxAbsM * 1e6) / Z_mm3) : NaN; // kN*m -> N*mm
+            const ratio = (isFinite(sigma_b) && isFinite(fb_ltb) && fb_ltb > 1e-12) ? (sigma_b / fb_ltb) : NaN;
+            const status = isFinite(ratio) ? (ratio > 1.0 ? 'NG' : 'OK') : 'N/A';
+
+            results.push({
+                memberIndex: idx,
+                L,
+                Lb: lb_m,
+                Cb: cb,
+                nu,
+                loadTerm,
+                allowableFactor: factor,
+                fb_base,
+                Mmax: maxAbsM,
+                Mcr: Mcr_kNm,
+                sigma_b: sigma_b,
+                fb_allow: fb_ltb,
+                ratio,
+                status,
+                message: ''
+            });
+        });
+
+        return results;
+    };
+
+    const displayLtbCheckResults = () => {
+        if (!elements.ltbCheckResults) return;
+        if (!lastLtbCheckResults || lastLtbCheckResults.length === 0) {
+            elements.ltbCheckResults.innerHTML = '';
+            return;
+        }
+
+        let html = `<thead><tr>`;
+        html += `<th>部材 #</th>`;
+        html += `<th>L (m)</th>`;
+        html += `<th>Lb (m)</th>`;
+        html += `<th>荷重</th>`;
+        html += `<th>係数</th>`;
+        html += `<th>fb基準 (N/mm²)</th>`;
+        html += `<th>Cb</th>`;
+        html += `<th>|M|max (kN·m)</th>`;
+        html += `<th>Mcr (kN·m)</th>`;
+        html += `<th>σb (N/mm²)</th>`;
+        html += `<th>fb(横座屈) (N/mm²)</th>`;
+        html += `<th>検定比</th>`;
+        html += `<th>判定</th>`;
+        html += `</tr></thead><tbody>`;
+
+        lastLtbCheckResults.forEach((res) => {
+            const idx = (res.memberIndex ?? 0) + 1;
+            const isNg = res.status === 'NG';
+            const statusText = res.status === 'NG' ? '❌ NG' : (res.status === 'OK' ? '✅ OK' : '—');
+            const ratioText = (typeof res.ratio === 'number' && isFinite(res.ratio)) ? res.ratio.toFixed(3) : '—';
+
+            const loadTermText = (res.loadTerm === 'long') ? '長期' : (res.loadTerm === 'short' ? '短期' : '—');
+            const factorText = (typeof res.allowableFactor === 'number' && isFinite(res.allowableFactor)) ? res.allowableFactor.toFixed(2) : '—';
+            const fbBaseText = (typeof res.fb_base === 'number' && isFinite(res.fb_base)) ? res.fb_base.toFixed(2) : '—';
+            const cbText = (typeof res.Cb === 'number' && isFinite(res.Cb)) ? res.Cb.toFixed(2) : '—';
+
+            const lText = (typeof res.L === 'number' && isFinite(res.L)) ? res.L.toFixed(2) : '—';
+            const lbText = (typeof res.Lb === 'number' && isFinite(res.Lb)) ? res.Lb.toFixed(2) : '—';
+            const mmaxText = (typeof res.Mmax === 'number' && isFinite(res.Mmax)) ? res.Mmax.toFixed(2) : '—';
+            const mcrText = (typeof res.Mcr === 'number' && isFinite(res.Mcr)) ? res.Mcr.toFixed(2) : '—';
+            const sigText = (typeof res.sigma_b === 'number' && isFinite(res.sigma_b)) ? res.sigma_b.toFixed(2) : (res.message || '—');
+            const fbText = (typeof res.fb_allow === 'number' && isFinite(res.fb_allow)) ? res.fb_allow.toFixed(2) : '—';
+
+            html += `<tr ${isNg ? 'style="background-color: #fdd;"' : ''}>`;
+            html += `<td>${idx}</td>`;
+            html += `<td>${lText}</td>`;
+            html += `<td>${lbText}</td>`;
+            html += `<td>${loadTermText}</td>`;
+            html += `<td>${factorText}</td>`;
+            html += `<td>${fbBaseText}</td>`;
+            html += `<td>${cbText}</td>`;
+            html += `<td>${mmaxText}</td>`;
+            html += `<td>${mcrText}</td>`;
+            html += `<td>${sigText}</td>`;
+            html += `<td>${fbText}</td>`;
+            html += `<td style="font-weight: bold; ${isNg ? 'color: red;' : ''}">${ratioText}</td>`;
+            html += `<td>${statusText}</td>`;
+            html += `</tr>`;
+        });
+        html += `</tbody>`;
+        elements.ltbCheckResults.innerHTML = html;
+    };
+
+    const calculateDeflectionCheck = () => {
+        if (!lastResults) return [];
+        const { nodes, members, D, memberLoads } = lastResults;
+        if (!D || !Array.isArray(D) || D.length === 0) return [];
+
+        const settings = getDeflectionCheckSettings();
+        const results = [];
+
+        const distPointToLine = (ax, ay, bx, by, px, py) => {
+            const vx = bx - ax;
+            const vy = by - ay;
+            const wx = px - ax;
+            const wy = py - ay;
+            const denom = Math.sqrt(vx * vx + vy * vy);
+            if (denom < 1e-12) return 0;
+            const cross = vx * wy - vy * wx;
+            return Math.abs(cross) / denom;
+        };
+
+        members.forEach((m, idx) => {
+            const ni = nodes[m.i];
+            const nj = nodes[m.j];
+            if (!ni || !nj) {
+                results.push({
+                    memberIndex: idx,
+                    status: 'error',
+                    message: '節点情報がありません'
+                });
+                return;
+            }
+
+            const L = m.length;
+            if (!isFinite(L) || L <= 0) {
+                results.push({
+                    memberIndex: idx,
+                    status: 'error',
+                    message: '部材長が無効です'
+                });
+                return;
+            }
+
+            const load = (memberLoads || []).find(l => l.memberIndex === idx);
+            const w = load ? load.w : 0;
+
+            const dx_i = D[m.i * 3]?.[0] ?? 0;
+            const dy_i = D[m.i * 3 + 1]?.[0] ?? 0;
+            const dx_j = D[m.j * 3]?.[0] ?? 0;
+            const dy_j = D[m.j * 3 + 1]?.[0] ?? 0;
+
+            const ax = ni.x + dx_i;
+            const ay = ni.y + dy_i;
+            const bx = nj.x + dx_j;
+            const by = nj.y + dy_j;
+
+            const d_global_member_vec = [
+                ...D.slice(m.i * 3, m.i * 3 + 3),
+                ...D.slice(m.j * 3, m.j * 3 + 3)
+            ];
+            const d_local_vec = mat.multiply(m.T, d_global_member_vec);
+            const [ui, vi, thi, uj, vj, thj] = d_local_vec.map(v => v[0]);
+
+            let maxDeviation = 0;
+
+            for (let k = 0; k <= 40; k++) {
+                const x = (k / 40) * L;
+                const xi = x / L;
+
+                const N1 = 1 - 3 * xi ** 2 + 2 * xi ** 3;
+                const N2 = x * (1 - xi) ** 2;
+                const N3 = 3 * xi ** 2 - 2 * xi ** 3;
+                const N4 = (x ** 2 / L) * (xi - 1);
+
+                const u_local = (1 - xi) * ui + xi * uj;
+                const v_homogeneous = N1 * vi + N2 * thi + N3 * vj + N4 * thj;
+
+                let v_particular = 0;
+                if (w !== 0 && m.E > 0 && m.I > 0) {
+                    if (m.i_conn === 'rigid' && m.j_conn === 'rigid') v_particular = (w * x ** 2 * (L - x) ** 2) / (24 * m.E * m.I);
+                    else if (m.i_conn === 'pinned' && m.j_conn === 'pinned') v_particular = (w * x * (L ** 3 - 2 * L * x ** 2 + x ** 3)) / (24 * m.E * m.I);
+                    else if (m.i_conn === 'rigid' && m.j_conn === 'pinned') v_particular = (w * x ** 2 * (3 * L ** 2 - 5 * L * x + 2 * x ** 2)) / (48 * m.E * m.I);
+                    else if (m.i_conn === 'pinned' && m.j_conn === 'rigid') v_particular = (w * x * (L ** 3 - 3 * L * x ** 2 + 2 * x ** 3)) / (48 * m.E * m.I);
+                }
+
+                const v_local = v_homogeneous - v_particular;
+
+                const c = m.c;
+                const s = m.s;
+                const disp_x_global = u_local * c - v_local * s;
+                const disp_y_global = u_local * s + v_local * c;
+
+                const orig_x = ni.x + x * c;
+                const orig_y = ni.y + x * s;
+                const def_x = orig_x + disp_x_global;
+                const def_y = orig_y + disp_y_global;
+
+                const deviation = distPointToLine(ax, ay, bx, by, def_x, def_y);
+                if (deviation > maxDeviation) maxDeviation = deviation;
+            }
+
+            const maxDeflectionMm = maxDeviation * 1000;
+            const amplifiedDeflectionMm = maxDeflectionMm * settings.amplificationFactor;
+
+            const spanBasedAllowableMm = (settings.spanRatio > 0) ? (L * 1000 / settings.spanRatio) : Infinity;
+            const fixedAllowableMm = (settings.allowableDeflectionMm > 0) ? settings.allowableDeflectionMm : Infinity;
+            const allowableMm = Math.min(spanBasedAllowableMm, fixedAllowableMm);
+
+            const ratio = (isFinite(allowableMm) && allowableMm > 1e-12) ? (amplifiedDeflectionMm / allowableMm) : NaN;
+            const status = (isFinite(ratio)) ? (ratio > 1.0 ? 'NG' : 'OK') : 'N/A';
+
+            const actualSpanRatio = (amplifiedDeflectionMm > 1e-12) ? ((L * 1000) / amplifiedDeflectionMm) : Infinity;
+
+            results.push({
+                memberIndex: idx,
+                length: L,
+                maxDeflectionMm,
+                amplifiedDeflectionMm,
+                allowableMm,
+                allowableBySpanRatioMm: spanBasedAllowableMm,
+                allowableByFixedMm: fixedAllowableMm,
+                spanRatioLimit: settings.spanRatio,
+                actualSpanRatio,
+                ratio,
+                status
+            });
+        });
+
+        return results;
+    };
+
+    const displayDeflectionCheckResults = () => {
+        if (!elements.deflectionCheckResults) return;
+        if (!lastDeflectionCheckResults || lastDeflectionCheckResults.length === 0) {
+            elements.deflectionCheckResults.innerHTML = '';
+            return;
+        }
+
+        const settings = getDeflectionCheckSettings();
+        let html = `<thead><tr>`;
+        html += `<th>部材 #</th>`;
+        html += `<th>スパン L (m)</th>`;
+        html += `<th>最大たわみ (mm)</th>`;
+        html += `<th>増大後 (×${settings.amplificationFactor.toFixed(2)}) (mm)</th>`;
+        html += `<th>許容たわみ (mm)</th>`;
+        html += `<th>スパン比 L/δ</th>`;
+        html += `<th>検定比</th>`;
+        html += `<th>判定</th>`;
+        html += `</tr></thead><tbody>`;
+
+        lastDeflectionCheckResults.forEach((res) => {
+            const idx = (res.memberIndex ?? 0) + 1;
+            const isNg = res.status === 'NG';
+            const statusText = res.status === 'NG' ? '❌ NG' : (res.status === 'OK' ? '✅ OK' : '—');
+            const ratioText = (typeof res.ratio === 'number' && isFinite(res.ratio)) ? res.ratio.toFixed(3) : '—';
+            const spanRatioText = (typeof res.actualSpanRatio === 'number' && isFinite(res.actualSpanRatio)) ? res.actualSpanRatio.toFixed(1) : '∞';
+
+            html += `<tr ${isNg ? 'style="background-color: #fdd;"' : ''}>`;
+            html += `<td>${idx}</td>`;
+            html += `<td>${(res.length ?? 0).toFixed(2)}</td>`;
+            html += `<td>${(res.maxDeflectionMm ?? 0).toFixed(2)}</td>`;
+            html += `<td>${(res.amplifiedDeflectionMm ?? 0).toFixed(2)}</td>`;
+            html += `<td>${(res.allowableMm ?? 0).toFixed(2)}</td>`;
+            html += `<td>${spanRatioText}</td>`;
+            html += `<td style="font-weight: bold; ${isNg ? 'color: red;' : ''}">${ratioText}</td>`;
+            html += `<td>${statusText}</td>`;
+            html += `</tr>`;
+        });
+        html += `</tbody>`;
+
+        elements.deflectionCheckResults.innerHTML = html;
     };
 
     const displaySectionCheckResults = () => {
@@ -13421,6 +13879,81 @@ const findPresetSectionProfile = (member) => {
     ) || null;
 };
 
+// steel_data.js の window.steelData から、断面情報（typeKey + 寸法）に一致する断面定数を取得
+// ※計算例プリセットでも横座屈検定に必要な Iy/J/Iw を揃えるため
+const lookupSteelDataPropertiesForSectionInfo = (sectionInfo) => {
+    try {
+        const typeKey = sectionInfo?.typeKey;
+        const dims = sectionInfo?.rawDims;
+        const steelData = window.steelData;
+        if (!typeKey || !dims || !steelData || !steelData[typeKey]) return null;
+
+        const category = steelData[typeKey];
+        const headers = category?.headers;
+        const data = category?.data;
+        if (!Array.isArray(headers) || !Array.isArray(data) || data.length === 0) return null;
+
+        const idx = (headerName) => headers.findIndex(h => String(h).trim() === headerName);
+        const idxHB = idx('H×B');
+        const idxA = idx('断面積(cm²)');
+        const idxIx = idx('Ix(cm⁴)');
+        const idxIy = idx('Iy(cm⁴)');
+        const idxZx = idx('Zx(cm³)');
+        const idxZy = idx('Zy(cm³)');
+        const idxix = idx('ix(cm)');
+        const idxiy = idx('iy(cm)');
+        const idxJ = idx('J(cm⁴)');
+        const idxIw = idx('Iw(cm⁶)');
+
+        const idxT1 = idx('t1');
+        const idxT2 = idx('t2');
+        const idxR = idx('r');
+
+        const H = Number(dims.H);
+        const B = Number(dims.B);
+        if (!isFinite(H) || !isFinite(B)) return null;
+        const hbKey = `${H}×${B}`;
+
+        const t1 = dims.t1 !== undefined ? Number(dims.t1) : null;
+        const t2 = dims.t2 !== undefined ? Number(dims.t2) : null;
+        const r = dims.r !== undefined ? Number(dims.r) : null;
+
+        const approxNum = (a, b, tol = 1e-6) => {
+            if (!isFinite(a) || !isFinite(b)) return false;
+            return Math.abs(a - b) <= tol;
+        };
+
+        const row = data.find((row) => {
+            if (!Array.isArray(row)) return false;
+            if (idxHB >= 0 && String(row[idxHB]).trim() !== hbKey) return false;
+            if (idxT1 >= 0 && t1 !== null && !approxNum(Number(row[idxT1]), t1, 1e-3)) return false;
+            if (idxT2 >= 0 && t2 !== null && !approxNum(Number(row[idxT2]), t2, 1e-3)) return false;
+            if (idxR >= 0 && r !== null && !approxNum(Number(row[idxR]), r, 1e-3)) return false;
+            return true;
+        });
+
+        if (!row) return null;
+
+        const pick = (i) => (i >= 0 ? Number(row[i]) : null);
+
+        return {
+            // 単位は steelData のまま（cm系）で返す
+            A: pick(idxA),
+            Ix: pick(idxIx),
+            Iy: pick(idxIy),
+            Zx: pick(idxZx),
+            Zy: pick(idxZy),
+            ix: pick(idxix),
+            iy: pick(idxiy),
+            J: pick(idxJ),
+            Iw: pick(idxIw)
+        };
+    } catch (e) {
+        console.warn('lookupSteelDataPropertiesForSectionInfo failed', e);
+        return null;
+    }
+};
+
 const parseSectionInfoFromMember = (member) => {
     if (!member || typeof member !== 'object') return null;
 
@@ -13982,7 +14515,18 @@ const loadPreset = (index) => {
                 return;
             }
 
-            const propertySource = presetProfile ? presetProfile.properties : null;
+            const propertySource = presetProfile ? { ...(presetProfile.properties || {}) } : {};
+
+            // steelData が利用できる場合は、プリセット断面情報から Ix/Iy/J/Iw 等を補完
+            // （計算例プリセットでも横座屈検定が行えるように）
+            const steelProps = lookupSteelDataPropertiesForSectionInfo(sectionInfoFromPreset);
+            if (steelProps) {
+                Object.keys(steelProps).forEach((k) => {
+                    if (propertySource[k] == null && steelProps[k] != null && isFinite(steelProps[k])) {
+                        propertySource[k] = steelProps[k];
+                    }
+                });
+            }
 
             if (sectionInfoFromPreset) {
                 if (axisInfo && !sectionInfoFromPreset.axis) {
@@ -14006,10 +14550,21 @@ const loadPreset = (index) => {
             const ixToApply = propertySource?.ix ?? m.ix;
             const iyToApply = propertySource?.iy ?? m.iy;
 
+            // 横座屈用（cm単位の値をdatasetに保持。parseInputsでSIへ変換）
+            const ixMomToApply = propertySource?.Ix ?? m.Ix;
+            const iyMomToApply = propertySource?.Iy ?? m.Iy;
+            const jToApply = propertySource?.J ?? m.J;
+            const iwToApply = propertySource?.Iw ?? m.Iw;
+
             if (zxToApply != null) newRow.dataset.zx = zxToApply;
             if (zyToApply != null) newRow.dataset.zy = zyToApply;
             if (ixToApply != null) newRow.dataset.ix = ixToApply;
             if (iyToApply != null) newRow.dataset.iy = iyToApply;
+
+            if (ixMomToApply != null) newRow.dataset.ixMom = ixMomToApply;
+            if (iyMomToApply != null) newRow.dataset.iyMom = iyMomToApply;
+            if (jToApply != null) newRow.dataset.j = jToApply;
+            if (iwToApply != null) newRow.dataset.iw = iwToApply;
         });
         p.nl.forEach(l => addRow(elements.nodeLoadsTable, [`<input type="number" value="${l.n || l.node}">`, `<input type="number" value="${l.px||0}">`, `<input type="number" value="${l.py||0}">`, `<input type="number" value="${l.mz||0}">`], false));
         p.ml.forEach(l => addRow(elements.memberLoadsTable, [`<input type="number" value="${l.m || l.member}">`, `<input type="number" value="${l.w||0}">`], false));
@@ -14433,7 +14988,7 @@ const loadPreset = (index) => {
                 bucklingReportHTML = `<div class="no-break"><h2>座屈解析結果</h2>${generateReportTableHTML('buckling-analysis-results')}</div>`;
             }
 
-            reportWindow.document.write(`<html><head><title>構造解析レポート</title><style>body{font-family:sans-serif;margin:2em;}h1,h2,h3{color:#005A9C;border-bottom:2px solid #f0f8ff;padding-bottom:5px;}table{width:100%;border-collapse:collapse;margin-bottom:2em;}th,td{border:1px solid #ccc;padding:8px;text-align:center;}th{background-color:#f0f8ff;}img{max-width:100%;height:auto;border:1px solid #ccc;margin:1em 0;}.grid{display:grid;grid-template-columns:1fr;gap:20px;}.no-break{page-break-inside:avoid;}@media print{body{margin:1em;}button{display:none;}}</style></head><body><button onclick="window.print()">レポートを印刷</button><h1>構造解析レポート</h1><p>生成日時: ${new Date().toLocaleString()}</p><div class="no-break"><h2>モデル図</h2><img src="${modelCanvasImg}"></div><h2>入力データ</h2><div class="no-break"><h3>節点座標と境界条件</h3>${generateReportTableHTML('nodes-table')}</div><div class="no-break"><h3>部材 (物性値・接合条件)</h3>${generateReportTableHTML('members-table')}</div><div class="no-break"><h3>節点荷重</h3>${generateReportTableHTML('node-loads-table')}</div><div class="no-break"><h3>部材等分布荷重</h3>${generateReportTableHTML('member-loads-table')}</div><h2>計算結果</h2><div class="no-break grid"><div><h3>変位図</h3><img src="${displacementCanvasImg}"></div><div><h3>曲げモーメント図</h3><img src="${momentCanvasImg}"></div><div><h3>軸力図</h3><img src="${axialCanvasImg}"></div><div><h3>せん断力図</h3><img src="${shearCanvasImg}"></div></div><div class="no-break">${generateReportTableHTML('displacement-results')}</div><div class="no-break">${generateReportTableHTML('reaction-results')}</div><div class="no-break">${generateReportTableHTML('force-results')}</div><div class="no-break"><h2>断面算定結果</h2><h3>検定比図</h3><img src="${ratioCanvasImg}"><h3>検定比 詳細</h3>${generateReportTableHTML('section-check-results')}</div>${bucklingReportHTML}</body></html>`);
+            reportWindow.document.write(`<html><head><title>構造解析レポート</title><style>body{font-family:sans-serif;margin:2em;}h1,h2,h3{color:#005A9C;border-bottom:2px solid #f0f8ff;padding-bottom:5px;}table{width:100%;border-collapse:collapse;margin-bottom:2em;}th,td{border:1px solid #ccc;padding:8px;text-align:center;}th{background-color:#f0f8ff;}img{max-width:100%;height:auto;border:1px solid #ccc;margin:1em 0;}.grid{display:grid;grid-template-columns:1fr;gap:20px;}.no-break{page-break-inside:avoid;}@media print{body{margin:1em;}button{display:none;}}</style></head><body><button onclick="window.print()">レポートを印刷</button><h1>構造解析レポート</h1><p>生成日時: ${new Date().toLocaleString()}</p><div class="no-break"><h2>モデル図</h2><img src="${modelCanvasImg}"></div><h2>入力データ</h2><div class="no-break"><h3>節点座標と境界条件</h3>${generateReportTableHTML('nodes-table')}</div><div class="no-break"><h3>部材 (物性値・接合条件)</h3>${generateReportTableHTML('members-table')}</div><div class="no-break"><h3>節点荷重</h3>${generateReportTableHTML('node-loads-table')}</div><div class="no-break"><h3>部材等分布荷重</h3>${generateReportTableHTML('member-loads-table')}</div><h2>計算結果</h2><div class="no-break grid"><div><h3>変位図</h3><img src="${displacementCanvasImg}"></div><div><h3>曲げモーメント図</h3><img src="${momentCanvasImg}"></div><div><h3>軸力図</h3><img src="${axialCanvasImg}"></div><div><h3>せん断力図</h3><img src="${shearCanvasImg}"></div></div><div class="no-break">${generateReportTableHTML('displacement-results')}</div><div class="no-break">${generateReportTableHTML('reaction-results')}</div><div class="no-break">${generateReportTableHTML('force-results')}</div><div class="no-break"><h2>断面算定結果</h2><h3>検定比図</h3><img src="${ratioCanvasImg}"><h3>検定比 詳細</h3>${generateReportTableHTML('section-check-results')}<h3>たわみ制限</h3>${generateReportTableHTML('deflection-check-results')}<h3>横座屈（曲げ材）</h3>${generateReportTableHTML('ltb-check-results')}</div>${bucklingReportHTML}</body></html>`);
             reportWindow.document.close();
         } catch (e) {
             alert('レポートの生成に失敗しました: ' + e.message);
@@ -14502,12 +15057,25 @@ const loadPreset = (index) => {
         lastSectionCheckResults = calculateSectionCheck(selectedTerm);
         window.lastSectionCheckResults = lastSectionCheckResults; // グローバルに保存
 
+        lastDeflectionCheckResults = calculateDeflectionCheck();
+        window.lastDeflectionCheckResults = lastDeflectionCheckResults;
+
+        lastLtbCheckResults = calculateLtbCheck(selectedTerm);
+        window.lastLtbCheckResults = lastLtbCheckResults;
+
         // エクセル出力用にも断面検定結果を保存
         if (lastAnalysisResult) {
             lastAnalysisResult.sectionCheckResults = lastSectionCheckResults;
+            lastAnalysisResult.deflectionCheckResults = lastDeflectionCheckResults;
+            lastAnalysisResult.deflectionCheckSettings = getDeflectionCheckSettings();
+
+            lastAnalysisResult.ltbCheckResults = lastLtbCheckResults;
+            lastAnalysisResult.ltbCheckSettings = getLtbCheckSettings();
         }
 
         displaySectionCheckResults();
+        displayDeflectionCheckResults();
+        displayLtbCheckResults();
         drawRatioDiagram();
     };
     elements.calculateBtn.addEventListener('click', runFullAnalysis);
@@ -14526,6 +15094,75 @@ const loadPreset = (index) => {
             runSectionCheck();
         }
     }));
+
+    // たわみ制限（サービス性）設定の同期・イベント
+    const setupDeflectionCheckControls = () => {
+        const ampInput = document.getElementById('defl-amp-factor');
+        const allowMmInput = document.getElementById('defl-allow-mm');
+        const spanRatioInput = document.getElementById('defl-span-ratio');
+        if (!ampInput || !allowMmInput || !spanRatioInput) return;
+
+        const syncToUI = () => {
+            const s = window.settings?.deflectionCheck;
+            if (!s) return;
+            ampInput.value = (s.amplificationFactor ?? 1.0);
+            allowMmInput.value = (s.allowableDeflectionMm ?? 10);
+            spanRatioInput.value = (s.spanRatio ?? 300);
+        };
+
+        const syncFromUI = () => {
+            window.settings = window.settings || {};
+            window.settings.deflectionCheck = window.settings.deflectionCheck || { amplificationFactor: 1.0, allowableDeflectionMm: 10, spanRatio: 300 };
+            window.settings.deflectionCheck.amplificationFactor = Math.max(0, parseFloat(ampInput.value) || 0);
+            window.settings.deflectionCheck.allowableDeflectionMm = Math.max(0, parseFloat(allowMmInput.value) || 0);
+            window.settings.deflectionCheck.spanRatio = Math.max(1, parseFloat(spanRatioInput.value) || 1);
+        };
+
+        syncToUI();
+        const onChange = () => {
+            syncFromUI();
+            if (lastResults) runSectionCheck();
+        };
+        ampInput.addEventListener('input', onChange);
+        allowMmInput.addEventListener('input', onChange);
+        spanRatioInput.addEventListener('input', onChange);
+    };
+    try { setupDeflectionCheckControls(); } catch (e) { console.warn('setupDeflectionCheckControls failed', e); }
+
+    // 横座屈（LTB）設定の同期・イベント
+    const setupLtbCheckControls = () => {
+        const factorInput = document.getElementById('ltb-unbraced-factor');
+        const cbInput = document.getElementById('ltb-cb');
+        const nuInput = document.getElementById('ltb-nu');
+        if (!factorInput || !cbInput || !nuInput) return;
+
+        const syncToUI = () => {
+            const s = window.settings?.ltbCheck;
+            if (!s) return;
+            factorInput.value = (s.unbracedLengthFactor ?? 1.0);
+            cbInput.value = (s.cb ?? 1.0);
+            nuInput.value = (s.nu ?? 0.30);
+        };
+
+        const syncFromUI = () => {
+            window.settings = window.settings || {};
+            window.settings.ltbCheck = window.settings.ltbCheck || { unbracedLengthFactor: 1.0, cb: 1.0, nu: 0.30 };
+            window.settings.ltbCheck.unbracedLengthFactor = Math.max(0, parseFloat(factorInput.value) || 0);
+            window.settings.ltbCheck.cb = Math.max(0.01, parseFloat(cbInput.value) || 1.0);
+            const nu = parseFloat(nuInput.value);
+            window.settings.ltbCheck.nu = (isFinite(nu) && nu >= 0 && nu < 0.5) ? nu : 0.30;
+        };
+
+        syncToUI();
+        const onChange = () => {
+            syncFromUI();
+            if (lastResults) runSectionCheck();
+        };
+        factorInput.addEventListener('input', onChange);
+        cbInput.addEventListener('input', onChange);
+        nuInput.addEventListener('input', onChange);
+    };
+    try { setupLtbCheckControls(); } catch (e) { console.warn('setupLtbCheckControls failed', e); }
     
     elements.gridToggle.addEventListener('change', drawOnCanvas);
     elements.gridSpacing.addEventListener('change', drawOnCanvas);
@@ -15087,6 +15724,13 @@ const loadPreset = (index) => {
             if (props.Zy) row.dataset.zy = props.Zy;
             if (props.ix) row.dataset.ix = props.ix;
             if (props.iy) row.dataset.iy = props.iy;
+
+            // 横座屈等で必要となる断面特性（cm系で保持）
+            // data-ix-mom / data-iy-mom / data-j / data-iw
+            if (props.Ix) row.dataset.ixMom = props.Ix;
+            if (props.Iy) row.dataset.iyMom = props.Iy;
+            if (props.J) row.dataset.j = props.J;
+            if (props.Iw) row.dataset.iw = props.Iw;
 
             // sectionInfo がある場合は確実に dataset に保存
             if (props.sectionInfo) {
@@ -15682,9 +16326,13 @@ const loadPreset = (index) => {
                 await addAnalysisResultSheet(workbook);
             }
             
-            // 3. 断面検定結果シート
+            // 3. 断面検定結果シート（断面検定/たわみ/横座屈）
             if ((lastAnalysisResult && lastAnalysisResult.sectionCheckResults && lastAnalysisResult.sectionCheckResults.length > 0) ||
-                (lastSectionCheckResults && lastSectionCheckResults.length > 0)) {
+                (lastSectionCheckResults && lastSectionCheckResults.length > 0) ||
+                (lastAnalysisResult && lastAnalysisResult.deflectionCheckResults && lastAnalysisResult.deflectionCheckResults.length > 0) ||
+                (lastDeflectionCheckResults && lastDeflectionCheckResults.length > 0) ||
+                (lastAnalysisResult && lastAnalysisResult.ltbCheckResults && lastAnalysisResult.ltbCheckResults.length > 0) ||
+                (lastLtbCheckResults && lastLtbCheckResults.length > 0)) {
                 await addSectionCheckSheet(workbook);
             }
             
@@ -16021,7 +16669,86 @@ const loadPreset = (index) => {
                     detailResults || '-'
                 ]);
             });
+
+            // たわみ制限検定結果を追加
+            data.push([]);
+            data.push(['■ たわみ制限検定結果']);
+            data.push([]);
+
+            const deflSettings = (lastAnalysisResult && lastAnalysisResult.deflectionCheckSettings)
+                ? lastAnalysisResult.deflectionCheckSettings
+                : (window.settings?.deflectionCheck || { amplificationFactor: 1.0, allowableDeflectionMm: 0, spanRatio: 200 });
+
+            data.push(['設定', '値', '単位', '備考']);
+            data.push(['変形増大係数', Number(deflSettings.amplificationFactor ?? 1.0), '', '']);
+            data.push(['許容たわみ', Number(deflSettings.allowableDeflectionMm ?? 0), 'mm', '0=スパン比を使用']);
+            data.push(['スパン比', `L/${Number(deflSettings.spanRatio ?? 200)}`, '', '']);
+            data.push([]);
+
+            data.push(['部材番号', 'スパンL(m)', '最大たわみ(mm)', '増大後(mm)', '許容たわみ(mm)', 'スパン比 L/δ', '検定比', '判定']);
+            const deflResults = (lastAnalysisResult && lastAnalysisResult.deflectionCheckResults) || lastDeflectionCheckResults;
+            if (deflResults && deflResults.length > 0) {
+                deflResults.forEach((r) => {
+                    const spanRatioText = (typeof r.actualSpanRatio === 'number' && isFinite(r.actualSpanRatio)) ? r.actualSpanRatio.toFixed(1) : '∞';
+                    const ratioText2 = (typeof r.ratio === 'number' && isFinite(r.ratio)) ? r.ratio.toFixed(3) : '-';
+                    data.push([
+                        (r.memberIndex ?? 0) + 1,
+                        (r.length ?? 0).toFixed(3),
+                        (r.maxDeflectionMm ?? 0).toFixed(3),
+                        (r.amplifiedDeflectionMm ?? 0).toFixed(3),
+                        (r.allowableMm ?? 0).toFixed(3),
+                        spanRatioText,
+                        ratioText2,
+                        r.status || '-'
+                    ]);
+                });
+            } else {
+                data.push(['※ たわみ制限検定結果がありません']);
+            }
             
+            // 横座屈（曲げ材）検定結果を追加
+            data.push([]);
+            data.push(['■ 横座屈（曲げ材）検定結果']);
+            data.push([]);
+
+            const ltbSettings = (lastAnalysisResult && lastAnalysisResult.ltbCheckSettings)
+                ? lastAnalysisResult.ltbCheckSettings
+                : (window.settings?.ltbCheck || { unbracedLengthFactor: 1.0, cb: 1.0, nu: 0.30 });
+
+            data.push(['設定', '値', '単位', '備考']);
+            data.push(['Lb/L 係数', Number(ltbSettings.unbracedLengthFactor ?? 1.0), '', 'Lb = 係数 × L']);
+            data.push(['Cb', Number(ltbSettings.cb ?? 1.0), '', 'モーメント勾配係数（簡易入力）']);
+            data.push(['ポアソン比 ν', Number(ltbSettings.nu ?? 0.30), '', 'G=E/(2(1+ν))']);
+            data.push([]);
+
+            data.push(['部材番号', 'L(m)', 'Lb(m)', '荷重', '係数', 'fb基準(N/mm²)', '|M|max(kN·m)', 'Mcr(kN·m)', 'σb(N/mm²)', 'fb(横座屈)(N/mm²)', '検定比', '判定', '備考']);
+            const ltbResults = (lastAnalysisResult && lastAnalysisResult.ltbCheckResults) || lastLtbCheckResults;
+            if (ltbResults && ltbResults.length > 0) {
+                ltbResults.forEach((r) => {
+                    const ratioText2 = (typeof r.ratio === 'number' && isFinite(r.ratio)) ? r.ratio.toFixed(3) : '-';
+                    const loadTermText = (r.loadTerm === 'long') ? '長期' : (r.loadTerm === 'short' ? '短期' : '-');
+                    const factorText = (typeof r.allowableFactor === 'number' && isFinite(r.allowableFactor)) ? r.allowableFactor.toFixed(2) : '-';
+                    const fbBaseText = (typeof r.fb_base === 'number' && isFinite(r.fb_base)) ? r.fb_base.toFixed(3) : '-';
+                    data.push([
+                        (r.memberIndex ?? 0) + 1,
+                        (typeof r.L === 'number' && isFinite(r.L)) ? r.L.toFixed(3) : '-',
+                        (typeof r.Lb === 'number' && isFinite(r.Lb)) ? r.Lb.toFixed(3) : '-',
+                        loadTermText,
+                        factorText,
+                        fbBaseText,
+                        (typeof r.Mmax === 'number' && isFinite(r.Mmax)) ? r.Mmax.toFixed(3) : '-',
+                        (typeof r.Mcr === 'number' && isFinite(r.Mcr)) ? r.Mcr.toFixed(3) : '-',
+                        (typeof r.sigma_b === 'number' && isFinite(r.sigma_b)) ? r.sigma_b.toFixed(3) : (r.message || '-'),
+                        (typeof r.fb_allow === 'number' && isFinite(r.fb_allow)) ? r.fb_allow.toFixed(3) : '-',
+                        ratioText2,
+                        r.status || '-',
+                        r.message || ''
+                    ]);
+                });
+            } else {
+                data.push(['※ 横座屈（曲げ材）検定結果がありません']);
+            }
+
             // 各部材の詳細応力度計算結果を追加
             data.push([]);
             data.push(['■ 各部材の詳細応力度計算結果']);

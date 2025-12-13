@@ -12807,6 +12807,9 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
                 input.id = inputId;
                 input.type = 'number';
                 input.value = f_val_str;
+                // 小数点入力を許容（ブラウザ標準バリデーションのstep不一致を回避）
+                input.step = 'any';
+                input.min = '0';
                 // forceCustomの場合は編集可能にする
                 input.readOnly = isPreset;
                 
@@ -12868,6 +12871,9 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
                     input.type = 'number';
                     input.id = `${idPrefix}-${key}`;
                     input.value = baseStresses[key].toFixed(2);
+                    // 小数点入力を許容（toFixed(2)の値がstep=1だと無効になりうる）
+                    input.step = 'any';
+                    input.min = '0';
                     input.readOnly = !isCustom;
                     
                     inputs[key] = input;
@@ -12896,14 +12902,14 @@ const createEInputHTML = (idPrefix, currentE = '205000') => {
             case 'stainless': {
                 const stainValue = currentValue || '205';
                 const isPreset = ['205', '235'].includes(stainValue);
-                htmlContent = `<div data-strength-type="F-stainless"><select id="${selectId}" onchange="const input = document.getElementById('${inputId}'); input.value = this.value; input.readOnly = (this.value !== 'custom');"><option value="205" ${stainValue === '205' ? 'selected' : ''}>SUS304</option><option value="235" ${stainValue === '235' ? 'selected' : ''}>SUS316</option><option value="custom" ${!isPreset ? 'selected' : ''}>任意入力</option></select><input id="${inputId}" type="number" value="${stainValue}" ${isPreset ? 'readonly' : ''}></div>`;
+                htmlContent = `<div data-strength-type="F-stainless"><select id="${selectId}" onchange="const input = document.getElementById('${inputId}'); input.value = this.value; input.readOnly = (this.value !== 'custom');"><option value="205" ${stainValue === '205' ? 'selected' : ''}>SUS304</option><option value="235" ${stainValue === '235' ? 'selected' : ''}>SUS316</option><option value="custom" ${!isPreset ? 'selected' : ''}>任意入力</option></select><input id="${inputId}" type="number" step="any" min="0" value="${stainValue}" ${isPreset ? 'readonly' : ''}></div>`;
                 wrapper.innerHTML = htmlContent;
                 return wrapper.firstElementChild;
             }
             case 'aluminum': {
                 const alumValue = currentValue || '150';
                 const isPreset = ['150', '185'].includes(alumValue);
-                htmlContent = `<div data-strength-type="F-aluminum"><select id="${selectId}" onchange="const input = document.getElementById('${inputId}'); input.value = this.value; input.readOnly = (this.value !== 'custom');"><option value="150" ${alumValue === '150' ? 'selected' : ''}>A5052</option><option value="185" ${alumValue === '185' ? 'selected' : ''}>A6061-T6</option><option value="custom" ${!isPreset ? 'selected' : ''}>任意入力</option></select><input id="${inputId}" type="number" value="${alumValue}" ${isPreset ? 'readonly' : ''}></div>`;
+                htmlContent = `<div data-strength-type="F-aluminum"><select id="${selectId}" onchange="const input = document.getElementById('${inputId}'); input.value = this.value; input.readOnly = (this.value !== 'custom');"><option value="150" ${alumValue === '150' ? 'selected' : ''}>A5052</option><option value="185" ${alumValue === '185' ? 'selected' : ''}>A6061-T6</option><option value="custom" ${!isPreset ? 'selected' : ''}>任意入力</option></select><input id="${inputId}" type="number" step="any" min="0" value="${alumValue}" ${isPreset ? 'readonly' : ''}></div>`;
                 wrapper.innerHTML = htmlContent;
                 return wrapper.firstElementChild;
             }
